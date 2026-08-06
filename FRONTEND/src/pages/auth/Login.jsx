@@ -38,12 +38,12 @@ export function Login() {
     <div className="auth-page">
       <form className="auth-card" onSubmit={handleSubmit}>
         <div className="auth-branding">
-          <img src="/amigo-logo.jpg" alt="Amigo School of Calinan logo" className="auth-logo" />
+          <img src="/amigo-logo.png" alt="EDU ASSIST / Amigo School of Calinan logo" className="auth-logo" />
           <div>
             <p className="eyebrow">Amigo School of Calinan</p>
             <h2>EDU ASSIST</h2>
           </div>
-          <p>Sign in to access the school performance dashboard.</p>
+          <p>Sign in to access the EDU ASSIST dashboard.</p>
         </div>
 
         {error ? <ErrorBanner message={error} /> : null}

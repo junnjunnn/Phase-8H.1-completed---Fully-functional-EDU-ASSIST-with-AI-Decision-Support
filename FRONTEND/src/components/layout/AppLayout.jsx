@@ -53,7 +53,7 @@ export function AppLayout() {
     <div className="app-shell">
       <aside className="sidebar" aria-label="Application sidebar">
         <div className="sidebar-branding">
-          <img src="/amigo-logo.jpg" alt="Amigo School of Calinan logo" className="brand-logo" />
+          <img src="/amigo-logo.png" alt="EDU ASSIST / Amigo School of Calinan logo" className="brand-logo" />
           <div className="brand-info">
             <h2>EDU ASSIST</h2>
             <p>Amigo School of Calinan</p>

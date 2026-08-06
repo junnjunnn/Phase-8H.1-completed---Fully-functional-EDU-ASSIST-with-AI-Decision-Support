@@ -1081,10 +1081,55 @@
   color: var(--color-text-primary);
 }
 
+.auth-logo,
+.brand-logo {
+  width: 96px;
+  height: auto;
+  margin: 0 auto;
+  display: block;
+  border-radius: 16px;
+  box-shadow: var(--shadow-small);
+}
+
 .auth-branding {
   display: grid;
   gap: var(--space-3);
   text-align: center;
+}
+
+.error-boundary {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  background: linear-gradient(180deg, rgba(248, 250, 252, 0.9), rgba(255, 255, 255, 1));
+  padding: var(--space-6);
+}
+
+.error-boundary-panel {
+  width: min(100%, 600px);
+  padding: var(--space-6);
+  border-radius: var(--radius-large);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  box-shadow: var(--shadow-large);
+  display: grid;
+  gap: var(--space-4);
+}
+
+.error-boundary-panel h1 {
+  margin: 0;
+  font-size: 2rem;
+}
+
+.error-boundary-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.error-boundary-actions button {
+  flex: 1 1 auto;
+  min-width: 140px;
 }
 
 .error-banner {
