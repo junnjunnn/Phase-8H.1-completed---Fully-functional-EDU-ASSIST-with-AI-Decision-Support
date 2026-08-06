@@ -1,21 +1,28 @@
 import { Link } from 'react-router-dom'
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useAuth } from '../../context/AuthContext'
 import { EmptyState } from '../../components/common/EmptyState'
 import { ErrorBanner } from '../../components/feedback/ErrorBanner'
 import { LoadingSpinner } from '../../components/common/LoadingSpinner'
-import { PageHeader } from '../../components/common/PageHeader'
 import { getApiErrorMessage } from '../../services/api'
 import { getDashboardSummary } from '../../services/predictionService'
 
 const placeholderCards = [
-  { title: 'Total students', message: 'Loading…' },
-  { title: 'Risk predictions', message: 'Loading…' },
-  { title: 'At-risk students', message: 'Loading…' },
-  { title: 'High risk', message: 'Loading…' },
-  { title: 'Moderate risk', message: 'Loading…' },
-  { title: 'Low risk', message: 'Loading…' },
+  { title: 'Total students', message: 'Loading…', icon: '👩‍🎓' },
+  { title: 'Risk predictions', message: 'Loading…', icon: '🔮' },
+  { title: 'At-risk students', message: 'Loading…', icon: '⚠️' },
+  { title: 'High risk', message: 'Loading…', icon: '🔥' },
+  { title: 'Moderate risk', message: 'Loading…', icon: '📊' },
+  { title: 'Low risk', message: 'Loading…', icon: '✅' },
 ]
+
+const riskBadgeClass = (level) => {
+  const normalized = String(level ?? '').toLowerCase()
+  if (normalized.includes('high')) return 'badge badge--high'
+  if (normalized.includes('moderate')) return 'badge badge--warning'
+  if (normalized.includes('low')) return 'badge badge--success'
+  return 'badge badge--info'
+}
 
 export function Dashboard() {
   const { user } = useAuth()
@@ -50,136 +57,252 @@ export function Dashboard() {
     }
   }, [])
 
+  const currentDate = useMemo(
+    () =>
+      new Intl.DateTimeFormat('en-US', {
+        weekday: 'long',
+        month: 'long',
+        day: 'numeric',
+        year: 'numeric',
+      }).format(new Date()),
+    [],
+  )
+
   const summaryCards = dashboardData
     ? [
-        { title: 'Total students', message: dashboardData.total_students ?? 'N/A' },
-        { title: 'Risk predictions', message: dashboardData.total_predictions ?? 'N/A' },
-        { title: 'At-risk students', message: dashboardData.at_risk_students ?? 'N/A' },
-        { title: 'High risk', message: dashboardData.high_risk_students ?? 'N/A' },
-        { title: 'Moderate risk', message: dashboardData.moderate_risk_students ?? 'N/A' },
-        { title: 'Low risk', message: dashboardData.low_risk_students ?? 'N/A' },
+        { title: 'Total students', message: dashboardData.total_students ?? 'N/A', icon: '👩‍🎓' },
+        { title: 'Risk predictions', message: dashboardData.total_predictions ?? 'N/A', icon: '🔮' },
+        { title: 'At-risk students', message: dashboardData.at_risk_students ?? 'N/A', icon: '⚠️' },
+        { title: 'High risk', message: dashboardData.high_risk_students ?? 'N/A', icon: '🔥' },
+        { title: 'Moderate risk', message: dashboardData.moderate_risk_students ?? 'N/A', icon: '📊' },
+        { title: 'Low risk', message: dashboardData.low_risk_students ?? 'N/A', icon: '✅' },
       ]
     : placeholderCards
 
   const riskDistribution = dashboardData?.risk_distribution || {}
   const attentionStudents = dashboardData?.attention_students || []
+  const distributionEntries = Object.entries(riskDistribution)
+  const distributionTotal = distributionEntries.reduce((sum, [, count]) => sum + Number(count || 0), 0)
+
+  const highestRiskLevel = useMemo(() => {
+    if (!distributionEntries.length) return 'None'
+    const highest = distributionEntries.reduce(
+      (selected, entry) => (Number(entry[1] || 0) > Number(selected[1] || 0) ? entry : selected),
+      ['', 0],
+    )
+    return highest[0] || 'None'
+  }, [distributionEntries])
+
+  const atRiskProportion = useMemo(() => {
+    if (!dashboardData?.total_students) return 'N/A'
+    return `${Math.round(((dashboardData.at_risk_students || 0) / dashboardData.total_students) * 100)}%`
+  }, [dashboardData])
+
+  const attentionCards = attentionStudents.slice(0, 4)
 
   return (
-    <div className="page-stack">
-      <PageHeader
-        eyebrow="Dashboard"
-        title={`Welcome, ${user?.username || 'User'}`}
-        description={`Role: ${user?.role || 'NONE'}`}
-      />
-
-      <div className="hero-card">
-        <p className="eyebrow">Connected</p>
-        <h2>EDU ASSIST is linked to the Django REST API</h2>
-        <p>Live student risk monitoring, intervention status, and prediction summaries are available here.</p>
-      </div>
-
-      <div className="summary-grid">
-        {summaryCards.map((card) => (
-          <article key={card.title} className="info-card stat-card-accent">
-            <p className="stat-label">{card.title}</p>
-            <p className="stat-value">{card.message}</p>
-          </article>
-        ))}
-      </div>
+    <div className="dashboard-page">
+      <section className="dashboard-hero">
+        <div>
+          <p className="eyebrow">Dashboard</p>
+          <h1>Welcome back, {user?.username || 'User'}</h1>
+          <p className="dashboard-hero-text">
+            Monitor student performance and identify learners requiring early intervention through AI-powered decision support.
+          </p>
+          <div className="dashboard-meta">
+            <span>{currentDate}</span>
+            <span className="badge badge--info">{user?.role || 'No role'}</span>
+          </div>
+        </div>
+        <div className="dashboard-hero-summary">
+          <div className="dashboard-hero-card">
+            <p className="dashboard-hero-card-label">Live risk monitoring</p>
+            <strong>{dashboardData?.total_predictions ?? '—'}</strong>
+          </div>
+          <div className="dashboard-hero-card">
+            <p className="dashboard-hero-card-label">Active attention alerts</p>
+            <strong>{attentionStudents.length}</strong>
+          </div>
+        </div>
+      </section>
 
       {dashboardError ? <ErrorBanner message={dashboardError} /> : null}
-      {dashboardLoading ? <LoadingSpinner label="Loading dashboard metrics..." /> : null}
-
-      {!dashboardLoading && !dashboardError && (
+      {dashboardLoading ? (
+        <div className="dashboard-skeleton-grid">
+          {Array.from({ length: 6 }).map((_, index) => (
+            <div key={index} className="skeleton-card" />
+          ))}
+        </div>
+      ) : (
         <>
-          <div className="panel-card">
-            <div className="section-header">
-              <div>
-                <p className="eyebrow">Risk distribution</p>
-                <h2>AI risk segmentation</h2>
-              </div>
-            </div>
-            <div className="table-card">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Risk level</th>
-                    <th>Student count</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {Object.entries(riskDistribution).map(([level, count]) => (
-                    <tr key={level}>
-                      <td>{level}</td>
-                      <td>{count}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
+          <section className="dashboard-summary-grid" aria-label="Summary metrics">
+            {summaryCards.map((card) => (
+              <article key={card.title} className="dashboard-metric-card">
+                <div className="dashboard-metric-icon">{card.icon}</div>
+                <div>
+                  <p className="stat-label">{card.title}</p>
+                  <p className="stat-value">{card.message}</p>
+                </div>
+              </article>
+            ))}
+          </section>
 
-          <div className="panel-card">
-            <div className="section-header">
-              <div>
-                <p className="eyebrow">Priority students</p>
-                <h2>Top students needing attention</h2>
+          <section className="dashboard-content-grid">
+            <div className="dashboard-panel dashboard-panel--wide">
+              <div className="panel-heading">
+                <div>
+                  <p className="eyebrow">Risk distribution</p>
+                  <h2>Student risk breakdown</h2>
+                </div>
+                <span className="badge badge--info">Total {distributionTotal}</span>
+              </div>
+              <div className="risk-distribution">
+                {distributionEntries.map(([level, count]) => {
+                  const percent = distributionTotal ? Math.round((Number(count || 0) / distributionTotal) * 100) : 0
+                  return (
+                    <div key={level} className="risk-item">
+                      <div className="risk-item-top">
+                        <span>{level}</span>
+                        <span>{count ?? 0} students</span>
+                      </div>
+                      <div className="risk-bar">
+                        <div className="risk-bar-fill" style={{ width: `${percent}%` }} />
+                      </div>
+                      <div className="risk-item-footer">
+                        <span className={riskBadgeClass(level)}>{percent}%</span>
+                        <span>{count ?? 0}</span>
+                      </div>
+                    </div>
+                  )
+                })}
               </div>
             </div>
-            {attentionStudents.length === 0 ? (
-              <EmptyState title="No priority students" message="No recent high-risk students were identified." />
-            ) : (
-              <div className="table-card">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Name</th>
-                      <th>Grade level</th>
-                      <th>Risk</th>
-                      <th>Confidence</th>
-                      <th>Predicted</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {attentionStudents.map((item) => (
-                      <tr key={item.id}>
-                        <td>{`${item.enrollment__student__first_name} ${item.enrollment__student__last_name}`}</td>
-                        <td>{item.enrollment__grade_level__name || 'Unknown'}</td>
-                        <td>{item.risk_level}</td>
-                        <td>{item.probability != null ? `${Math.round(item.probability * 100)}%` : 'N/A'}</td>
-                        <td>{item.prediction_date}</td>
+
+            <div className="dashboard-panel dashboard-panel--compact">
+              <div className="panel-heading">
+                <div>
+                  <p className="eyebrow">Quick insights</p>
+                  <h2>Current performance signals</h2>
+                </div>
+              </div>
+              <div className="insights-grid">
+                <article className="insight-card">
+                  <p>Total predictions</p>
+                  <strong>{dashboardData?.total_predictions ?? 'N/A'}</strong>
+                </article>
+                <article className="insight-card">
+                  <p>At-risk proportion</p>
+                  <strong>{atRiskProportion}</strong>
+                </article>
+                <article className="insight-card">
+                  <p>Highest risk observed</p>
+                  <strong>{highestRiskLevel}</strong>
+                </article>
+              </div>
+            </div>
+          </section>
+
+          <section className="dashboard-content-grid">
+            <div className="dashboard-panel">
+              <div className="panel-heading">
+                <div>
+                  <p className="eyebrow">Recent predictions</p>
+                  <h2>Latest AI alerts</h2>
+                </div>
+              </div>
+              {attentionStudents.length === 0 ? (
+                <EmptyState title="No recent predictions" message="There are no recent prediction alerts for this period." />
+              ) : (
+                <div className="table-card recent-predictions-table">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Student</th>
+                        <th>Grade</th>
+                        <th>Risk</th>
+                        <th>Probability</th>
+                        <th>Predicted</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
+                    </thead>
+                    <tbody>
+                      {attentionStudents.map((item) => (
+                        <tr key={item.id}>
+                          <td>{`${item.enrollment__student__first_name} ${item.enrollment__student__last_name}`}</td>
+                          <td>{item.enrollment__grade_level__name || 'Unknown'}</td>
+                          <td>
+                            <span className={riskBadgeClass(item.risk_level)}>{item.risk_level}</span>
+                          </td>
+                          <td>{item.probability != null ? `${Math.round(item.probability * 100)}%` : 'N/A'}</td>
+                          <td>{item.prediction_date}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
 
-          <div className="panel-card">
-            <div className="section-header">
+            <div className="dashboard-panel dashboard-panel--compact">
+              <div className="panel-heading">
+                <div>
+                  <p className="eyebrow">Students needing attention</p>
+                  <h2>Priority student alerts</h2>
+                </div>
+              </div>
+              {attentionCards.length === 0 ? (
+                <EmptyState title="No attention alerts" message="Priority student monitoring is currently clear." />
+              ) : (
+                <div className="attention-stack">
+                  {attentionCards.map((item) => (
+                    <article key={item.id} className="attention-card">
+                      <div className="attention-card-top">
+                        <div>
+                          <p className="attention-name">{`${item.enrollment__student__first_name} ${item.enrollment__student__last_name}`}</p>
+                          <p className="attention-note">{item.enrollment__grade_level__name || 'Grade unknown'}</p>
+                        </div>
+                        <span className={riskBadgeClass(item.risk_level)}>{item.risk_level}</span>
+                      </div>
+                      <div className="attention-details">
+                        <span>{item.probability != null ? `${Math.round(item.probability * 100)}% probability` : 'Probability unknown'}</span>
+                        <span>{item.prediction_date}</span>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              )}
+            </div>
+          </section>
+
+          <section className="dashboard-panel">
+            <div className="panel-heading">
               <div>
-                <p className="eyebrow">Action guidance</p>
-                <h2>Where administrators should focus</h2>
+                <p className="eyebrow">AI decision support</p>
+                <h2>Empowering educators with evidence-based direction</h2>
               </div>
             </div>
-            <div className="panel-card">
-              <p>Use the risk distribution and recent prediction activity to prioritize students for targeted academic support, behavior coaching, and intervention planning.</p>
-              <ul>
-                <li>Review high-risk cases first and confirm that interventions are active.</li>
-                <li>Track moderate-risk students for worsening attendance or grades.</li>
-                <li>Use recent prediction summaries to follow up with teachers and guidance staff.</li>
-              </ul>
+            <div className="support-grid">
+              <article className="support-card">
+                <h3>Intervention prioritization</h3>
+                <p>Identify students requiring immediate attention and match them to academic or behavioral interventions.</p>
+              </article>
+              <article className="support-card">
+                <h3>Trend visibility</h3>
+                <p>Monitor the risk mix across the student population and surface changes in at-risk counts.</p>
+              </article>
+              <article className="support-card">
+                <h3>Focused follow-up</h3>
+                <p>Use the latest prediction alerts to coordinate with teachers and guidance counselors.</p>
+              </article>
             </div>
-          </div>
+          </section>
         </>
       )}
 
-      <div className="panel-card">
+      <section className="dashboard-panel">
         <div className="section-header">
           <div>
             <p className="eyebrow">Quick actions</p>
-            <h2>Navigate to the main modules</h2>
+            <h2>Navigate the core modules</h2>
           </div>
         </div>
         <div className="quick-actions">
@@ -189,7 +312,7 @@ export function Dashboard() {
           <Link className="action-button" to="/behavior">Behavior</Link>
           <Link className="action-button" to="/interventions">Interventions</Link>
         </div>
-      </div>
+      </section>
     </div>
   )
 }
