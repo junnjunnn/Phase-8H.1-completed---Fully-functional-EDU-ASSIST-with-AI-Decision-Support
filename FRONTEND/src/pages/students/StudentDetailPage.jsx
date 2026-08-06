@@ -630,22 +630,28 @@ export function StudentDetailPage() {
                 <thead>
                   <tr>
                     <th>Month</th>
-                    <th>Days present</th>
-                    <th>Absences</th>
-                    <th>Tardies</th>
+                    <th>Attendance %</th>
+                    <th>Present</th>
+                    <th>Absent</th>
+                    <th>Late</th>
                     <th>Status</th>
                   </tr>
                 </thead>
                 <tbody>
                   {attendanceRecords.map((record) => {
-                    const absenceTotal = Number(record.absences ?? 0)
-                    const status = absenceTotal > 5 ? 'Attention needed' : 'Stable'
+                    const schoolDays = Number(record.school_days ?? 0)
+                    const present = Number(record.days_present ?? 0)
+                    const absent = Number(record.absences ?? 0)
+                    const late = Number(record.times_tardy ?? 0)
+                    const attendancePercentage = schoolDays > 0 ? Math.round((present / schoolDays) * 100) : 0
+                    const status = attendancePercentage < 80 ? 'Attention needed' : 'Stable'
                     return (
                       <tr key={record.id}>
                         <td>{safeText(record.month)}</td>
-                        <td>{record.days_present ?? 'Not available'}</td>
-                        <td>{record.absences ?? 'Not available'}</td>
-                        <td>{record.times_tardy ?? 'Not available'}</td>
+                        <td>{attendancePercentage}%</td>
+                        <td>{present}</td>
+                        <td>{absent}</td>
+                        <td>{late}</td>
                         <td><span className={`badge badge--status ${status === 'Attention needed' ? 'status-warning' : 'status-success'}`}>{status}</span></td>
                       </tr>
                     )

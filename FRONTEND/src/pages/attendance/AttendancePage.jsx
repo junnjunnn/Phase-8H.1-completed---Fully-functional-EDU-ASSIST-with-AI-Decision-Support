@@ -99,14 +99,17 @@ export function AttendancePage() {
             <p className="eyebrow">Attendance records</p>
             <h2>Recent attendance snapshots</h2>
           </div>
-          <div className="search-input-group">
-            <span className="search-icon" aria-hidden="true">🔎</span>
-            <input
-              aria-label="Search attendance records"
-              placeholder="Search by student name or month"
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-            />
+          <div className="section-actions">
+            <a className="action-button" href="/attendance/encode">Encode attendance</a>
+            <div className="search-input-group">
+              <span className="search-icon" aria-hidden="true">🔎</span>
+              <input
+                aria-label="Search attendance records"
+                placeholder="Search by student name or month"
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+              />
+            </div>
           </div>
         </div>
 

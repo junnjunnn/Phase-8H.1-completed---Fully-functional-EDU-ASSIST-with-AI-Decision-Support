@@ -9,6 +9,7 @@ import { StudentDetailPage } from '../pages/students/StudentDetailPage'
 import { AcademicsPage } from '../pages/academics/AcademicsPage'
 import { GradeEncodingPage } from '../pages/academics/GradeEncodingPage'
 import { AttendancePage } from '../pages/attendance/AttendancePage'
+import { AttendanceEncodingPage } from '../pages/attendance/AttendanceEncodingPage'
 import { BehaviorPage } from '../pages/behavior/BehaviorPage'
 import { InterventionsPage } from '../pages/interventions/InterventionsPage'
 import { PredictionsPage } from '../pages/predictions/PredictionsPage'
@@ -32,6 +33,7 @@ export function AppRoutes() {
           <Route path="/academics" element={<AcademicsPage />} />
           <Route path="/academics/encode" element={<GradeEncodingPage />} />
           <Route path="/attendance" element={<AttendancePage />} />
+          <Route path="/attendance/encode" element={<AttendanceEncodingPage />} />
           <Route path="/behavior" element={<BehaviorPage />} />
           <Route path="/interventions" element={<InterventionsPage />} />
           <Route path="/predictions" element={<PredictionsPage />} />
