@@ -46,7 +46,7 @@ class BehavioralAssessmentViewSet(mixins.ListModelMixin, mixins.RetrieveModelMix
         return get_authorized_enrollment_queryset(self.request.user, super().get_queryset(), enrollment_field='enrollment')
 
     def perform_create(self, serializer):
-        instance = serializer.save()
+        instance = serializer.save(assessed_by=self.request.user if self.request.user.is_authenticated else None)
         AuditLog.objects.create(
             user=self.request.user if self.request.user.is_authenticated else None,
             action='CREATE',
@@ -56,7 +56,7 @@ class BehavioralAssessmentViewSet(mixins.ListModelMixin, mixins.RetrieveModelMix
         )
 
     def perform_update(self, serializer):
-        instance = serializer.save()
+        instance = serializer.save(assessed_by=self.request.user if self.request.user.is_authenticated else None)
         AuditLog.objects.create(
             user=self.request.user if self.request.user.is_authenticated else None,
             action='UPDATE',

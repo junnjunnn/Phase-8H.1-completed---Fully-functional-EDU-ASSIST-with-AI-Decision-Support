@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { EmptyState } from '../../components/common/EmptyState'
+import { useAuth } from '../../context/AuthContext'
 import { ErrorBanner } from '../../components/feedback/ErrorBanner'
 import { LoadingSpinner } from '../../components/common/LoadingSpinner'
 import { PageHeader } from '../../components/common/PageHeader'
@@ -13,6 +15,10 @@ function normalizeListResponse(data) {
 }
 
 export function BehaviorPage() {
+  const { user } = useAuth()
+  const role = user?.role_name || user?.role || user?.profile?.role_name || 'NONE'
+  const canManageBehavior = role === 'SUPER_ADMIN' || role === 'SCHOOL_ADMIN' || role === 'TEACHER'
+
   const [behavioralAssessments, setBehavioralAssessments] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -63,6 +69,11 @@ export function BehaviorPage() {
         eyebrow="Behavior"
         title="Behavior monitoring"
         description="Review behavioral assessments and risk factor summaries from the backend."
+        actions={canManageBehavior ? (
+          <Link className="action-button" to="/behavior/encode">
+            Encode behavior
+          </Link>
+        ) : null}
       />
 
       <div className="record-summary-grid">

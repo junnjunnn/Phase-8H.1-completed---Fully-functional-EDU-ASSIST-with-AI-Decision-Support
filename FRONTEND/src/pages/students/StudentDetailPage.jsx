@@ -47,6 +47,27 @@ function riskBadgeClass(riskLevel) {
   return 'badge risk-badge low'
 }
 
+function getBehaviorClassification(average) {
+  const numericAverage = Number(average)
+  if (Number.isNaN(numericAverage)) {
+    return 'Pending'
+  }
+
+  if (numericAverage >= 4.5) {
+    return 'Outstanding'
+  }
+  if (numericAverage >= 4.0) {
+    return 'Very Good'
+  }
+  if (numericAverage >= 3.0) {
+    return 'Good'
+  }
+  if (numericAverage >= 2.0) {
+    return 'Needs Improvement'
+  }
+  return 'At Risk'
+}
+
 export function StudentDetailPage() {
   const { id } = useParams()
 
@@ -271,6 +292,26 @@ export function StudentDetailPage() {
       ],
     }
   }, [latestPrediction])
+
+  const behaviorAverage = useMemo(() => {
+    if (!behaviorRecords.length) {
+      return null
+    }
+
+    const numericScores = behaviorRecords
+      .map((record) => Number(record.numeric_score))
+      .filter((value) => !Number.isNaN(value))
+
+    if (!numericScores.length) {
+      return null
+    }
+
+    return (numericScores.reduce((sum, value) => sum + value, 0) / numericScores.length).toFixed(2)
+  }, [behaviorRecords])
+
+  const behaviorClassification = useMemo(() => {
+    return behaviorAverage ? getBehaviorClassification(behaviorAverage) : 'Pending'
+  }, [behaviorAverage])
 
   const enrollmentSummary = useMemo(() => {
     if (!enrollments.length) {
@@ -680,6 +721,20 @@ export function StudentDetailPage() {
 
           {!behaviorLoading && !behaviorError && behaviorRecords.length > 0 ? (
             <div className="table-card">
+              <div className="record-summary-grid">
+                <article className="detail-card">
+                  <p className="stat-label">Behavior average</p>
+                  <p className="stat-value">{behaviorAverage ?? '—'}</p>
+                </article>
+                <article className="detail-card">
+                  <p className="stat-label">Classification</p>
+                  <p className="stat-value">{behaviorClassification}</p>
+                </article>
+                <article className="detail-card">
+                  <p className="stat-label">Latest period</p>
+                  <p className="stat-value">{behaviorRecords[0]?.quarter ? `Quarter ${behaviorRecords[0].quarter}` : safeText(behaviorRecords[0]?.grading_period_type)}</p>
+                </article>
+              </div>
               <table>
                 <thead>
                   <tr>

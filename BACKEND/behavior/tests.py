@@ -119,3 +119,23 @@ class BehavioralAssessmentAPITests(TestCase):
         with self.assertRaises(ValidationError) as context:
             assessment.full_clean()
         self.assertIn('semester', context.exception.message_dict)
+
+    def test_behavioral_assessment_create_sets_assessed_by(self):
+        self.client.force_authenticate(user=self.teacher)
+        payload = {
+            'enrollment': self.enrollment_a.id,
+            'academic_year': self.academic_year.id,
+            'grading_period_type': 'Quarter',
+            'quarter': 1,
+            'core_value': self.core_value.id,
+            'behavior_indicator': self.behavior_indicator.id,
+            'rating': self.rating.id,
+            'numeric_score': 4.0,
+            'assessment_date': '2025-11-01',
+        }
+
+        response = self.client.post('/api/behavioral-assessments/', payload, format='json')
+
+        self.assertEqual(response.status_code, 201)
+        assessment = BehavioralAssessment.objects.get(pk=response.data['id'])
+        self.assertEqual(assessment.assessed_by, self.teacher)

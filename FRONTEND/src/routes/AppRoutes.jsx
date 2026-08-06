@@ -11,6 +11,7 @@ import { GradeEncodingPage } from '../pages/academics/GradeEncodingPage'
 import { AttendancePage } from '../pages/attendance/AttendancePage'
 import { AttendanceEncodingPage } from '../pages/attendance/AttendanceEncodingPage'
 import { BehaviorPage } from '../pages/behavior/BehaviorPage'
+import { BehaviorEncodingPage } from '../pages/behavior/BehaviorEncodingPage'
 import { InterventionsPage } from '../pages/interventions/InterventionsPage'
 import { PredictionsPage } from '../pages/predictions/PredictionsPage'
 import { ReportsPage } from '../pages/reports/ReportsPage'
@@ -35,6 +36,7 @@ export function AppRoutes() {
           <Route path="/attendance" element={<AttendancePage />} />
           <Route path="/attendance/encode" element={<AttendanceEncodingPage />} />
           <Route path="/behavior" element={<BehaviorPage />} />
+          <Route path="/behavior/encode" element={<BehaviorEncodingPage />} />
           <Route path="/interventions" element={<InterventionsPage />} />
           <Route path="/predictions" element={<PredictionsPage />} />
           <Route path="/profile" element={<ProfilePage />} />
