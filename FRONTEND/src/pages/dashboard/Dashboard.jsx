@@ -322,6 +322,9 @@ export function Dashboard() {
           <Link className="action-button" to="/attendance">Attendance</Link>
           <Link className="action-button" to="/behavior">Behavior</Link>
           <Link className="action-button" to="/interventions">Interventions</Link>
+          <Link className="action-button" to="/reports?category=ai">Open AI reports</Link>
+          <Link className="action-button" to="/reports?category=attendance">Open attendance reports</Link>
+          <Link className="action-button" to="/reports?category=intervention">Open intervention reports</Link>
         </div>
       </section>
     </div>

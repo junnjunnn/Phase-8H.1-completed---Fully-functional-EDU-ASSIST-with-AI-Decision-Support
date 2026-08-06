@@ -58,6 +58,16 @@ class AcademicsAPITests(TestCase):
         self.assertIn(self.record_a.id, record_ids)
         self.assertIn(self.record_b.id, record_ids)
 
+    def test_teacher_cannot_create_sections(self):
+        self.client.force_authenticate(user=self.teacher)
+        response = self.client.post('/api/sections/', {
+            'academic_year': self.academic_year.id,
+            'grade_level': self.grade_level.id,
+            'name': 'New Section',
+            'is_active': True,
+        })
+        self.assertEqual(response.status_code, 403)
+
     def test_duplicate_academic_record_is_rejected(self):
         self.client.force_authenticate(user=self.superadmin)
         response = self.client.post('/api/academic-records/', {

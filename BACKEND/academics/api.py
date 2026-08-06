@@ -2,9 +2,11 @@ from rest_framework import mixins, permissions, viewsets
 from rest_framework.filters import OrderingFilter, SearchFilter
 from django_filters.rest_framework import DjangoFilterBackend
 
+from django.contrib.auth import get_user_model
+
 from audit.models import AuditLog
-from accounts.permissions import IsAuthorizedStaff, IsTeacherOrSchoolAdmin
-from accounts.utils import get_authorized_enrollment_queryset
+from accounts.permissions import IsAuthorizedStaff, IsSchoolAdmin, IsTeacherOrSchoolAdmin
+from accounts.utils import get_authorized_enrollment_queryset, get_user_scope
 from .models import AcademicRecord, AcademicYear, Enrollment, GradeLevel, Section, Strand, Subject
 from .serializers import AcademicRecordSerializer, AcademicYearSerializer, EnrollmentSerializer, GradeLevelSerializer, SectionSerializer, StrandSerializer, SubjectSerializer
 
@@ -14,17 +16,122 @@ class AcademicYearViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixi
     serializer_class = AcademicYearSerializer
     permission_classes = [permissions.IsAuthenticated, IsAuthorizedStaff]
 
+    def get_permissions(self):
+        if self.request.method in ['POST', 'PUT', 'PATCH']:
+            return [permissions.IsAuthenticated(), IsSchoolAdmin()]
+        return [permissions.IsAuthenticated(), IsAuthorizedStaff()]
 
-class GradeLevelViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.GenericViewSet):
+    def perform_create(self, serializer):
+        instance = serializer.save()
+        AuditLog.objects.create(
+            user=self.request.user if self.request.user.is_authenticated else None,
+            action='CREATE',
+            module=self.serializer_class.Meta.model._meta.app_label,
+            object_type=self.serializer_class.Meta.model.__name__,
+            object_id=str(instance.pk),
+        )
+
+    def perform_update(self, serializer):
+        instance = serializer.save()
+        AuditLog.objects.create(
+            user=self.request.user if self.request.user.is_authenticated else None,
+            action='UPDATE',
+            module=self.serializer_class.Meta.model._meta.app_label,
+            object_type=self.serializer_class.Meta.model.__name__,
+            object_id=str(instance.pk),
+        )
+
+
+class GradeLevelViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins.CreateModelMixin, mixins.UpdateModelMixin, viewsets.GenericViewSet):
     queryset = GradeLevel.objects.all()
     serializer_class = GradeLevelSerializer
     permission_classes = [permissions.IsAuthenticated, IsAuthorizedStaff]
+
+    def get_permissions(self):
+        if self.request.method in ['POST', 'PUT', 'PATCH']:
+            return [permissions.IsAuthenticated(), IsSchoolAdmin()]
+        return [permissions.IsAuthenticated(), IsAuthorizedStaff()]
+
+    def perform_create(self, serializer):
+        instance = serializer.save()
+        AuditLog.objects.create(
+            user=self.request.user if self.request.user.is_authenticated else None,
+            action='CREATE',
+            module=self.serializer_class.Meta.model._meta.app_label,
+            object_type=self.serializer_class.Meta.model.__name__,
+            object_id=str(instance.pk),
+        )
+
+    def perform_update(self, serializer):
+        instance = serializer.save()
+        AuditLog.objects.create(
+            user=self.request.user if self.request.user.is_authenticated else None,
+            action='UPDATE',
+            module=self.serializer_class.Meta.model._meta.app_label,
+            object_type=self.serializer_class.Meta.model.__name__,
+            object_id=str(instance.pk),
+        )
 
 
 class SectionViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins.CreateModelMixin, mixins.UpdateModelMixin, viewsets.GenericViewSet):
     queryset = Section.objects.select_related('grade_level', 'academic_year', 'adviser').all()
     serializer_class = SectionSerializer
     permission_classes = [permissions.IsAuthenticated, IsAuthorizedStaff]
+
+    def get_permissions(self):
+        if self.request.method in ['POST', 'PUT', 'PATCH']:
+            return [permissions.IsAuthenticated(), IsSchoolAdmin()]
+        return [permissions.IsAuthenticated(), IsAuthorizedStaff()]
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        if get_user_scope(self.request.user) == 'teacher':
+            assigned_sections = self.request.user.profile.assigned_sections.values_list('pk', flat=True)
+            return queryset.filter(pk__in=assigned_sections).distinct()
+        return queryset
+
+    def _sync_teacher_assignment(self, section, adviser):
+        previous_adviser_id = None
+        if section.pk:
+            previous_adviser_id = Section.objects.filter(pk=section.pk).values_list('adviser_id', flat=True).first()
+
+        if adviser and getattr(adviser, 'pk', None):
+            adviser_profile = getattr(adviser, 'profile', None)
+            if adviser_profile:
+                adviser_profile.assigned_sections.add(section)
+
+        if previous_adviser_id and adviser and previous_adviser_id != adviser.pk:
+            previous_user = get_user_model().objects.filter(pk=previous_adviser_id).first()
+            previous_profile = getattr(previous_user, 'profile', None)
+            if previous_profile:
+                previous_profile.assigned_sections.remove(section)
+        elif previous_adviser_id and not adviser:
+            previous_user = get_user_model().objects.filter(pk=previous_adviser_id).first()
+            previous_profile = getattr(previous_user, 'profile', None)
+            if previous_profile:
+                previous_profile.assigned_sections.remove(section)
+
+    def perform_create(self, serializer):
+        instance = serializer.save()
+        self._sync_teacher_assignment(instance, instance.adviser)
+        AuditLog.objects.create(
+            user=self.request.user if self.request.user.is_authenticated else None,
+            action='CREATE',
+            module=self.serializer_class.Meta.model._meta.app_label,
+            object_type=self.serializer_class.Meta.model.__name__,
+            object_id=str(instance.pk),
+        )
+
+    def perform_update(self, serializer):
+        instance = serializer.save()
+        self._sync_teacher_assignment(instance, instance.adviser)
+        AuditLog.objects.create(
+            user=self.request.user if self.request.user.is_authenticated else None,
+            action='UPDATE',
+            module=self.serializer_class.Meta.model._meta.app_label,
+            object_type=self.serializer_class.Meta.model.__name__,
+            object_id=str(instance.pk),
+        )
 
 
 class StrandViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins.CreateModelMixin, mixins.UpdateModelMixin, viewsets.GenericViewSet):

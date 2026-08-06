@@ -1,4 +1,5 @@
 import {
+  AcademicCapIcon,
   BellIcon,
   CalendarDaysIcon,
   ChartBarIcon,
@@ -20,6 +21,7 @@ import { navigationItems } from '../../config/navigation'
 const sectionConfig = [
   { key: 'main', label: 'Main', items: ['Dashboard'] },
   { key: 'records', label: 'Academic Records', items: ['Students', 'Attendance', 'Behavior', 'Interventions'] },
+  { key: 'management', label: 'Academic Management', items: ['Academic Structure', 'Academics', 'My Classes'] },
   { key: 'ai', label: 'AI Decision Support', items: ['Predictions', 'Reports'] },
   { key: 'admin', label: 'Administration', items: ['User Management'] },
 ]
@@ -33,6 +35,8 @@ const iconMap = {
   Predictions: SparklesIcon,
   Reports: ChartBarIcon,
   'User Management': UserGroupIcon,
+  'Academic Structure': ClipboardDocumentListIcon,
+  'My Classes': AcademicCapIcon,
   Settings: Cog6ToothIcon,
 }
 

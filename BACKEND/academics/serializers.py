@@ -16,9 +16,28 @@ class GradeLevelSerializer(serializers.ModelSerializer):
 
 
 class SectionSerializer(serializers.ModelSerializer):
+    student_count = serializers.SerializerMethodField()
+    academic_year_name = serializers.SerializerMethodField()
+    grade_level_name = serializers.SerializerMethodField()
+    adviser_name = serializers.SerializerMethodField()
+
     class Meta:
         model = Section
-        fields = ['id', 'grade_level', 'academic_year', 'name', 'adviser', 'is_active']
+        fields = ['id', 'grade_level', 'academic_year', 'name', 'capacity', 'description', 'adviser', 'is_active', 'student_count', 'academic_year_name', 'grade_level_name', 'adviser_name']
+
+    def get_student_count(self, obj):
+        return obj.enrollments.filter(enrollment_status='active').count()
+
+    def get_academic_year_name(self, obj):
+        return obj.academic_year.name if obj.academic_year else None
+
+    def get_grade_level_name(self, obj):
+        return obj.grade_level.name if obj.grade_level else None
+
+    def get_adviser_name(self, obj):
+        if not obj.adviser:
+            return None
+        return f"{obj.adviser.first_name} {obj.adviser.last_name}".strip() or obj.adviser.username
 
 
 class StrandSerializer(serializers.ModelSerializer):

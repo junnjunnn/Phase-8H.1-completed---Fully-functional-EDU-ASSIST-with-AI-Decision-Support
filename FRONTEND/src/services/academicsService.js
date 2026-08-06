@@ -44,3 +44,33 @@ export async function updateAcademicRecord(id, payload) {
   const response = await apiClient.patch(`/academic-records/${id}/`, payload)
   return response.data
 }
+
+export async function createAcademicYear(payload) {
+  const response = await apiClient.post('/academic-years/', payload)
+  return response.data
+}
+
+export async function updateAcademicYear(id, payload) {
+  const response = await apiClient.patch(`/academic-years/${id}/`, payload)
+  return response.data
+}
+
+export async function createGradeLevel(payload) {
+  const response = await apiClient.post('/grade-levels/', payload)
+  return response.data
+}
+
+export async function updateGradeLevel(id, payload) {
+  const response = await apiClient.patch(`/grade-levels/${id}/`, payload)
+  return response.data
+}
+
+export async function createSection(payload) {
+  const response = await apiClient.post('/sections/', payload)
+  return response.data
+}
+
+export async function updateSection(id, payload) {
+  const response = await apiClient.patch(`/sections/${id}/`, payload)
+  return response.data
+}

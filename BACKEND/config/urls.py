@@ -20,6 +20,7 @@ from academics.api import (
 )
 from attendance.api import AttendanceRecordViewSet
 from predictions.api import DashboardViewSet
+from reports.api import ReportsViewSet
 from behavior.api import (
     CoreValueViewSet,
     BehaviorIndicatorViewSet,
@@ -48,6 +49,7 @@ router.register('interventions', InterventionViewSet, basename='intervention')
 router.register('risk-predictions', RiskPredictionViewSet, basename='risk-prediction')
 router.register('prediction-factors', PredictionFactorViewSet, basename='prediction-factor')
 router.register('dashboard-summary', DashboardViewSet, basename='dashboard-summary')
+router.register('reports', ReportsViewSet, basename='report')
 
 
 @require_GET

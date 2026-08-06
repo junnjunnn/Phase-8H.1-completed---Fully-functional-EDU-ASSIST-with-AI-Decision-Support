@@ -54,6 +54,8 @@ class Section(models.Model):
     grade_level = models.ForeignKey(GradeLevel, on_delete=models.CASCADE, related_name='sections')
     academic_year = models.ForeignKey(AcademicYear, on_delete=models.CASCADE, related_name='sections')
     name = models.CharField(max_length=50)
+    capacity = models.PositiveIntegerField(default=0)
+    description = models.TextField(blank=True, default='')
     adviser = models.ForeignKey(get_user_model(), null=True, blank=True, on_delete=models.SET_NULL, related_name='advised_sections')
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)

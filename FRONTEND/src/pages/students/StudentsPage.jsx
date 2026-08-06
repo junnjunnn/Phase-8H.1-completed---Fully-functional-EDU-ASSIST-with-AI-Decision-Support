@@ -52,6 +52,8 @@ export function StudentsPage() {
   const [gradeLevels, setGradeLevels] = useState([])
   const [sections, setSections] = useState([])
   const [registerMessage, setRegisterMessage] = useState('')
+  const [selectedYear, setSelectedYear] = useState('')
+  const [selectedGrade, setSelectedGrade] = useState('')
   const canManageStudents = user?.role_name === 'SUPER_ADMIN' || user?.role_name === 'SCHOOL_ADMIN'
 
   const canCreateStudent = canManageStudents
@@ -131,6 +133,15 @@ export function StudentsPage() {
     const { name, value } = event.target
     setRegisterForm((current) => ({ ...current, [name]: value }))
     setRegisterErrors((current) => ({ ...current, [name]: '' }))
+
+    if (name === 'academic_year') {
+      setSelectedYear(value)
+      setRegisterForm((current) => ({ ...current, grade_level: '', section: '' }))
+    }
+    if (name === 'grade_level') {
+      setSelectedGrade(value)
+      setRegisterForm((current) => ({ ...current, section: '' }))
+    }
   }
 
   async function handleRegisterSubmit(event) {
@@ -359,7 +370,11 @@ export function StudentsPage() {
                   <span>Section</span>
                   <select name="section" value={registerForm.section} onChange={updateRegisterField} aria-invalid={Boolean(registerErrors.section)}>
                     <option value="">Select</option>
-                    {sections.filter((section) => section.grade_level === registerForm.grade_level || section.grade_level_id === registerForm.grade_level).map((section) => <option key={section.id} value={section.id}>{section.name}</option>)}
+                    {sections.filter((section) => {
+                      const matchesYear = !selectedYear || String(section.academic_year) === String(selectedYear) || String(section.academic_year_id || section.academic_year) === String(selectedYear)
+                      const matchesGrade = !selectedGrade || String(section.grade_level) === String(selectedGrade) || String(section.grade_level_id || section.grade_level) === String(selectedGrade)
+                      return matchesYear && matchesGrade
+                    }).map((section) => <option key={section.id} value={section.id}>{section.name}</option>)}
                   </select>
                   {registerErrors.section ? <small className="field-error">{registerErrors.section}</small> : null}
                 </label>
