@@ -13,9 +13,9 @@
   --color-text-primary: #11253f;
   --color-text-secondary: #53627c;
   --color-text-muted: #768299;
-  --color-accent: #f59e0b;
-  --color-accent-dark: #c47a00;
-  --color-accent-soft: #fff3d6;
+  --color-accent: #113f8a;
+  --color-accent-dark: #0d2d5f;
+  --color-accent-soft: #dce9ff;
   --color-success: #0f766e;
   --color-success-soft: #d1fae5;
   --color-warning: #b45309;
@@ -407,14 +407,9 @@ button:disabled {
 }
 
 .table-card th {
-  background: var(--color-background-alt);
-  color: var(--color-primary-dark);
-  font-size: var(--font-size-small);
-  font-weight: var(--font-weight-semibold);
-}
-
-.table-card tbody tr:hover {
-  background: var(--color-hover);
+    position: sticky;
+    top: 0;
+    z-index: 1;
 }
 
 .table-card tbody tr:last-child td {

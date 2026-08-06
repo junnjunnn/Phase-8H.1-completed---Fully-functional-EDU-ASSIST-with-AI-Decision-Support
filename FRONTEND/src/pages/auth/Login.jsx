@@ -69,7 +69,7 @@ export function Login() {
           required
         />
 
-        <button type="submit" disabled={submitting}>
+        <button type="submit" className="btn btn-primary" disabled={submitting}>
           {submitting ? 'Signing in...' : 'Sign in'}
         </button>
       </form>

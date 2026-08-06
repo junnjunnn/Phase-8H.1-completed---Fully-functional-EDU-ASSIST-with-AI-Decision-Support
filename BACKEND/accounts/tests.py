@@ -51,3 +51,22 @@ class AuthenticationAPITests(APITestCase):
         self.client.force_authenticate(user=superadmin)
         response = self.client.get('/api/auth/users/')
         self.assertEqual(response.status_code, 200)
+
+    def test_current_user_can_update_profile(self):
+        self.client.force_authenticate(user=self.user)
+        response = self.client.patch('/api/auth/me/', {'first_name': 'Ada', 'last_name': 'Lovelace', 'email': 'ada@example.com', 'username': 'ada'}, format='json')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['first_name'], 'Ada')
+        self.assertEqual(response.data['email'], 'ada@example.com')
+        self.assertEqual(response.data['username'], 'ada')
+
+    def test_current_user_can_change_password(self):
+        self.client.force_authenticate(user=self.user)
+        response = self.client.post('/api/auth/change-password/', {
+            'current_password': 'Pass1234!',
+            'new_password': 'NewPass123!',
+            'confirm_password': 'NewPass123!',
+        }, format='json')
+        self.assertEqual(response.status_code, 200)
+        self.user.refresh_from_db()
+        self.assertTrue(self.user.check_password('NewPass123!'))

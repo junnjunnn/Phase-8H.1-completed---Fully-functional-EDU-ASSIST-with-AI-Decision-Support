@@ -7,5 +7,6 @@ export const navigationItems = [
   { label: 'Interventions', path: '/interventions', roles: ['SUPER_ADMIN', 'SCHOOL_ADMIN', 'TEACHER', 'GUIDANCE'] },
   { label: 'Predictions', path: '/predictions', roles: ['SUPER_ADMIN', 'SCHOOL_ADMIN', 'TEACHER', 'GUIDANCE'] },
   { label: 'Reports', path: '/reports', roles: ['SUPER_ADMIN', 'SCHOOL_ADMIN', 'GUIDANCE'] },
+  { label: 'User Management', path: '/users', roles: ['SUPER_ADMIN', 'SCHOOL_ADMIN'] },
   { label: 'Administration', path: '/admin', roles: ['SUPER_ADMIN', 'SCHOOL_ADMIN'] },
 ]

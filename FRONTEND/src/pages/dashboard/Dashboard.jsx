@@ -1,5 +1,14 @@
 import { Link } from 'react-router-dom'
 import { useEffect, useMemo, useState } from 'react'
+import {
+  AcademicCapIcon,
+  ChartBarIcon,
+  CheckCircleIcon,
+  ExclamationTriangleIcon,
+  ShieldExclamationIcon,
+  SparklesIcon,
+  UserGroupIcon,
+} from '@heroicons/react/24/outline'
 import { useAuth } from '../../context/AuthContext'
 import { EmptyState } from '../../components/common/EmptyState'
 import { ErrorBanner } from '../../components/feedback/ErrorBanner'
@@ -8,12 +17,12 @@ import { getApiErrorMessage } from '../../services/api'
 import { getDashboardSummary } from '../../services/predictionService'
 
 const placeholderCards = [
-  { title: 'Total students', message: 'Loading…', icon: '👩‍🎓' },
-  { title: 'Risk predictions', message: 'Loading…', icon: '🔮' },
-  { title: 'At-risk students', message: 'Loading…', icon: '⚠️' },
-  { title: 'High risk', message: 'Loading…', icon: '🔥' },
-  { title: 'Moderate risk', message: 'Loading…', icon: '📊' },
-  { title: 'Low risk', message: 'Loading…', icon: '✅' },
+  { title: 'Total students', message: 'Loading…', icon: UserGroupIcon },
+  { title: 'Risk predictions', message: 'Loading…', icon: SparklesIcon },
+  { title: 'At-risk students', message: 'Loading…', icon: ExclamationTriangleIcon },
+  { title: 'High risk', message: 'Loading…', icon: ShieldExclamationIcon },
+  { title: 'Moderate risk', message: 'Loading…', icon: ChartBarIcon },
+  { title: 'Low risk', message: 'Loading…', icon: CheckCircleIcon },
 ]
 
 const riskBadgeClass = (level) => {
@@ -70,12 +79,12 @@ export function Dashboard() {
 
   const summaryCards = dashboardData
     ? [
-        { title: 'Total students', message: dashboardData.total_students ?? 'N/A', icon: '👩‍🎓' },
-        { title: 'Risk predictions', message: dashboardData.total_predictions ?? 'N/A', icon: '🔮' },
-        { title: 'At-risk students', message: dashboardData.at_risk_students ?? 'N/A', icon: '⚠️' },
-        { title: 'High risk', message: dashboardData.high_risk_students ?? 'N/A', icon: '🔥' },
-        { title: 'Moderate risk', message: dashboardData.moderate_risk_students ?? 'N/A', icon: '📊' },
-        { title: 'Low risk', message: dashboardData.low_risk_students ?? 'N/A', icon: '✅' },
+        { title: 'Total students', message: dashboardData.total_students ?? 'N/A', icon: UserGroupIcon },
+        { title: 'Risk predictions', message: dashboardData.total_predictions ?? 'N/A', icon: SparklesIcon },
+        { title: 'At-risk students', message: dashboardData.at_risk_students ?? 'N/A', icon: ExclamationTriangleIcon },
+        { title: 'High risk', message: dashboardData.high_risk_students ?? 'N/A', icon: ShieldExclamationIcon },
+        { title: 'Moderate risk', message: dashboardData.moderate_risk_students ?? 'N/A', icon: ChartBarIcon },
+        { title: 'Low risk', message: dashboardData.low_risk_students ?? 'N/A', icon: CheckCircleIcon },
       ]
     : placeholderCards
 
@@ -138,7 +147,9 @@ export function Dashboard() {
           <section className="dashboard-summary-grid" aria-label="Summary metrics">
             {summaryCards.map((card) => (
               <article key={card.title} className="dashboard-metric-card">
-                <div className="dashboard-metric-icon">{card.icon}</div>
+                <div className="dashboard-metric-icon">
+                  {card.icon ? <card.icon className="icon" /> : null}
+                </div>
                 <div>
                   <p className="stat-label">{card.title}</p>
                   <p className="stat-value">{card.message}</p>

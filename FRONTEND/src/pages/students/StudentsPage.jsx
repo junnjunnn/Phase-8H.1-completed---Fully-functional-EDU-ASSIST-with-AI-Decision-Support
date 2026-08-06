@@ -1,3 +1,4 @@
+import { MagnifyingGlassIcon } from '@heroicons/react/24/outline'
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { EmptyState } from '../../components/common/EmptyState'
@@ -66,7 +67,7 @@ export function StudentsPage() {
       <div className="panel-card students-panel">
         <div className="students-toolbar">
           <div className="search-input-group">
-            <span className="search-icon" aria-hidden="true">🔍</span>
+            <span className="search-icon" aria-hidden="true"><MagnifyingGlassIcon className="icon" /></span>
             <input
               aria-label="Search students"
               placeholder="Search by name or LRN"

@@ -12,6 +12,11 @@ import { BehaviorPage } from '../pages/behavior/BehaviorPage'
 import { InterventionsPage } from '../pages/interventions/InterventionsPage'
 import { PredictionsPage } from '../pages/predictions/PredictionsPage'
 import { ReportsPage } from '../pages/reports/ReportsPage'
+import { UsersPage } from '../pages/users/UsersPage'
+import { ProfilePage } from '../pages/profile/ProfilePage'
+import { AccessDeniedPage } from '../pages/errors/AccessDeniedPage'
+import { NotFoundPage } from '../pages/errors/NotFoundPage'
+import { ComingSoonCard } from '../components/common/ComingSoonCard'
 
 export function AppRoutes() {
   return (
@@ -28,11 +33,17 @@ export function AppRoutes() {
           <Route path="/behavior" element={<BehaviorPage />} />
           <Route path="/interventions" element={<InterventionsPage />} />
           <Route path="/predictions" element={<PredictionsPage />} />
+          <Route path="/profile" element={<ProfilePage />} />
+          <Route path="/admin" element={<ComingSoonCard title="Admin Console" description="Administrative workflows and system controls are being finalized for a more complete operations experience." features={['User oversight', 'Policy controls', 'School-wide reporting', 'Audit visibility']} />} />
+          <Route element={<RoleRoute allowedRoles={['SUPER_ADMIN', 'SCHOOL_ADMIN']} />}>
+            <Route path="/users" element={<UsersPage />} />
+          </Route>
           <Route element={<RoleRoute allowedRoles={['SUPER_ADMIN', 'SCHOOL_ADMIN', 'GUIDANCE']} />}>
             <Route path="/reports" element={<ReportsPage />} />
           </Route>
         </Route>
       </Route>
+      <Route path="*" element={<NotFoundPage />} />
     </Routes>
   )
 }
