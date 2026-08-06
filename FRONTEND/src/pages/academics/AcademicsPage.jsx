@@ -59,7 +59,7 @@ export function AcademicsPage() {
           enrollments: enrollments.count,
           records: records.count,
         })
-        setAcademicRecords(records.items.slice(0, 10))
+        setAcademicRecords(records.items.slice(0, 12))
         setPagination({
           count: records.count,
           next: records.next,
@@ -84,84 +84,98 @@ export function AcademicsPage() {
   }, [search])
 
   return (
-    <div className="page-stack">
+    <div className="page-stack academics-page">
       <PageHeader
         eyebrow="Academics"
         title="Academic monitoring"
         description="Browse academic years, enrollments, subjects, and academic records from the backend."
       />
 
-      <div className="summary-grid">
-        <article className="info-card stat-card-accent">
+      <div className="record-summary-grid">
+        <article className="detail-card stat-card-accent">
           <p className="stat-label">Academic years</p>
           <p className="stat-value">{summary.years}</p>
         </article>
-        <article className="info-card stat-card-accent">
+        <article className="detail-card stat-card-accent">
           <p className="stat-label">Grade levels</p>
           <p className="stat-value">{summary.gradeLevels}</p>
         </article>
-        <article className="info-card stat-card-accent">
+        <article className="detail-card stat-card-accent">
           <p className="stat-label">Subjects</p>
           <p className="stat-value">{summary.subjects}</p>
         </article>
-        <article className="info-card stat-card-accent">
+        <article className="detail-card stat-card-accent">
           <p className="stat-label">Enrollments</p>
           <p className="stat-value">{summary.enrollments}</p>
         </article>
-        <article className="info-card stat-card-accent">
+        <article className="detail-card stat-card-accent">
           <p className="stat-label">Academic records</p>
           <p className="stat-value">{summary.records}</p>
         </article>
       </div>
 
-      <div className="panel-card">
+      <div className="panel-card record-panel">
         <div className="section-header">
           <div>
             <p className="eyebrow">Academic records</p>
             <h2>Latest academic evaluations</h2>
           </div>
-          <input
-            aria-label="Search academic records"
-            placeholder="Search student name or subject"
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-          />
+          <div className="search-input-group">
+            <span className="search-icon" aria-hidden="true">🔎</span>
+            <input
+              aria-label="Search academic records"
+              placeholder="Search student name or subject"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+            />
+          </div>
         </div>
 
         {error ? <ErrorBanner message={error} /> : null}
-        {loading ? <LoadingSpinner label="Loading academic data..." /> : null}
+
+        {loading ? (
+          <div className="table-skeleton-grid">
+            {Array.from({ length: 4 }).map((_, index) => (
+              <div key={index} className="table-skeleton-card" />
+            ))}
+          </div>
+        ) : null}
 
         {!loading && !error && academicRecords.length === 0 ? (
           <EmptyState
-            title="No academic records found"
-            message="There are no academic records in the backend for the current search criteria."
+            title={search ? 'No academic records match search' : 'No academic records available'}
+            message={search ? 'Try a different keyword or clear the search filter.' : 'There are no academic records available in the backend.'}
           />
         ) : null}
 
         {!loading && !error && academicRecords.length > 0 ? (
           <>
-            <p>{pagination.count} record(s) found.</p>
+            <div className="record-table-header">
+              <p>{pagination.count} academic record{pagination.count === 1 ? '' : 's'} found.</p>
+            </div>
             <div className="table-card">
-              <table>
+              <table className="records-table">
                 <thead>
                   <tr>
-                    <th>Enrollment</th>
-                    <th>Subject</th>
-                    <th>Year</th>
-                    <th>Period</th>
-                    <th>Grade</th>
-                    <th>Remarks</th>
+                    <th scope="col">Enrollment</th>
+                    <th scope="col">Subject</th>
+                    <th scope="col">Year</th>
+                    <th scope="col">Period</th>
+                    <th scope="col">Grade</th>
+                    <th scope="col">Remarks</th>
                   </tr>
                 </thead>
                 <tbody>
                   {academicRecords.map((record) => (
                     <tr key={record.id}>
-                      <td>{record.enrollment || '—'}</td>
-                      <td>{record.subject || '—'}</td>
-                      <td>{record.academic_year || '—'}</td>
-                      <td>{record.grading_period_type || '—'}</td>
-                      <td>{record.grade ?? '—'}</td>
-                      <td>{record.remarks || '—'}</td>
+                      <td data-label="Enrollment">{record.enrollment || '—'}</td>
+                      <td data-label="Subject">
+                        <span className="badge badge--subject">{record.subject || '—'}</span>
+                      </td>
+                      <td data-label="Year">{record.academic_year || '—'}</td>
+                      <td data-label="Period">{record.grading_period_type || '—'}</td>
+                      <td data-label="Grade">{record.grade ?? '—'}</td>
+                      <td data-label="Remarks">{record.remarks || '—'}</td>
                     </tr>
                   ))}
                 </tbody>

@@ -36,7 +36,7 @@ export function BehaviorPage() {
         const normalized = normalizeListResponse(data)
         const assessments = normalized.items
 
-        setBehavioralAssessments(assessments.slice(0, 10))
+        setBehavioralAssessments(assessments.slice(0, 12))
         setSummary({ assessments: normalized.count })
         setPagination({ count: normalized.count, next: normalized.next, previous: normalized.previous })
       } catch (err) {
@@ -58,57 +58,69 @@ export function BehaviorPage() {
   }, [search])
 
   return (
-    <div className="page-stack">
+    <div className="page-stack behavior-page">
       <PageHeader
         eyebrow="Behavior"
         title="Behavior monitoring"
         description="Review behavioral assessments and risk factor summaries from the backend."
       />
 
-      <div className="summary-grid">
-        <article className="info-card stat-card-accent">
+      <div className="record-summary-grid">
+        <article className="detail-card stat-card-accent">
           <p className="stat-label">Behavioral assessments</p>
           <p className="stat-value">{summary.assessments}</p>
         </article>
       </div>
 
-      <div className="panel-card">
+      <div className="panel-card record-panel">
         <div className="section-header">
           <div>
             <p className="eyebrow">Behavior assessments</p>
             <h2>Recent behavioral evaluations</h2>
           </div>
-          <input
-            aria-label="Search behavioral assessments"
-            placeholder="Search by student or behavior indicator"
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-          />
+          <div className="search-input-group">
+            <span className="search-icon" aria-hidden="true">🔎</span>
+            <input
+              aria-label="Search behavioral assessments"
+              placeholder="Search by student or behavior indicator"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+            />
+          </div>
         </div>
 
         {error ? <ErrorBanner message={error} /> : null}
-        {loading ? <LoadingSpinner label="Loading behavior data..." /> : null}
+
+        {loading ? (
+          <div className="table-skeleton-grid">
+            {Array.from({ length: 4 }).map((_, index) => (
+              <div key={index} className="students-skeleton-card" />
+            ))}
+          </div>
+        ) : null}
 
         {!loading && !error && behavioralAssessments.length === 0 ? (
           <EmptyState
-            title="No behavioral assessments found"
-            message="There are currently no behavioral assessment records matching your search."
+            title={search ? 'No behavior records match search' : 'No behavioral assessments available'}
+            message={search ? 'Try a different search term or clear the filter.' : 'There are no behavioral assessment records available from the backend.'}
           />
         ) : null}
 
         {!loading && !error && behavioralAssessments.length > 0 ? (
           <>
-            <p>{pagination.count} record(s) found.</p>
+            <div className="record-table-header">
+              <p>{pagination.count} behavioral record{pagination.count === 1 ? '' : 's'} found.</p>
+            </div>
             <div className="table-card">
-              <table>
+              <table className="records-table">
                 <thead>
                   <tr>
-                    <th>Enrollment</th>
-                    <th>Indicator</th>
-                    <th>Rating</th>
-                    <th>Period</th>
-                    <th>Date</th>
-                    <th>Remarks</th>
+                    <th scope="col">Enrollment</th>
+                    <th scope="col">Indicator</th>
+                    <th scope="col">Rating</th>
+                    <th scope="col">Period</th>
+                    <th scope="col">Date</th>
+                    <th scope="col">Remarks</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -121,12 +133,12 @@ export function BehaviorPage() {
                       : assessment.grading_period_type || '—'
                     return (
                       <tr key={assessment.id}>
-                        <td>{assessment.enrollment || '—'}</td>
-                        <td>{assessment.behavior_indicator_name || assessment.behavior_indicator || '—'}</td>
-                        <td>{ratingDisplay}</td>
-                        <td>{period}</td>
-                        <td>{assessment.assessment_date || '—'}</td>
-                        <td>{assessment.remarks || '—'}</td>
+                        <td data-label="Enrollment">{assessment.enrollment || '—'}</td>
+                        <td data-label="Indicator">{assessment.behavior_indicator_name || assessment.behavior_indicator || '—'}</td>
+                        <td data-label="Rating">{ratingDisplay}</td>
+                        <td data-label="Period">{period}</td>
+                        <td data-label="Date">{assessment.assessment_date || '—'}</td>
+                        <td data-label="Remarks">{assessment.remarks || '—'}</td>
                       </tr>
                     )
                   })}

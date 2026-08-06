@@ -64,9 +64,24 @@ export function AppLayout() {
         <nav className="nav-section" aria-label="Primary navigation">
           <p className="nav-section-title">Main</p>
           <ul>
-            {primaryItems.map((item) => {
-              const Icon = iconMap[item.label] || Home
-              return (
+            {primaryItems.map((item) => (
+              <li key={item.path}>
+                <NavLink to={item.path} className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}>
+                  <span className="nav-link-icon" aria-hidden="true">
+                    {iconMap[item.label] || '•'}
+                  </span>
+                  <span>{item.label}</span>
+                </NavLink>
+              </li>
+            ))}
+          </ul>
+        </nav>
+
+        {secondaryItems.length > 0 ? (
+          <nav className="nav-section" aria-label="Secondary navigation">
+            <p className="nav-section-title">Insights</p>
+            <ul>
+              {secondaryItems.map((item) => (
                 <li key={item.path}>
                   <NavLink to={item.path} className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}>
                     <span className="nav-link-icon" aria-hidden="true">
@@ -75,28 +90,7 @@ export function AppLayout() {
                     <span>{item.label}</span>
                   </NavLink>
                 </li>
-              )
-            })}
-          </ul>
-        </nav>
-
-        {secondaryItems.length > 0 ? (
-          <nav className="nav-section" aria-label="Secondary navigation">
-            <p className="nav-section-title">Insights</p>
-            <ul>
-              {secondaryItems.map((item) => {
-                const Icon = iconMap[item.label] || Home
-                return (
-                  <li key={item.path}>
-                    <NavLink to={item.path} className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}>
-                      <span className="nav-link-icon" aria-hidden="true">
-                        <Icon size={18} />
-                      </span>
-                      <span>{item.label}</span>
-                    </NavLink>
-                  </li>
-                )
-              })}
+              ))}
             </ul>
           </nav>
         ) : null}
@@ -107,7 +101,7 @@ export function AppLayout() {
             <p>{user?.role || 'No role'}</p>
           </div>
           <button type="button" className="icon-button sidebar-logout" onClick={logout} aria-label="Logout">
-            <ChevronRight size={18} />
+            →
           </button>
         </div>
       </aside>
@@ -137,7 +131,7 @@ export function AppLayout() {
 
           <div className="topbar-actions">
             <button type="button" className="icon-button" aria-label="Notifications">
-              <Bell size={18} />
+              🔔
             </button>
             <div className="profile-chip" aria-label="Profile information">
               <span className="profile-avatar">{initials}</span>

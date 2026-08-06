@@ -45,7 +45,7 @@ export function AttendancePage() {
           { records: 0, present: 0, absences: 0, tardies: 0 },
         )
 
-        setAttendanceRecords(records.slice(0, 10))
+        setAttendanceRecords(records.slice(0, 12))
         setSummary({ records: normalized.count, present: totals.present, absences: totals.absences, tardies: totals.tardies })
         setPagination({ count: normalized.count, next: normalized.next, previous: normalized.previous })
       } catch (err) {
@@ -67,78 +67,90 @@ export function AttendancePage() {
   }, [search])
 
   return (
-    <div className="page-stack">
+    <div className="page-stack attendance-page">
       <PageHeader
         eyebrow="Attendance"
         title="Attendance monitoring"
         description="Review backend attendance records and absence summaries."
       />
 
-      <div className="summary-grid">
-        <article className="info-card stat-card-accent">
+      <div className="record-summary-grid">
+        <article className="detail-card stat-card-accent">
           <p className="stat-label">Attendance records</p>
           <p className="stat-value">{summary.records}</p>
         </article>
-        <article className="info-card stat-card-accent">
+        <article className="detail-card stat-card-accent">
           <p className="stat-label">Days present</p>
           <p className="stat-value">{summary.present}</p>
         </article>
-        <article className="info-card stat-card-accent">
+        <article className="detail-card stat-card-accent">
           <p className="stat-label">Absences</p>
           <p className="stat-value">{summary.absences}</p>
         </article>
-        <article className="info-card stat-card-accent">
+        <article className="detail-card stat-card-accent">
           <p className="stat-label">Tardies</p>
           <p className="stat-value">{summary.tardies}</p>
         </article>
       </div>
 
-      <div className="panel-card">
+      <div className="panel-card record-panel">
         <div className="section-header">
           <div>
             <p className="eyebrow">Attendance records</p>
             <h2>Recent attendance snapshots</h2>
           </div>
-          <input
-            aria-label="Search attendance records"
-            placeholder="Search by student name or month"
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-          />
+          <div className="search-input-group">
+            <span className="search-icon" aria-hidden="true">🔎</span>
+            <input
+              aria-label="Search attendance records"
+              placeholder="Search by student name or month"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+            />
+          </div>
         </div>
 
         {error ? <ErrorBanner message={error} /> : null}
-        {loading ? <LoadingSpinner label="Loading attendance data..." /> : null}
+
+        {loading ? (
+          <div className="table-skeleton-grid">
+            {Array.from({ length: 4 }).map((_, index) => (
+              <div key={index} className="students-skeleton-card" />
+            ))}
+          </div>
+        ) : null}
 
         {!loading && !error && attendanceRecords.length === 0 ? (
           <EmptyState
-            title="No attendance records found"
-            message="There are currently no attendance records available for the current search criteria."
+            title={search ? 'No attendance records match search' : 'No attendance records available'}
+            message={search ? 'Try a different keyword or clear the search filter.' : 'There are no attendance records available in the backend.'}
           />
         ) : null}
 
         {!loading && !error && attendanceRecords.length > 0 ? (
           <>
-            <p>{pagination.count} record(s) found.</p>
+            <div className="record-table-header">
+              <p>{pagination.count} attendance record{pagination.count === 1 ? '' : 's'} found.</p>
+            </div>
             <div className="table-card">
-              <table>
+              <table className="records-table">
                 <thead>
                   <tr>
-                    <th>Enrollment</th>
-                    <th>Month</th>
-                    <th>Days present</th>
-                    <th>Absences</th>
-                    <th>Tardies</th>
+                    <th scope="col">Enrollment</th>
+                    <th scope="col">Month</th>
+                    <th scope="col">Days present</th>
+                    <th scope="col">Absences</th>
+                    <th scope="col">Tardies</th>
                   </tr>
                 </thead>
                 <tbody>
                   {attendanceRecords.map((record) => (
                     <tr key={record.id}>
-                      <td>{record.enrollment || '—'}</td>
-                      <td>{record.month || '—'}</td>
-                      <td>{record.days_present ?? '—'}</td>
-                      <td>{record.absences ?? '—'}</td>
-                      <td>{record.times_tardy ?? '—'}</td>
+                      <td data-label="Enrollment">{record.enrollment || '—'}</td>
+                      <td data-label="Month">{record.month || '—'}</td>
+                      <td data-label="Days present">{record.days_present ?? '—'}</td>
+                      <td data-label="Absences">{record.absences ?? '—'}</td>
+                      <td data-label="Tardies">{record.times_tardy ?? '—'}</td>
                     </tr>
                   ))}
                 </tbody>

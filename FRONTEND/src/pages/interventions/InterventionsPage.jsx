@@ -12,6 +12,13 @@ function normalizeListResponse(data) {
   return { items, count, next: data?.next || null, previous: data?.previous || null }
 }
 
+function formatInterventionStatus(status) {
+  const normalized = (status || '').toLowerCase()
+  if (normalized === 'completed') return 'badge--success status-neutral'
+  if (normalized === 'in_progress' || normalized === 'in progress') return 'badge--warning status-warning'
+  return 'badge--info status-neutral'
+}
+
 export function InterventionsPage() {
   const [interventions, setInterventions] = useState([])
   const [loading, setLoading] = useState(true)
@@ -37,17 +44,16 @@ export function InterventionsPage() {
         const items = normalized.items
         const statusTotals = items.reduce(
           (acc, item) => {
-            const status = item.status || 'unknown'
+            const status = (item.status || '').toLowerCase()
             return {
-              ...acc,
-              inProgress: acc.inProgress + (status === 'in_progress' ? 1 : 0),
+              inProgress: acc.inProgress + (status === 'in_progress' || status === 'in progress' ? 1 : 0),
               completed: acc.completed + (status === 'completed' ? 1 : 0),
             }
           },
           { inProgress: 0, completed: 0 },
         )
 
-        setInterventions(items.slice(0, 10))
+        setInterventions(items.slice(0, 12))
         setSummary({ interventions: normalized.count, inProgress: statusTotals.inProgress, completed: statusTotals.completed })
         setPagination({ count: normalized.count, next: normalized.next, previous: normalized.previous })
       } catch (err) {
@@ -69,76 +75,90 @@ export function InterventionsPage() {
   }, [search])
 
   return (
-    <div className="page-stack">
+    <div className="page-stack interventions-page">
       <PageHeader
         eyebrow="Interventions"
         title="Intervention monitoring"
         description="Track backend intervention assignments, statuses, and follow-up notes."
       />
 
-      <div className="summary-grid">
-        <article className="info-card stat-card-accent">
+      <div className="record-summary-grid">
+        <article className="detail-card stat-card-accent">
           <p className="stat-label">Interventions</p>
           <p className="stat-value">{summary.interventions}</p>
         </article>
-        <article className="info-card stat-card-accent">
+        <article className="detail-card stat-card-accent">
           <p className="stat-label">In progress</p>
           <p className="stat-value">{summary.inProgress}</p>
         </article>
-        <article className="info-card stat-card-accent">
+        <article className="detail-card stat-card-accent">
           <p className="stat-label">Completed</p>
           <p className="stat-value">{summary.completed}</p>
         </article>
       </div>
 
-      <div className="panel-card">
+      <div className="panel-card record-panel">
         <div className="section-header">
           <div>
             <p className="eyebrow">Intervention records</p>
             <h2>Recent interventions</h2>
           </div>
-          <input
-            aria-label="Search interventions"
-            placeholder="Search by student, type or notes"
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-          />
+          <div className="search-input-group">
+            <span className="search-icon" aria-hidden="true">🔎</span>
+            <input
+              aria-label="Search interventions"
+              placeholder="Search by student, type or notes"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+            />
+          </div>
         </div>
 
         {error ? <ErrorBanner message={error} /> : null}
-        {loading ? <LoadingSpinner label="Loading intervention data..." /> : null}
+
+        {loading ? (
+          <div className="table-skeleton-grid">
+            {Array.from({ length: 4 }).map((_, index) => (
+              <div key={index} className="students-skeleton-card" />
+            ))}
+          </div>
+        ) : null}
 
         {!loading && !error && interventions.length === 0 ? (
           <EmptyState
-            title="No interventions found"
-            message="There are currently no intervention records available for the current search criteria."
+            title={search ? 'No interventions match search' : 'No intervention records available'}
+            message={search ? 'Try a different keyword or clear the search filter.' : 'There are no intervention records returned from the backend.'}
           />
         ) : null}
 
         {!loading && !error && interventions.length > 0 ? (
           <>
-            <p>{pagination.count} record(s) found.</p>
+            <div className="record-table-header">
+              <p>{pagination.count} intervention record{pagination.count === 1 ? '' : 's'} found.</p>
+            </div>
             <div className="table-card">
-              <table>
+              <table className="records-table">
                 <thead>
                   <tr>
-                    <th>Enrollment</th>
-                    <th>Type</th>
-                    <th>Status</th>
-                    <th>Priority</th>
-                    <th>Start</th>
-                    <th>End</th>
+                    <th scope="col">Enrollment</th>
+                    <th scope="col">Type</th>
+                    <th scope="col">Status</th>
+                    <th scope="col">Priority</th>
+                    <th scope="col">Start</th>
+                    <th scope="col">End</th>
                   </tr>
                 </thead>
                 <tbody>
                   {interventions.map((item) => (
                     <tr key={item.id}>
-                      <td>{item.enrollment || '—'}</td>
-                      <td>{item.intervention_type || '—'}</td>
-                      <td>{item.status || '—'}</td>
-                      <td>{item.priority || '—'}</td>
-                      <td>{item.start_date || '—'}</td>
-                      <td>{item.end_date || '—'}</td>
+                      <td data-label="Enrollment">{item.enrollment || '—'}</td>
+                      <td data-label="Type">{item.intervention_type || '—'}</td>
+                      <td data-label="Status">
+                        <span className={`badge badge--status ${formatInterventionStatus(item.status)}`}>{item.status || 'Unknown'}</span>
+                      </td>
+                      <td data-label="Priority">{item.priority || '—'}</td>
+                      <td data-label="Start">{item.start_date || '—'}</td>
+                      <td data-label="End">{item.end_date || '—'}</td>
                     </tr>
                   ))}
                 </tbody>
