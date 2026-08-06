@@ -412,8 +412,8 @@ export function StudentDetailPage() {
             <article className="detail-card">
               <div className="section-header">
                 <div>
-                  <p className="eyebrow">At a glance</p>
-                  <h3>Student summary</h3>
+                  <p className="eyebrow">Personal information</p>
+                  <h3>Student profile</h3>
                 </div>
               </div>
               <div className="student-info-list">
@@ -422,20 +422,66 @@ export function StudentDetailPage() {
                   <p>{studentName}</p>
                 </div>
                 <div>
-                  <p><strong>LRN</strong></p>
+                  <p><strong>Student ID</strong></p>
                   <p>{safeText(student.lrn)}</p>
                 </div>
                 <div>
-                  <p><strong>Grade level</strong></p>
+                  <p><strong>Sex</strong></p>
+                  <p>{safeText(student.gender)}</p>
+                </div>
+                <div>
+                  <p><strong>Date of birth</strong></p>
+                  <p>{safeText(student.birth_date)}</p>
+                </div>
+                <div>
+                  <p><strong>Status</strong></p>
+                  <p>{safeText(student.student_status)}</p>
+                </div>
+              </div>
+            </article>
+
+            <article className="detail-card">
+              <div className="section-header">
+                <div>
+                  <p className="eyebrow">Enrollment information</p>
+                  <h3>Current placement</h3>
+                </div>
+              </div>
+              <div className="student-info-list">
+                <div>
+                  <p><strong>Current grade</strong></p>
                   <p>{safeText(enrollmentSummary?.gradeLevel)}</p>
                 </div>
                 <div>
-                  <p><strong>Section</strong></p>
+                  <p><strong>Current section</strong></p>
                   <p>{safeText(enrollmentSummary?.section)}</p>
                 </div>
                 <div>
-                  <p><strong>Academic year</strong></p>
+                  <p><strong>School year</strong></p>
                   <p>{safeText(enrollmentSummary?.academicYear)}</p>
+                </div>
+                <div>
+                  <p><strong>Enrollment status</strong></p>
+                  <p>{safeText(enrollmentSummary?.status)}</p>
+                </div>
+              </div>
+            </article>
+
+            <article className="detail-card">
+              <div className="section-header">
+                <div>
+                  <p className="eyebrow">Guardian information</p>
+                  <h3>Contacts</h3>
+                </div>
+              </div>
+              <div className="student-info-list">
+                <div>
+                  <p><strong>Guardian name</strong></p>
+                  <p>Not available</p>
+                </div>
+                <div>
+                  <p><strong>Guardian contact</strong></p>
+                  <p>Not available</p>
                 </div>
               </div>
             </article>

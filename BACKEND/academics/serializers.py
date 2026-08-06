@@ -37,6 +37,33 @@ class EnrollmentSerializer(serializers.ModelSerializer):
     class Meta:
         model = Enrollment
         fields = ['id', 'student', 'academic_year', 'grade_level', 'section', 'strand', 'enrollment_status', 'enrollment_date']
+        extra_kwargs = {
+            'academic_year': {'required': True},
+            'grade_level': {'required': True},
+            'section': {'required': True},
+            'enrollment_status': {'required': True},
+        }
+
+    def validate(self, attrs):
+        student = attrs.get('student') or getattr(self.instance, 'student', None)
+        academic_year = attrs.get('academic_year') or getattr(self.instance, 'academic_year', None)
+        grade_level = attrs.get('grade_level') or getattr(self.instance, 'grade_level', None)
+        section = attrs.get('section') or getattr(self.instance, 'section', None)
+
+        if student and academic_year:
+            queryset = Enrollment.objects.filter(student=student, academic_year=academic_year)
+            if self.instance:
+                queryset = queryset.exclude(pk=self.instance.pk)
+            if queryset.exists():
+                raise serializers.ValidationError('A student can only have one enrollment per academic year.')
+
+        if section and grade_level and section.grade_level_id != grade_level.id:
+            raise serializers.ValidationError({'section': 'The selected section does not belong to the selected grade level.'})
+
+        if not section:
+            raise serializers.ValidationError({'section': 'Section is required.'})
+
+        return attrs
 
 
 class AcademicRecordSerializer(serializers.ModelSerializer):

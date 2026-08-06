@@ -52,6 +52,26 @@ class EnrollmentViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins
     def get_queryset(self):
         return get_authorized_enrollment_queryset(self.request.user, super().get_queryset())
 
+    def perform_create(self, serializer):
+        instance = serializer.save()
+        AuditLog.objects.create(
+            user=self.request.user if self.request.user.is_authenticated else None,
+            action='CREATE',
+            module=self.serializer_class.Meta.model._meta.app_label,
+            object_type=self.serializer_class.Meta.model.__name__,
+            object_id=str(instance.pk),
+        )
+
+    def perform_update(self, serializer):
+        instance = serializer.save()
+        AuditLog.objects.create(
+            user=self.request.user if self.request.user.is_authenticated else None,
+            action='UPDATE',
+            module=self.serializer_class.Meta.model._meta.app_label,
+            object_type=self.serializer_class.Meta.model.__name__,
+            object_id=str(instance.pk),
+        )
+
 
 class AcademicRecordViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins.CreateModelMixin, mixins.UpdateModelMixin, viewsets.GenericViewSet):
     queryset = AcademicRecord.objects.select_related('enrollment', 'subject', 'academic_year', 'encoded_by').all()
