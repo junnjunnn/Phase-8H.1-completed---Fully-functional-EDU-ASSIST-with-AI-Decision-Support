@@ -287,6 +287,20 @@ export function StudentDetailPage() {
     }
   }, [enrollments])
 
+  const studentName = student ? [student.first_name, student.last_name].filter(Boolean).join(' ') : ''
+  const studentInitials = student
+    ? [student.first_name?.[0], student.last_name?.[0]].filter(Boolean).join('').toUpperCase() || 'ST'
+    : 'ST'
+
+  const tabItems = [
+    { key: 'overview', label: 'Overview' },
+    { key: 'academics', label: 'Academics' },
+    { key: 'attendance', label: 'Attendance' },
+    { key: 'behavior', label: 'Behavior' },
+    { key: 'interventions', label: 'Interventions' },
+    { key: 'predictions', label: 'Predictions' },
+  ]
+
   if (studentLoading) {
     return <LoadingSpinner label="Loading student profile..." />
   }
@@ -300,102 +314,224 @@ export function StudentDetailPage() {
   }
 
   return (
-    <div className="page-stack">
+    <div className="page-stack student-detail-page">
       <PageHeader
         eyebrow="Student profile"
-        title={`${safeText(student.first_name)} ${safeText(student.last_name)}`.trim()}
+        title={studentName || 'Student profile'}
         description={`LRN: ${safeText(student.lrn)}`}
         actions={(
-          <div className="section-actions">
-            <button type="button" className={activeTab === 'overview' ? 'active' : ''} onClick={() => setActiveTab('overview')}>
-              Overview
-            </button>
-            <button type="button" className={activeTab === 'academics' ? 'active' : ''} onClick={() => setActiveTab('academics')}>
-              Academics
-            </button>
-            <button type="button" className={activeTab === 'attendance' ? 'active' : ''} onClick={() => setActiveTab('attendance')}>
-              Attendance
-            </button>
-            <button type="button" className={activeTab === 'behavior' ? 'active' : ''} onClick={() => setActiveTab('behavior')}>
-              Behavior
-            </button>
-            <button type="button" className={activeTab === 'interventions' ? 'active' : ''} onClick={() => setActiveTab('interventions')}>
-              Interventions
-            </button>
-            <button type="button" className={activeTab === 'predictions' ? 'active' : ''} onClick={() => setActiveTab('predictions')}>
-              Predictions
-            </button>
+          <div className="tab-navigation" role="tablist" aria-label="Student detail navigation">
+            {tabItems.map((tab) => (
+              <button
+                key={tab.key}
+                type="button"
+                role="tab"
+                aria-selected={activeTab === tab.key}
+                className={`tab-button ${activeTab === tab.key ? 'active' : ''}`}
+                onClick={() => setActiveTab(tab.key)}
+              >
+                {tab.label}
+              </button>
+            ))}
           </div>
         )}
       />
 
-      <div className="card-grid">
-        <article className="info-card">
-          <h3>Basic information</h3>
-          <p><strong>Status:</strong> {safeText(student.student_status)}</p>
-          <p><strong>Gender:</strong> {safeText(student.gender)}</p>
-          <p><strong>Birth date:</strong> {safeText(student.birth_date)}</p>
-        </article>
-        <article className="info-card">
-          <h3>Enrollment summary</h3>
-          <p><strong>Grade level:</strong> {enrollmentSummary?.gradeLevel || 'Not available'}</p>
-          <p><strong>Section:</strong> {enrollmentSummary?.section || 'Not available'}</p>
-          <p><strong>Strand:</strong> {enrollmentSummary?.strand || 'Not available'}</p>
-          <p><strong>Academic year:</strong> {enrollmentSummary?.academicYear || 'Not available'}</p>
-          <p><strong>Enrollment status:</strong> {enrollmentSummary?.status || 'Not available'}</p>
-        </article>
-      </div>
+      <section className="student-profile-header">
+        <div className="student-profile-card">
+          <div className="profile-avatar">{studentInitials}</div>
+          <div className="student-profile-meta">
+            <p className="eyebrow">Profile</p>
+            <h2>{studentName || 'Student profile'}</h2>
 
-      <div className="summary-grid">
-        <article className="info-card stat-card-accent">
+            <div className="student-keyline">
+              <span className="info-pill">{safeText(enrollmentSummary?.gradeLevel) || 'Grade unavailable'}</span>
+              <span className="info-pill">{safeText(enrollmentSummary?.section) || 'Section unavailable'}</span>
+              <span className="info-pill">{safeText(enrollmentSummary?.academicYear) || 'Year unavailable'}</span>
+            </div>
+
+            <div className="student-profile-details">
+              <div>
+                <p><strong>Grade level</strong></p>
+                <p>{safeText(enrollmentSummary?.gradeLevel)}</p>
+              </div>
+              <div>
+                <p><strong>Section</strong></p>
+                <p>{safeText(enrollmentSummary?.section)}</p>
+              </div>
+              <div>
+                <p><strong>Academic year</strong></p>
+                <p>{safeText(enrollmentSummary?.academicYear)}</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <aside className="student-summary-card">
+          <div className="student-summary-row">
+            <span>Risk level</span>
+            <span className={riskBadgeClass(latestPrediction?.risk_level)}>{safeText(latestPrediction?.risk_level || 'Unknown')}</span>
+          </div>
+          <div className="student-summary-row">
+            <span>Latest prediction</span>
+            <span>{safeText(latestPrediction?.prediction_date)}</span>
+          </div>
+          <div className="student-summary-row">
+            <span>Model</span>
+            <span>{safeText(latestPrediction?.model_name)}</span>
+          </div>
+          <div className="student-summary-row">
+            <span>Factors</span>
+            <span>{studentSummary.predictionFactorCount}</span>
+          </div>
+        </aside>
+      </section>
+
+      <div className="student-detail-stats">
+        <article className="detail-card stat-card-accent">
           <p className="stat-label">Academic records</p>
           <p className="stat-value">{studentSummary.academicCount}</p>
         </article>
-        <article className="info-card stat-card-accent">
+        <article className="detail-card stat-card-accent">
           <p className="stat-label">Attendance records</p>
           <p className="stat-value">{studentSummary.attendanceCount}</p>
         </article>
-        <article className="info-card stat-card-accent">
+        <article className="detail-card stat-card-accent">
           <p className="stat-label">Behavior assessments</p>
           <p className="stat-value">{studentSummary.behaviorCount}</p>
         </article>
-        <article className="info-card stat-card-accent">
+        <article className="detail-card stat-card-accent">
           <p className="stat-label">Interventions</p>
           <p className="stat-value">{studentSummary.interventionCount}</p>
-        </article>
-        <article className="info-card stat-card-accent">
-          <p className="stat-label">Risk predictions</p>
-          <p className="stat-value">{studentSummary.predictionCount}</p>
-        </article>
-        <article className="info-card stat-card-accent">
-          <p className="stat-label">Prediction factors</p>
-          <p className="stat-value">{studentSummary.predictionFactorCount}</p>
         </article>
       </div>
 
       {activeTab === 'overview' && (
-        <div className="panel-card">
-          <h3>Overview</h3>
-          <p>This student has {studentSummary.academicCount} academic records, {studentSummary.attendanceCount} attendance records, {studentSummary.behaviorCount} behavior assessments, {studentSummary.interventionCount} interventions, and {studentSummary.predictionCount} prediction records.</p>
-          {(studentSummary.academicCount || studentSummary.attendanceCount || studentSummary.behaviorCount || studentSummary.interventionCount || studentSummary.predictionCount) === 0 ? (
-            <EmptyState title="No data available" message="No related student records are available yet." />
-          ) : null}
-        </div>
+        <section className="student-section overview-section">
+          <div className="overview-grid">
+            <article className="detail-card">
+              <div className="section-header">
+                <div>
+                  <p className="eyebrow">At a glance</p>
+                  <h3>Student summary</h3>
+                </div>
+              </div>
+              <div className="student-info-list">
+                <div>
+                  <p><strong>Name</strong></p>
+                  <p>{studentName}</p>
+                </div>
+                <div>
+                  <p><strong>LRN</strong></p>
+                  <p>{safeText(student.lrn)}</p>
+                </div>
+                <div>
+                  <p><strong>Grade level</strong></p>
+                  <p>{safeText(enrollmentSummary?.gradeLevel)}</p>
+                </div>
+                <div>
+                  <p><strong>Section</strong></p>
+                  <p>{safeText(enrollmentSummary?.section)}</p>
+                </div>
+                <div>
+                  <p><strong>Academic year</strong></p>
+                  <p>{safeText(enrollmentSummary?.academicYear)}</p>
+                </div>
+              </div>
+            </article>
+
+            <article className="detail-card decision-support-card overview-support-card">
+              <div className="section-header">
+                <div>
+                  <p className="eyebrow">AI decision support</p>
+                  <h3>{riskGuidance.title}</h3>
+                </div>
+              </div>
+              <ul className="support-list">
+                {riskGuidance.items.map((item, index) => (
+                  <li key={index}>{item}</li>
+                ))}
+              </ul>
+            </article>
+          </div>
+
+          <div className="overview-data-grid">
+            <article className="detail-card">
+              <div className="section-header">
+                <div>
+                  <p className="eyebrow">Prediction summary</p>
+                  <h3>Latest prediction</h3>
+                </div>
+              </div>
+              {predictionLoading ? (
+                <div className="skeleton-card skeleton-tall" />
+              ) : latestPrediction ? (
+                <div className="summary-card-list">
+                  <div className="summary-card-item">
+                    <p className="stat-label">Current risk</p>
+                    <span className={riskBadgeClass(latestPrediction.risk_level)}>{safeText(latestPrediction.risk_level)}</span>
+                  </div>
+                  <div className="summary-card-item">
+                    <p className="stat-label">Probability</p>
+                    <p>{formatProbability(latestPrediction.probability)}</p>
+                  </div>
+                  <div className="summary-card-item">
+                    <p className="stat-label">Prediction date</p>
+                    <p>{safeText(latestPrediction.prediction_date)}</p>
+                  </div>
+                  <div className="summary-card-item">
+                    <p className="stat-label">Model</p>
+                    <p>{safeText(latestPrediction.model_name)}</p>
+                  </div>
+                </div>
+              ) : (
+                <EmptyState title="No prediction records" message="No prediction data is available for this student." />
+              )}
+            </article>
+
+            <article className="detail-card feature-card">
+              <div className="section-header">
+                <div>
+                  <p className="eyebrow">Key indicators</p>
+                  <h3>Student progress signals</h3>
+                </div>
+              </div>
+              <div className="student-indicators">
+                <div className="indicator-card">
+                  <p className="stat-label">Academic items</p>
+                  <p className="stat-value">{studentSummary.academicCount}</p>
+                </div>
+                <div className="indicator-card">
+                  <p className="stat-label">Attendance items</p>
+                  <p className="stat-value">{studentSummary.attendanceCount}</p>
+                </div>
+                <div className="indicator-card">
+                  <p className="stat-label">Behavior items</p>
+                  <p className="stat-value">{studentSummary.behaviorCount}</p>
+                </div>
+                <div className="indicator-card">
+                  <p className="stat-label">Interventions</p>
+                  <p className="stat-value">{studentSummary.interventionCount}</p>
+                </div>
+              </div>
+            </article>
+          </div>
+        </section>
       )}
 
       {activeTab === 'academics' && (
-        <div className="panel-card">
+        <section className="student-section">
           <div className="section-header">
             <div>
-              <p className="eyebrow">Academic records</p>
-              <h2>Student academic records</h2>
+              <p className="eyebrow">Academics</p>
+              <h3>Academic performance</h3>
             </div>
           </div>
 
           {academicError ? <ErrorBanner message={academicError} /> : null}
-          {academicLoading ? <LoadingSpinner label="Loading academic records..." /> : null}
+          {academicLoading ? <div className="table-skeleton"><div /><div /><div /></div> : null}
           {!academicLoading && !academicError && academicRecords.length === 0 ? (
-            <EmptyState title="No academic records available for this student." message="There are no academic records for this student." />
+            <EmptyState title="No academic data" message="No academic records are available for this student." />
           ) : null}
 
           {!academicLoading && !academicError && academicRecords.length > 0 ? (
@@ -413,9 +549,9 @@ export function StudentDetailPage() {
                 <tbody>
                   {academicRecords.map((record) => (
                     <tr key={record.id}>
-                      <td>{safeText(record.subject)}</td>
+                      <td><span className="badge badge--subject">{safeText(record.subject)}</span></td>
                       <td>{safeText(record.academic_year)}</td>
-                      <td>{safeText(record.grading_period_type)}</td>
+                      <td><span className="badge badge--period">{safeText(record.grading_period_type)}</span></td>
                       <td>{record.grade ?? 'Not available'}</td>
                       <td>{safeText(record.remarks)}</td>
                     </tr>
@@ -424,22 +560,22 @@ export function StudentDetailPage() {
               </table>
             </div>
           ) : null}
-        </div>
+        </section>
       )}
 
       {activeTab === 'attendance' && (
-        <div className="panel-card">
+        <section className="student-section">
           <div className="section-header">
             <div>
               <p className="eyebrow">Attendance</p>
-              <h2>Student attendance records</h2>
+              <h3>Attendance monitoring</h3>
             </div>
           </div>
 
           {attendanceError ? <ErrorBanner message={attendanceError} /> : null}
-          {attendanceLoading ? <LoadingSpinner label="Loading attendance records..." /> : null}
+          {attendanceLoading ? <div className="table-skeleton"><div /><div /><div /></div> : null}
           {!attendanceLoading && !attendanceError && attendanceRecords.length === 0 ? (
-            <EmptyState title="No attendance records available for this student." message="There are no attendance records for this student." />
+            <EmptyState title="No attendance records" message="No attendance records are available for this student." />
           ) : null}
 
           {!attendanceLoading && !attendanceError && attendanceRecords.length > 0 ? (
@@ -451,37 +587,43 @@ export function StudentDetailPage() {
                     <th>Days present</th>
                     <th>Absences</th>
                     <th>Tardies</th>
+                    <th>Status</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {attendanceRecords.map((record) => (
-                    <tr key={record.id}>
-                      <td>{safeText(record.month)}</td>
-                      <td>{record.days_present ?? 'Not available'}</td>
-                      <td>{record.absences ?? 'Not available'}</td>
-                      <td>{record.times_tardy ?? 'Not available'}</td>
-                    </tr>
-                  ))}
+                  {attendanceRecords.map((record) => {
+                    const absenceTotal = Number(record.absences ?? 0)
+                    const status = absenceTotal > 5 ? 'Attention needed' : 'Stable'
+                    return (
+                      <tr key={record.id}>
+                        <td>{safeText(record.month)}</td>
+                        <td>{record.days_present ?? 'Not available'}</td>
+                        <td>{record.absences ?? 'Not available'}</td>
+                        <td>{record.times_tardy ?? 'Not available'}</td>
+                        <td><span className={`badge badge--status ${status === 'Attention needed' ? 'status-warning' : 'status-success'}`}>{status}</span></td>
+                      </tr>
+                    )
+                  })}
                 </tbody>
               </table>
             </div>
           ) : null}
-        </div>
+        </section>
       )}
 
       {activeTab === 'behavior' && (
-        <div className="panel-card">
+        <section className="student-section">
           <div className="section-header">
             <div>
               <p className="eyebrow">Behavior</p>
-              <h2>Student behavioral assessments</h2>
+              <h3>Behavioral evaluations</h3>
             </div>
           </div>
 
           {behaviorError ? <ErrorBanner message={behaviorError} /> : null}
-          {behaviorLoading ? <LoadingSpinner label="Loading behavior records..." /> : null}
+          {behaviorLoading ? <div className="table-skeleton"><div /><div /><div /></div> : null}
           {!behaviorLoading && !behaviorError && behaviorRecords.length === 0 ? (
-            <EmptyState title="No behavioral records available for this student." message="There are no behavioral assessment records for this student." />
+            <EmptyState title="No behavior records" message="No behavioral records are available for this student." />
           ) : null}
 
           {!behaviorLoading && !behaviorError && behaviorRecords.length > 0 ? (
@@ -492,7 +634,7 @@ export function StudentDetailPage() {
                     <th>Indicator</th>
                     <th>Core value</th>
                     <th>Rating</th>
-                    <th>Period</th>
+                    <th>Quarter</th>
                     <th>Date</th>
                     <th>Remarks</th>
                   </tr>
@@ -500,11 +642,7 @@ export function StudentDetailPage() {
                 <tbody>
                   {behaviorRecords.map((record) => {
                     const ratingDisplay = record.rating_code || record.rating_label || record.rating || 'Not available'
-                    const period = record.grading_period_type === 'Quarter'
-                      ? `Quarter ${record.quarter ?? '—'}`
-                      : record.grading_period_type === 'Semester'
-                      ? `Semester ${record.semester ?? '—'}`
-                      : record.grading_period_type || '—'
+                    const period = record.quarter ? `Q${record.quarter}` : record.grading_period_type || 'Not available'
                     return (
                       <tr key={record.id}>
                         <td>{safeText(record.behavior_indicator_name || record.behavior_indicator)}</td>
@@ -520,22 +658,22 @@ export function StudentDetailPage() {
               </table>
             </div>
           ) : null}
-        </div>
+        </section>
       )}
 
       {activeTab === 'interventions' && (
-        <div className="panel-card">
+        <section className="student-section">
           <div className="section-header">
             <div>
               <p className="eyebrow">Interventions</p>
-              <h2>Student intervention records</h2>
+              <h3>Support and outcomes</h3>
             </div>
           </div>
 
           {interventionError ? <ErrorBanner message={interventionError} /> : null}
-          {interventionLoading ? <LoadingSpinner label="Loading intervention records..." /> : null}
+          {interventionLoading ? <div className="table-skeleton"><div /><div /><div /></div> : null}
           {!interventionLoading && !interventionError && interventions.length === 0 ? (
-            <EmptyState title="No intervention records available for this student." message="There are no interventions for this student." />
+            <EmptyState title="No intervention history" message="No intervention records are available for this student." />
           ) : null}
 
           {!interventionLoading && !interventionError && interventions.length > 0 ? (
@@ -544,109 +682,128 @@ export function StudentDetailPage() {
                 <thead>
                   <tr>
                     <th>Type</th>
+                    <th>Reason</th>
                     <th>Status</th>
-                    <th>Priority</th>
-                    <th>Start date</th>
-                    <th>End date</th>
+                    <th>Start</th>
+                    <th>End</th>
+                    <th>Outcome</th>
                   </tr>
                 </thead>
                 <tbody>
                   {interventions.map((item) => (
                     <tr key={item.id}>
                       <td>{safeText(item.intervention_type)}</td>
-                      <td>{safeText(item.status)}</td>
-                      <td>{safeText(item.priority)}</td>
+                      <td>{safeText(item.reason)}</td>
+                      <td><span className={`badge badge--status ${item.status === 'Completed' ? 'status-success' : item.status === 'In Progress' ? 'status-warning' : 'status-neutral'}`}>{safeText(item.status)}</span></td>
                       <td>{safeText(item.start_date)}</td>
                       <td>{safeText(item.end_date)}</td>
+                      <td>{safeText(item.outcome)}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
           ) : null}
-        </div>
+        </section>
       )}
 
       {activeTab === 'predictions' && (
-        <div className="panel-card">
+        <section className="student-section predictions-section">
           <div className="section-header">
             <div>
               <p className="eyebrow">Predictions</p>
-              <h2>Student risk predictions</h2>
+              <h3>Prediction history and explainability</h3>
             </div>
           </div>
 
           {predictionError ? <ErrorBanner message={predictionError} /> : null}
-          {predictionLoading ? <LoadingSpinner label="Loading prediction records..." /> : null}
+          {predictionLoading ? <div className="table-skeleton"><div /><div /><div /></div> : null}
           {!predictionLoading && !predictionError && predictions.length === 0 ? (
-            <EmptyState title="No prediction data available." message="No risk predictions are available for this student." />
+            <EmptyState title="No prediction history" message="No prediction records are available for this student." />
           ) : null}
 
           {!predictionLoading && !predictionError && predictions.length > 0 ? (
-            <div className="prediction-grid">
-              <div className="decision-support-card">
+            <div className="predictions-grid">
+              <article className="detail-card latest-prediction-card">
                 <div className="section-header">
                   <div>
-                    <p className="eyebrow">AI decision support</p>
-                    <h2>Latest risk prediction</h2>
+                    <p className="eyebrow">Latest prediction</p>
+                    <h3>{latestPrediction?.risk_level ? `${latestPrediction.risk_level} risk` : 'Prediction details'}</h3>
                   </div>
                 </div>
-                <div className="prediction-summary">
-                  <div className="prediction-summary-row">
-                    <span className="summary-label">Risk status</span>
-                    <span className={riskBadgeClass(latestPrediction.risk_level)}>{safeText(latestPrediction.risk_level || 'Unknown')}</span>
+                <div className="summary-card-list">
+                  <div className="summary-card-item">
+                    <p className="stat-label">Risk level</p>
+                    <span className={riskBadgeClass(latestPrediction?.risk_level)}>{safeText(latestPrediction?.risk_level)}</span>
                   </div>
-                  <div className="prediction-summary-row">
-                    <span className="summary-label">Probability</span>
-                    <span>{formatProbability(latestPrediction.probability)}</span>
+                  <div className="summary-card-item">
+                    <p className="stat-label">Probability</p>
+                    <p>{formatProbability(latestPrediction?.probability)}</p>
                   </div>
-                  <div className="prediction-summary-row">
-                    <span className="summary-label">Model</span>
-                    <span>{safeText(latestPrediction.model_name || 'Random Forest')}</span>
+                  <div className="summary-card-item">
+                    <p className="stat-label">Model</p>
+                    <p>{safeText(latestPrediction?.model_name)}</p>
                   </div>
-                  <div className="prediction-summary-row">
-                    <span className="summary-label">Predicted on</span>
-                    <span>{safeText(latestPrediction.prediction_date)}</span>
+                  <div className="summary-card-item">
+                    <p className="stat-label">Prediction date</p>
+                    <p>{safeText(latestPrediction?.prediction_date)}</p>
                   </div>
                 </div>
-
                 <div className="prediction-explanation-block">
-                  <p className="eyebrow">Prediction summary</p>
-                  {latestPrediction.explanation ? (
-                    <p className="prediction-explanation-text">{safeText(latestPrediction.explanation)}</p>
-                  ) : (
-                    <p className="prediction-explanation-text">This prediction does not include a summary explanation.</p>
-                  )}
+                  <p className="eyebrow">Explanation summary</p>
+                  <p className="prediction-explanation-text">
+                    {latestPrediction?.explanation || 'No explanation summary is available for the latest prediction.'}
+                  </p>
                 </div>
+              </article>
 
-                <div className="prediction-guidance-block">
-                  <p className="eyebrow">Recommended next steps</p>
-                  <h3>{riskGuidance.title}</h3>
-                  <ul>
-                    {riskGuidance.items.map((item, index) => (
-                      <li key={index}>{item}</li>
-                    ))}
-                  </ul>
-                </div>
-              </div>
-
-              <div className="factor-panel-card">
+              <article className="detail-card">
                 <div className="section-header">
                   <div>
-                    <p className="eyebrow">Feature contributions</p>
-                    <h2>Top prediction factors</h2>
+                    <p className="eyebrow">History</p>
+                    <h3>Past predictions</h3>
                   </div>
                 </div>
+                <div className="table-card">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Date</th>
+                        <th>Risk</th>
+                        <th>Probability</th>
+                        <th>Model</th>
+                        <th>Explanation</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {predictions.map((prediction) => (
+                        <tr key={prediction.id} className={prediction.id === latestPrediction?.id ? 'highlight-row' : ''}>
+                          <td>{safeText(prediction.prediction_date)}</td>
+                          <td><span className={riskBadgeClass(prediction.risk_level)}>{safeText(prediction.risk_level)}</span></td>
+                          <td>{formatProbability(prediction.probability)}</td>
+                          <td>{safeText(prediction.model_name)}</td>
+                          <td>{safeText(prediction.explanation)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </article>
 
+              <article className="detail-card">
+                <div className="section-header">
+                  <div>
+                    <p className="eyebrow">Prediction factors</p>
+                    <h3>Latest factor contributions</h3>
+                  </div>
+                </div>
                 {predictionFactorError ? <ErrorBanner message={predictionFactorError} /> : null}
-                {predictionFactorLoading ? <LoadingSpinner label="Loading prediction factors..." /> : null}
-
+                {predictionFactorLoading ? <div className="table-skeleton"><div /><div /><div /></div> : null}
                 {!predictionFactorLoading && !predictionFactorError && latestPredictionFactors.length === 0 ? (
-                  <EmptyState title="No prediction factors available" message="There are no prediction factors for the latest prediction." />
+                  <EmptyState title="No latest factors" message="No factor data is associated with the latest prediction." />
                 ) : null}
-
                 {!predictionFactorLoading && !predictionFactorError && latestPredictionFactors.length > 0 ? (
-                  <div className="factor-table-card">
+                  <div className="table-card factor-table-card">
                     <table>
                       <thead>
                         <tr>
@@ -671,10 +828,10 @@ export function StudentDetailPage() {
                     </table>
                   </div>
                 ) : null}
-              </div>
+              </article>
             </div>
           ) : null}
-        </div>
+        </section>
       )}
     </div>
   )
