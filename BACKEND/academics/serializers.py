@@ -70,3 +70,38 @@ class AcademicRecordSerializer(serializers.ModelSerializer):
     class Meta:
         model = AcademicRecord
         fields = ['id', 'enrollment', 'subject', 'academic_year', 'grading_period_type', 'quarter', 'semester', 'grade', 'final_grade', 'remarks', 'encoded_by']
+
+    def validate_grade(self, value):
+        if value is None:
+            raise serializers.ValidationError('Grade is required.')
+        if value < 0:
+            raise serializers.ValidationError('Grade cannot be negative.')
+        if value > 100:
+            raise serializers.ValidationError('Grade cannot exceed 100.')
+        return value
+
+    def validate(self, attrs):
+        enrollment = attrs.get('enrollment') or getattr(self.instance, 'enrollment', None)
+        subject = attrs.get('subject') or getattr(self.instance, 'subject', None)
+        academic_year = attrs.get('academic_year') or getattr(self.instance, 'academic_year', None)
+        grading_period_type = attrs.get('grading_period_type') or getattr(self.instance, 'grading_period_type', None)
+        quarter = attrs.get('quarter') if 'quarter' in attrs else getattr(self.instance, 'quarter', None)
+        semester = attrs.get('semester') if 'semester' in attrs else getattr(self.instance, 'semester', None)
+
+        if enrollment and subject and academic_year and grading_period_type:
+            queryset = AcademicRecord.objects.filter(
+                enrollment=enrollment,
+                subject=subject,
+                academic_year=academic_year,
+                grading_period_type=grading_period_type,
+            )
+            if quarter is not None:
+                queryset = queryset.filter(quarter=quarter)
+            if semester is not None:
+                queryset = queryset.filter(semester=semester)
+            if self.instance:
+                queryset = queryset.exclude(pk=self.instance.pk)
+            if queryset.exists():
+                raise serializers.ValidationError('An academic record for this student, subject, period, and academic year already exists.')
+
+        return attrs

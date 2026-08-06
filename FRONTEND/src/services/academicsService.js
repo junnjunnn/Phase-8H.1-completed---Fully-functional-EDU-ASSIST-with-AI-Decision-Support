@@ -34,3 +34,13 @@ export async function getAcademicRecords(params = {}) {
   const response = await apiClient.get('/academic-records/', { params })
   return response.data
 }
+
+export async function createAcademicRecord(payload) {
+  const response = await apiClient.post('/academic-records/', payload)
+  return response.data
+}
+
+export async function updateAcademicRecord(id, payload) {
+  const response = await apiClient.patch(`/academic-records/${id}/`, payload)
+  return response.data
+}

@@ -7,6 +7,7 @@ import { Dashboard } from '../pages/dashboard/Dashboard'
 import { StudentsPage } from '../pages/students/StudentsPage'
 import { StudentDetailPage } from '../pages/students/StudentDetailPage'
 import { AcademicsPage } from '../pages/academics/AcademicsPage'
+import { GradeEncodingPage } from '../pages/academics/GradeEncodingPage'
 import { AttendancePage } from '../pages/attendance/AttendancePage'
 import { BehaviorPage } from '../pages/behavior/BehaviorPage'
 import { InterventionsPage } from '../pages/interventions/InterventionsPage'
@@ -29,6 +30,7 @@ export function AppRoutes() {
           <Route path="/students" element={<StudentsPage />} />
           <Route path="/students/:id" element={<StudentDetailPage />} />
           <Route path="/academics" element={<AcademicsPage />} />
+          <Route path="/academics/encode" element={<GradeEncodingPage />} />
           <Route path="/attendance" element={<AttendancePage />} />
           <Route path="/behavior" element={<BehaviorPage />} />
           <Route path="/interventions" element={<InterventionsPage />} />

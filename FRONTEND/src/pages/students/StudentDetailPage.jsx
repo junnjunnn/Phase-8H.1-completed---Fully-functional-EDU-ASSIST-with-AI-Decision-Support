@@ -586,20 +586,20 @@ export function StudentDetailPage() {
                 <thead>
                   <tr>
                     <th>Subject</th>
-                    <th>Academic year</th>
-                    <th>Period</th>
+                    <th>Quarter</th>
                     <th>Grade</th>
                     <th>Remarks</th>
+                    <th>Academic year</th>
                   </tr>
                 </thead>
                 <tbody>
                   {academicRecords.map((record) => (
                     <tr key={record.id}>
                       <td><span className="badge badge--subject">{safeText(record.subject)}</span></td>
-                      <td>{safeText(record.academic_year)}</td>
-                      <td><span className="badge badge--period">{safeText(record.grading_period_type)}</span></td>
+                      <td><span className="badge badge--period">{safeText(record.quarter ? `Quarter ${record.quarter}` : record.semester ? `Semester ${record.semester}` : '—')}</span></td>
                       <td>{record.grade ?? 'Not available'}</td>
                       <td>{safeText(record.remarks)}</td>
+                      <td>{safeText(record.academic_year)}</td>
                     </tr>
                   ))}
                 </tbody>

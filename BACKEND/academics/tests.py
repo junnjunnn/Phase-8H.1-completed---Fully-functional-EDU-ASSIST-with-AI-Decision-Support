@@ -57,3 +57,16 @@ class AcademicsAPITests(TestCase):
         record_ids = {item['id'] for item in response.data['results']}
         self.assertIn(self.record_a.id, record_ids)
         self.assertIn(self.record_b.id, record_ids)
+
+    def test_duplicate_academic_record_is_rejected(self):
+        self.client.force_authenticate(user=self.superadmin)
+        response = self.client.post('/api/academic-records/', {
+            'enrollment': self.enrollment_a.id,
+            'subject': self.subject.id,
+            'academic_year': self.academic_year.id,
+            'grading_period_type': 'Quarter',
+            'quarter': 1,
+            'grade': 88.00,
+        })
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('already exists', str(response.data))
