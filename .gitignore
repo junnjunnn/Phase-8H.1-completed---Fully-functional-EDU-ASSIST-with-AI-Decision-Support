@@ -1,0 +1,63 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Environment files
+.env
+.env.*
+
+# Django / backend
+*.sqlite3
+*.db
+*.log
+media/
+uploads/
+staticfiles/
+
+# Node / React
+node_modules/
+.npm/
+pnpm-debug.log*
+yarn-error.log*
+
+# Build artifacts
+build/
+dist/
+out/
+coverage/
+*.tsbuildinfo
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.bak
+*.orig
+
+# AI / model artifacts (keep required deployment files)
+*.pkl
+!AI\ \(ML\)/models/risk_model.pkl
+!AI\ \(ML\)/models/label_encoder.pkl
+!AI\ \(ML\)/models/feature_mapping.json

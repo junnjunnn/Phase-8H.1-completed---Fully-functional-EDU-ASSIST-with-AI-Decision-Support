@@ -1,0 +1,4 @@
+Algorithm,Accuracy,Precision,Recall,F1,ROC-AUC,Training Time,Prediction Time
+Decision Tree,0.835,0.7949,0.7848,0.7898,0.8263,0.1441,0.0246
+Random Forest,0.895,0.8718,0.8608,0.8662,0.9071,0.6805,0.0366
+Logistic Regression,0.865,0.8611,0.7848,0.8212,0.8797,0.9577,0.0024

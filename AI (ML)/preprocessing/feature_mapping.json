@@ -1,0 +1,95 @@
+{
+  "categorical_columns": [
+    "school_year",
+    "grade_level",
+    "section",
+    "behavior_core_value",
+    "behavior_indicator",
+    "behavior_teacher_rating",
+    "intervention_type",
+    "intervention_outcome"
+  ],
+  "numeric_columns": [
+    "mathematics_grade",
+    "english_grade",
+    "science_grade",
+    "filipino_grade",
+    "araling_panlipunan_grade",
+    "esp_grade",
+    "mapeh_grade",
+    "tle_grade",
+    "general_average",
+    "failed_subjects",
+    "present_days",
+    "absent_days",
+    "late_days",
+    "excused_absences",
+    "attendance_rate",
+    "absent_percentage",
+    "late_percentage",
+    "high_grade_count",
+    "has_intervention",
+    "number_of_interventions"
+  ],
+  "encoder_categories": [
+    [
+      "2024-2025",
+      "2025-2026"
+    ],
+    [
+      "Grade 10",
+      "Grade 4",
+      "Grade 5",
+      "Grade 6",
+      "Grade 7",
+      "Grade 8",
+      "Grade 9"
+    ],
+    [
+      "A",
+      "B",
+      "C",
+      "D"
+    ],
+    [
+      "Compassion",
+      "Excellence",
+      "Integrity",
+      "Respect",
+      "Responsibility"
+    ],
+    [
+      "Completes assignments on time",
+      "Demonstrates effort and perseverance",
+      "Displays kindness and empathy",
+      "Practices honesty",
+      "Shows respect to teachers and peers"
+    ],
+    [
+      "AO",
+      "NO",
+      "RO",
+      "SO"
+    ],
+    [
+      "Academic Monitoring",
+      "Attendance Monitoring",
+      "Behavioral Monitoring",
+      "Counseling",
+      "Guidance Referral",
+      "Mentoring",
+      "Parent/Guardian Conference",
+      "Tutoring",
+      "Unknown"
+    ],
+    [
+      "Improved",
+      "No Change",
+      "Not Yet Evaluated",
+      "Ongoing",
+      "Unknown",
+      "Worsened"
+    ]
+  ],
+  "encoded_feature_count": 62
+}
