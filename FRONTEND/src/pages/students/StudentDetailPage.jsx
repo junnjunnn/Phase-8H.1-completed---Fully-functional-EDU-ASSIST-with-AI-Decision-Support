@@ -4,6 +4,7 @@ import { EmptyState } from '../../components/common/EmptyState'
 import { ErrorBanner } from '../../components/feedback/ErrorBanner'
 import { LoadingSpinner } from '../../components/common/LoadingSpinner'
 import { PageHeader } from '../../components/common/PageHeader'
+import { InterventionFormModal } from '../../components/interventions/InterventionFormModal'
 import { getApiErrorMessage } from '../../services/api'
 import { getStudentById } from '../../services/studentService'
 import {
@@ -102,6 +103,9 @@ export function StudentDetailPage() {
   const [predictionFactors, setPredictionFactors] = useState([])
   const [predictionFactorError, setPredictionFactorError] = useState('')
   const [predictionFactorLoading, setPredictionFactorLoading] = useState(true)
+
+  const [showInterventionModal, setShowInterventionModal] = useState(false)
+  const [selectedIntervention, setSelectedIntervention] = useState(null)
 
   const [activeTab, setActiveTab] = useState('overview')
 
@@ -253,6 +257,22 @@ export function StudentDetailPage() {
     return predictionFactors.filter((factor) => factor.prediction === latestPrediction.id)
   }, [latestPrediction, predictionFactors])
 
+  async function refreshStudentRecords() {
+    setInterventionLoading(true)
+    setInterventionError('')
+
+    try {
+      const interventionData = await getStudentRelatedInterventions(id, { ordering: '-created_at' })
+      const normalizedInterventions = normalizeListResponse(interventionData)
+      setInterventions(normalizedInterventions.items)
+      setStudentSummary((current) => ({ ...current, interventionCount: normalizedInterventions.count }))
+    } catch (err) {
+      setInterventionError(getApiErrorMessage(err))
+    } finally {
+      setInterventionLoading(false)
+    }
+  }
+
   const riskGuidance = useMemo(() => {
     if (!latestPrediction) {
       return {
@@ -332,6 +352,8 @@ export function StudentDetailPage() {
   const studentInitials = student
     ? [student.first_name?.[0], student.last_name?.[0]].filter(Boolean).join('').toUpperCase() || 'ST'
     : 'ST'
+
+  const latestIntervention = interventions[0] || null
 
   const tabItems = [
     { key: 'overview', label: 'Overview' },
@@ -447,6 +469,25 @@ export function StudentDetailPage() {
         </article>
       </div>
 
+      <InterventionFormModal
+        isOpen={showInterventionModal}
+        onClose={() => {
+          setShowInterventionModal(false)
+          setSelectedIntervention(null)
+        }}
+        currentValue={selectedIntervention}
+        studentName={studentName}
+        latestPrediction={latestPrediction}
+        latestPredictionFactors={latestPredictionFactors}
+        enrollmentId={enrollments[0]?.id || null}
+        onSaved={() => {
+          setShowInterventionModal(false)
+          setSelectedIntervention(null)
+          refreshStudentRecords()
+        }}
+        userRole="teacher"
+      />
+
       {activeTab === 'overview' && (
         <section className="student-section overview-section">
           <div className="overview-grid">
@@ -553,24 +594,33 @@ export function StudentDetailPage() {
               {predictionLoading ? (
                 <div className="skeleton-card skeleton-tall" />
               ) : latestPrediction ? (
-                <div className="summary-card-list">
-                  <div className="summary-card-item">
-                    <p className="stat-label">Current risk</p>
-                    <span className={riskBadgeClass(latestPrediction.risk_level)}>{safeText(latestPrediction.risk_level)}</span>
+                <>
+                  <div className="summary-card-list">
+                    <div className="summary-card-item">
+                      <p className="stat-label">Current risk</p>
+                      <span className={riskBadgeClass(latestPrediction.risk_level)}>{safeText(latestPrediction.risk_level)}</span>
+                    </div>
+                    <div className="summary-card-item">
+                      <p className="stat-label">Probability</p>
+                      <p>{formatProbability(latestPrediction.probability)}</p>
+                    </div>
+                    <div className="summary-card-item">
+                      <p className="stat-label">Prediction date</p>
+                      <p>{safeText(latestPrediction.prediction_date)}</p>
+                    </div>
+                    <div className="summary-card-item">
+                      <p className="stat-label">Model</p>
+                      <p>{safeText(latestPrediction.model_name)}</p>
+                    </div>
                   </div>
-                  <div className="summary-card-item">
-                    <p className="stat-label">Probability</p>
-                    <p>{formatProbability(latestPrediction.probability)}</p>
-                  </div>
-                  <div className="summary-card-item">
-                    <p className="stat-label">Prediction date</p>
-                    <p>{safeText(latestPrediction.prediction_date)}</p>
-                  </div>
-                  <div className="summary-card-item">
-                    <p className="stat-label">Model</p>
-                    <p>{safeText(latestPrediction.model_name)}</p>
-                  </div>
-                </div>
+                  {latestPrediction ? (
+                    <div className="grade-encoding-actions">
+                      <button type="button" className="action-button" onClick={() => setShowInterventionModal(true)}>
+                        Create intervention
+                      </button>
+                    </div>
+                  ) : null}
+                </>
               ) : (
                 <EmptyState title="No prediction records" message="No prediction data is available for this student." />
               )}
@@ -775,6 +825,11 @@ export function StudentDetailPage() {
               <p className="eyebrow">Interventions</p>
               <h3>Support and outcomes</h3>
             </div>
+            {latestPrediction ? (
+              <button type="button" className="action-button" onClick={() => setShowInterventionModal(true)}>
+                Create intervention
+              </button>
+            ) : null}
           </div>
 
           {interventionError ? <ErrorBanner message={interventionError} /> : null}
@@ -785,26 +840,40 @@ export function StudentDetailPage() {
 
           {!interventionLoading && !interventionError && interventions.length > 0 ? (
             <div className="table-card">
+              <div className="record-summary-grid">
+                <article className="detail-card">
+                  <p className="stat-label">Current status</p>
+                  <p className="stat-value">{latestIntervention?.status || '—'}</p>
+                </article>
+                <article className="detail-card">
+                  <p className="stat-label">Assigned staff</p>
+                  <p className="stat-value">{latestIntervention?.assigned_personnel || 'Unassigned'}</p>
+                </article>
+                <article className="detail-card">
+                  <p className="stat-label">Priority</p>
+                  <p className="stat-value">{latestIntervention?.priority || '—'}</p>
+                </article>
+              </div>
               <table>
                 <thead>
                   <tr>
                     <th>Type</th>
-                    <th>Reason</th>
+                    <th>Recommendation</th>
                     <th>Status</th>
+                    <th>Priority</th>
                     <th>Start</th>
                     <th>End</th>
-                    <th>Outcome</th>
                   </tr>
                 </thead>
                 <tbody>
                   {interventions.map((item) => (
                     <tr key={item.id}>
                       <td>{safeText(item.intervention_type)}</td>
-                      <td>{safeText(item.reason)}</td>
-                      <td><span className={`badge badge--status ${item.status === 'Completed' ? 'status-success' : item.status === 'In Progress' ? 'status-warning' : 'status-neutral'}`}>{safeText(item.status)}</span></td>
+                      <td>{safeText(item.recommendation || item.notes)}</td>
+                      <td><span className={`badge badge--status ${item.status === 'completed' ? 'status-success' : item.status === 'in_progress' ? 'status-warning' : 'status-neutral'}`}>{safeText(item.status)}</span></td>
+                      <td>{safeText(item.priority)}</td>
                       <td>{safeText(item.start_date)}</td>
                       <td>{safeText(item.end_date)}</td>
-                      <td>{safeText(item.outcome)}</td>
                     </tr>
                   ))}
                 </tbody>
