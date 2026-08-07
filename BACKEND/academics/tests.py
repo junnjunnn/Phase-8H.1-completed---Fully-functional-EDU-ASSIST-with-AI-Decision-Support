@@ -3,7 +3,7 @@ from django.test import TestCase
 from rest_framework.test import APIClient
 
 from accounts.models import UserProfile
-from academics.models import AcademicYear, GradeLevel, Section, Enrollment, Subject, AcademicRecord
+from academics.models import AcademicYear, GradeLevel, Section, Enrollment, Subject, AcademicRecord, TeacherAssignment
 from students.models import Student
 
 
@@ -77,6 +77,57 @@ class AcademicsAPITests(TestCase):
             'grading_period_type': 'Quarter',
             'quarter': 1,
             'grade': 88.00,
+        })
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('already exists', str(response.data))
+
+    def test_duplicate_active_academic_year_is_rejected(self):
+        self.client.force_authenticate(user=self.superadmin)
+        response = self.client.post('/api/academic-years/', {
+            'name': '2026-2027',
+            'start_date': '2026-06-01',
+            'end_date': '2027-03-31',
+            'is_active': True,
+        })
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('active', str(response.data))
+
+    def test_duplicate_section_in_same_grade_and_year_is_rejected(self):
+        self.client.force_authenticate(user=self.superadmin)
+        response = self.client.post('/api/sections/', {
+            'academic_year': self.academic_year.id,
+            'grade_level': self.grade_level.id,
+            'name': 'A',
+            'capacity': 40,
+            'is_active': True,
+        })
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('already exists', str(response.data))
+
+    def test_duplicate_subject_code_is_rejected(self):
+        self.client.force_authenticate(user=self.superadmin)
+        response = self.client.post('/api/subjects/', {
+            'code': 'MATH11',
+            'name': 'Mathematics 11 Advanced',
+            'category': 'Learning Area',
+            'grade_level': self.grade_level.id,
+            'is_active': True,
+        })
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('already exists', str(response.data))
+
+    def test_duplicate_teacher_assignment_is_rejected(self):
+        self.client.force_authenticate(user=self.superadmin)
+        subject = Subject.objects.create(code='SCI11', name='Science 11', category='Learning Area', grade_level=self.grade_level)
+        section = Section.objects.create(name='C', grade_level=self.grade_level, academic_year=self.academic_year)
+        TeacherAssignment.objects.create(teacher=self.teacher, academic_year=self.academic_year, grade_level=self.grade_level, section=section, subject=subject)
+        response = self.client.post('/api/teacher-assignments/', {
+            'teacher': self.teacher.id,
+            'academic_year': self.academic_year.id,
+            'grade_level': self.grade_level.id,
+            'section': section.id,
+            'subject': subject.id,
+            'is_active': True,
         })
         self.assertEqual(response.status_code, 400)
         self.assertIn('already exists', str(response.data))

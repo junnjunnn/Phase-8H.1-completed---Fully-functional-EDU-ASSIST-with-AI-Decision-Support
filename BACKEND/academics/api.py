@@ -7,8 +7,8 @@ from django.contrib.auth import get_user_model
 from audit.models import AuditLog
 from accounts.permissions import IsAuthorizedStaff, IsSchoolAdmin, IsTeacherOrSchoolAdmin
 from accounts.utils import get_authorized_enrollment_queryset, get_user_scope
-from .models import AcademicRecord, AcademicYear, Enrollment, GradeLevel, Section, Strand, Subject
-from .serializers import AcademicRecordSerializer, AcademicYearSerializer, EnrollmentSerializer, GradeLevelSerializer, SectionSerializer, StrandSerializer, SubjectSerializer
+from .models import AcademicRecord, AcademicYear, Enrollment, GradeLevel, Section, Strand, Subject, TeacherAssignment
+from .serializers import AcademicRecordSerializer, AcademicYearSerializer, EnrollmentSerializer, GradeLevelSerializer, SectionSerializer, StrandSerializer, SubjectSerializer, TeacherAssignmentSerializer
 
 
 class AcademicYearViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins.CreateModelMixin, mixins.UpdateModelMixin, viewsets.GenericViewSet):
@@ -144,6 +144,62 @@ class SubjectViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins.Cr
     queryset = Subject.objects.select_related('grade_level', 'strand').all()
     serializer_class = SubjectSerializer
     permission_classes = [permissions.IsAuthenticated, IsAuthorizedStaff]
+
+    def get_permissions(self):
+        if self.request.method in ['POST', 'PUT', 'PATCH']:
+            return [permissions.IsAuthenticated(), IsSchoolAdmin()]
+        return [permissions.IsAuthenticated(), IsAuthorizedStaff()]
+
+    def perform_create(self, serializer):
+        instance = serializer.save()
+        AuditLog.objects.create(
+            user=self.request.user if self.request.user.is_authenticated else None,
+            action='CREATE',
+            module=self.serializer_class.Meta.model._meta.app_label,
+            object_type=self.serializer_class.Meta.model.__name__,
+            object_id=str(instance.pk),
+        )
+
+    def perform_update(self, serializer):
+        instance = serializer.save()
+        AuditLog.objects.create(
+            user=self.request.user if self.request.user.is_authenticated else None,
+            action='UPDATE',
+            module=self.serializer_class.Meta.model._meta.app_label,
+            object_type=self.serializer_class.Meta.model.__name__,
+            object_id=str(instance.pk),
+        )
+
+
+class TeacherAssignmentViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins.CreateModelMixin, mixins.UpdateModelMixin, viewsets.GenericViewSet):
+    queryset = TeacherAssignment.objects.select_related('teacher', 'academic_year', 'grade_level', 'section', 'subject').all()
+    serializer_class = TeacherAssignmentSerializer
+    permission_classes = [permissions.IsAuthenticated, IsAuthorizedStaff]
+
+    def get_permissions(self):
+        if self.request.method in ['POST', 'PUT', 'PATCH']:
+            return [permissions.IsAuthenticated(), IsSchoolAdmin()]
+        return [permissions.IsAuthenticated(), IsAuthorizedStaff()]
+
+    def perform_create(self, serializer):
+        instance = serializer.save()
+        AuditLog.objects.create(
+            user=self.request.user if self.request.user.is_authenticated else None,
+            action='CREATE',
+            module=self.serializer_class.Meta.model._meta.app_label,
+            object_type=self.serializer_class.Meta.model.__name__,
+            object_id=str(instance.pk),
+        )
+
+    def perform_update(self, serializer):
+        instance = serializer.save()
+        AuditLog.objects.create(
+            user=self.request.user if self.request.user.is_authenticated else None,
+            action='UPDATE',
+            module=self.serializer_class.Meta.model._meta.app_label,
+            object_type=self.serializer_class.Meta.model.__name__,
+            object_id=str(instance.pk),
+        )
 
 
 class EnrollmentViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins.CreateModelMixin, mixins.UpdateModelMixin, viewsets.GenericViewSet):

@@ -5,9 +5,10 @@ import { EmptyState } from '../../components/common/EmptyState'
 import { ErrorBanner } from '../../components/feedback/ErrorBanner'
 import { LoadingSpinner } from '../../components/common/LoadingSpinner'
 import { PageHeader } from '../../components/common/PageHeader'
+import { ConfirmDialog } from '../../components/common/ConfirmDialog'
 import { useAuth } from '../../context/AuthContext'
 import { getApiErrorMessage } from '../../services/api'
-import { createEnrollment, createStudent, getAcademicYears, getGradeLevels, getSections, getStudents } from '../../services/studentService'
+import { createEnrollment, createStudent, getAcademicYears, getGradeLevels, getSections, getStudents, updateStudent } from '../../services/studentService'
 
 function statusBadgeClass(status) {
   const normalized = (status || '').toLowerCase()
@@ -21,6 +22,13 @@ function statusBadgeClass(status) {
     return 'status-pill status-pill--neutral'
   }
   return 'status-pill status-pill--default'
+}
+
+function getSectionLabel(section) {
+  const capacity = Number(section.capacity || 0)
+  const studentCount = Number(section.student_count || 0)
+  const occupancy = capacity > 0 ? ` · ${studentCount}/${capacity}` : ''
+  return `${section.name}${occupancy}`
 }
 
 export function StudentsPage() {
@@ -54,6 +62,13 @@ export function StudentsPage() {
   const [registerMessage, setRegisterMessage] = useState('')
   const [selectedYear, setSelectedYear] = useState('')
   const [selectedGrade, setSelectedGrade] = useState('')
+  const [editModalOpen, setEditModalOpen] = useState(false)
+  const [selectedStudent, setSelectedStudent] = useState(null)
+  const [editForm, setEditForm] = useState({ lrn: '', first_name: '', middle_name: '', last_name: '', gender: '', birth_date: '', student_status: 'active' })
+  const [editErrors, setEditErrors] = useState({})
+  const [editSaving, setEditSaving] = useState(false)
+  const [confirmOpen, setConfirmOpen] = useState(false)
+  const [pendingAction, setPendingAction] = useState(null)
   const canManageStudents = user?.role_name === 'SUPER_ADMIN' || user?.role_name === 'SCHOOL_ADMIN'
 
   const canCreateStudent = canManageStudents
@@ -141,6 +156,68 @@ export function StudentsPage() {
     if (name === 'grade_level') {
       setSelectedGrade(value)
       setRegisterForm((current) => ({ ...current, section: '' }))
+    }
+  }
+
+  function openEditModal(student) {
+    setSelectedStudent(student)
+    setEditForm({
+      lrn: student.lrn || '',
+      first_name: student.first_name || '',
+      middle_name: student.middle_name || '',
+      last_name: student.last_name || '',
+      gender: student.gender || '',
+      birth_date: student.birth_date || '',
+      student_status: student.student_status || 'active',
+    })
+    setEditErrors({})
+    setEditModalOpen(true)
+  }
+
+  async function handleEditSubmit(event) {
+    event.preventDefault()
+    setEditErrors({})
+    setEditSaving(true)
+
+    try {
+      await updateStudent(selectedStudent.id, {
+        lrn: editForm.lrn.trim(),
+        first_name: editForm.first_name.trim(),
+        middle_name: editForm.middle_name.trim(),
+        last_name: editForm.last_name.trim(),
+        gender: editForm.gender.trim(),
+        birth_date: editForm.birth_date || null,
+        student_status: editForm.student_status,
+      })
+      const refreshed = await getStudents({ search })
+      setStudents(refreshed.results || [])
+      setPagination({ count: refreshed.count || 0, next: refreshed.next, previous: refreshed.previous })
+      setEditModalOpen(false)
+      setSelectedStudent(null)
+    } catch (err) {
+      setEditErrors({ form: getApiErrorMessage(err) })
+    } finally {
+      setEditSaving(false)
+    }
+  }
+
+  async function handleStatusAction(student, nextStatus) {
+    setPendingAction({ student, nextStatus })
+    setConfirmOpen(true)
+  }
+
+  async function confirmStatusChange() {
+    if (!pendingAction) return
+    try {
+      await updateStudent(pendingAction.student.id, { student_status: pendingAction.nextStatus })
+      const refreshed = await getStudents({ search })
+      setStudents(refreshed.results || [])
+      setPagination({ count: refreshed.count || 0, next: refreshed.next, previous: refreshed.previous })
+    } catch (err) {
+      setError(getApiErrorMessage(err))
+    } finally {
+      setConfirmOpen(false)
+      setPendingAction(null)
     }
   }
 
@@ -287,13 +364,21 @@ export function StudentsPage() {
                       <span className={statusBadgeClass(student.student_status)}>{student.student_status || 'Unknown'}</span>
                     </td>
                     <td className="action-cell" data-label="Action">
-                      <Link
-                        className="action-button action-button--primary"
-                        to={`/students/${student.id}`}
-                        aria-label={`View details for ${student.first_name || ''} ${student.last_name || ''}`.trim()}
-                      >
-                        View
-                      </Link>
+                      <div className="section-actions" style={{ gap: '0.5rem' }}>
+                        <Link
+                          className="action-button action-button--primary"
+                          to={`/students/${student.id}`}
+                          aria-label={`View details for ${student.first_name || ''} ${student.last_name || ''}`.trim()}
+                        >
+                          View
+                        </Link>
+                        {canManageStudents ? (
+                          <>
+                            <button type="button" className="action-button action-button--neutral" onClick={() => openEditModal(student)}>Edit</button>
+                            <button type="button" className="action-button action-button--neutral" onClick={() => handleStatusAction(student, student.student_status === 'archived' ? 'active' : 'archived')}>{student.student_status === 'archived' ? 'Restore' : 'Archive'}</button>
+                          </>
+                        ) : null}
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -302,6 +387,72 @@ export function StudentsPage() {
           </div>
         ) : null}
       </div>
+
+      <ConfirmDialog
+        open={confirmOpen}
+        title={pendingAction?.nextStatus === 'archived' ? 'Archive student' : 'Restore student'}
+        message={pendingAction ? `Change the student status to ${pendingAction.nextStatus === 'archived' ? 'archived' : 'active'}?` : ''}
+        confirmLabel={pendingAction?.nextStatus === 'archived' ? 'Archive' : 'Restore'}
+        onConfirm={confirmStatusChange}
+        onCancel={() => { setConfirmOpen(false); setPendingAction(null) }}
+      />
+
+      {editModalOpen && selectedStudent ? (
+        <div className="modal-backdrop" role="presentation" onClick={() => setEditModalOpen(false)}>
+          <div className="modal-card" role="dialog" aria-modal="true" aria-labelledby="edit-student-title" onClick={(event) => event.stopPropagation()}>
+            <div className="modal-header">
+              <div>
+                <p className="eyebrow">Student details</p>
+                <h2 id="edit-student-title">Edit student</h2>
+              </div>
+              <button type="button" className="icon-button" aria-label="Close edit form" onClick={() => setEditModalOpen(false)}>×</button>
+            </div>
+            <form className="registration-form" onSubmit={handleEditSubmit}>
+              {editErrors.form ? <ErrorBanner message={editErrors.form} /> : null}
+              <div className="form-grid">
+                <label>
+                  <span>Student ID</span>
+                  <input value={editForm.lrn} onChange={(event) => setEditForm({ ...editForm, lrn: event.target.value })} />
+                </label>
+                <label>
+                  <span>First name</span>
+                  <input value={editForm.first_name} onChange={(event) => setEditForm({ ...editForm, first_name: event.target.value })} required />
+                </label>
+                <label>
+                  <span>Middle name</span>
+                  <input value={editForm.middle_name} onChange={(event) => setEditForm({ ...editForm, middle_name: event.target.value })} />
+                </label>
+                <label>
+                  <span>Last name</span>
+                  <input value={editForm.last_name} onChange={(event) => setEditForm({ ...editForm, last_name: event.target.value })} required />
+                </label>
+                <label>
+                  <span>Gender</span>
+                  <input value={editForm.gender} onChange={(event) => setEditForm({ ...editForm, gender: event.target.value })} />
+                </label>
+                <label>
+                  <span>Date of birth</span>
+                  <input type="date" value={editForm.birth_date} onChange={(event) => setEditForm({ ...editForm, birth_date: event.target.value })} />
+                </label>
+                <label>
+                  <span>Status</span>
+                  <select value={editForm.student_status} onChange={(event) => setEditForm({ ...editForm, student_status: event.target.value })}>
+                    <option value="active">Active</option>
+                    <option value="inactive">Inactive</option>
+                    <option value="archived">Archived</option>
+                    <option value="graduated">Graduated</option>
+                    <option value="transferred">Transferred</option>
+                  </select>
+                </label>
+              </div>
+              <div className="modal-actions">
+                <button type="button" className="btn btn-outline" onClick={() => setEditModalOpen(false)}>Cancel</button>
+                <button type="submit" className="btn btn-primary" disabled={editSaving}>{editSaving ? 'Saving...' : 'Save changes'}</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      ) : null}
 
       {showRegisterModal && (
         <div className="modal-backdrop" role="presentation" onClick={() => setShowRegisterModal(false)}>
@@ -374,8 +525,13 @@ export function StudentsPage() {
                       const matchesYear = !selectedYear || String(section.academic_year) === String(selectedYear) || String(section.academic_year_id || section.academic_year) === String(selectedYear)
                       const matchesGrade = !selectedGrade || String(section.grade_level) === String(selectedGrade) || String(section.grade_level_id || section.grade_level) === String(selectedGrade)
                       return matchesYear && matchesGrade
-                    }).map((section) => <option key={section.id} value={section.id}>{section.name}</option>)}
+                    }).map((section) => <option key={section.id} value={section.id}>{getSectionLabel(section)}</option>)}
                   </select>
+                  {selectedYear && selectedGrade && sections.filter((section) => {
+                    const matchesYear = !selectedYear || String(section.academic_year) === String(selectedYear) || String(section.academic_year_id || section.academic_year) === String(selectedYear)
+                    const matchesGrade = !selectedGrade || String(section.grade_level) === String(selectedGrade) || String(section.grade_level_id || section.grade_level) === String(selectedGrade)
+                    return matchesYear && matchesGrade
+                  }).length === 0 ? <small className="field-hint">No sections are available for the selected year and grade yet.</small> : null}
                   {registerErrors.section ? <small className="field-error">{registerErrors.section}</small> : null}
                 </label>
                 <label>

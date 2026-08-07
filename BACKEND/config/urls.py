@@ -15,6 +15,7 @@ from academics.api import (
     SectionViewSet,
     StrandViewSet,
     SubjectViewSet,
+    TeacherAssignmentViewSet,
     EnrollmentViewSet,
     AcademicRecordViewSet,
 )
@@ -38,6 +39,7 @@ router.register('grade-levels', GradeLevelViewSet, basename='grade-level')
 router.register('sections', SectionViewSet, basename='section')
 router.register('strands', StrandViewSet, basename='strand')
 router.register('subjects', SubjectViewSet, basename='subject')
+router.register('teacher-assignments', TeacherAssignmentViewSet, basename='teacher-assignment')
 router.register('enrollments', EnrollmentViewSet, basename='enrollment')
 router.register('academic-records', AcademicRecordViewSet, basename='academic-record')
 router.register('attendance-records', AttendanceRecordViewSet, basename='attendance-record')

@@ -6,10 +6,12 @@ import { Login } from '../pages/auth/Login'
 import { Dashboard } from '../pages/dashboard/Dashboard'
 import { StudentsPage } from '../pages/students/StudentsPage'
 import { StudentDetailPage } from '../pages/students/StudentDetailPage'
+import { EnrollmentPage } from '../pages/students/EnrollmentPage'
 import { AcademicsPage } from '../pages/academics/AcademicsPage'
 import { AcademicStructurePage } from '../pages/academics/AcademicStructurePage'
 import { GradeEncodingPage } from '../pages/academics/GradeEncodingPage'
 import { MyClassesPage } from '../pages/academics/MyClassesPage'
+import { TeacherAssignmentsPage } from '../pages/academics/TeacherAssignmentsPage'
 import { AttendancePage } from '../pages/attendance/AttendancePage'
 import { AttendanceEncodingPage } from '../pages/attendance/AttendanceEncodingPage'
 import { BehaviorPage } from '../pages/behavior/BehaviorPage'
@@ -34,9 +36,13 @@ export function AppRoutes() {
           <Route path="/students" element={<StudentsPage />} />
           <Route path="/students/:id" element={<StudentDetailPage />} />
           <Route path="/academics" element={<AcademicsPage />} />
-          <Route path="/my-classes" element={<MyClassesPage />} />
+          <Route element={<RoleRoute allowedRoles={['TEACHER']} />}>
+            <Route path="/my-classes" element={<MyClassesPage />} />
+          </Route>
           <Route element={<RoleRoute allowedRoles={['SUPER_ADMIN', 'SCHOOL_ADMIN']} />}>
             <Route path="/academic-structure" element={<AcademicStructurePage />} />
+            <Route path="/teacher-assignments" element={<TeacherAssignmentsPage />} />
+            <Route path="/enrollment" element={<EnrollmentPage />} />
           </Route>
           <Route path="/academics/encode" element={<GradeEncodingPage />} />
           <Route path="/attendance" element={<AttendancePage />} />

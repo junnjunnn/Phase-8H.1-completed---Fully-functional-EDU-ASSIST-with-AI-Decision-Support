@@ -20,22 +20,33 @@ import { navigationItems } from '../../config/navigation'
 
 const sectionConfig = [
   { key: 'main', label: 'Main', items: ['Dashboard'] },
-  { key: 'records', label: 'Academic Records', items: ['Students', 'Attendance', 'Behavior', 'Interventions'] },
-  { key: 'management', label: 'Academic Management', items: ['Academic Structure', 'Academics', 'My Classes'] },
-  { key: 'ai', label: 'AI Decision Support', items: ['Predictions', 'Reports'] },
-  { key: 'admin', label: 'Administration', items: ['User Management'] },
+  { key: 'academic-management', label: 'Academic Management', items: ['Academic Years', 'Grade Levels', 'Sections', 'Subjects', 'Teacher Assignments'] },
+  { key: 'student-management', label: 'Student Management', items: ['My Classes', 'Students', 'Enrollment'] },
+  { key: 'academic-records', label: 'Academic Records', items: ['Grade Encoding', 'Attendance', 'Behavior'] },
+  { key: 'ai', label: 'AI Decision Support', items: ['Predictions', 'Interventions', 'Reports'] },
+  { key: 'admin', label: 'Administration', items: ['User Management', 'Audit Logs'] },
+  { key: 'account', label: 'Account', items: ['Profile'] },
 ]
 
 const iconMap = {
   Dashboard: HomeIcon,
   Students: UserGroupIcon,
+  Academics: AcademicCapIcon,
   Attendance: CalendarDaysIcon,
   Behavior: ClipboardDocumentListIcon,
   Interventions: ShieldCheckIcon,
   Predictions: SparklesIcon,
   Reports: ChartBarIcon,
   'User Management': UserGroupIcon,
-  'Academic Structure': ClipboardDocumentListIcon,
+  'Academic Years': ClipboardDocumentListIcon,
+  'Grade Levels': ClipboardDocumentListIcon,
+  'Sections': ClipboardDocumentListIcon,
+  'Subjects': ClipboardDocumentListIcon,
+  'Teacher Assignments': AcademicCapIcon,
+  Enrollment: UserGroupIcon,
+  'Grade Encoding': AcademicCapIcon,
+  'Audit Logs': ShieldCheckIcon,
+  Profile: UserGroupIcon,
   'My Classes': AcademicCapIcon,
   Settings: Cog6ToothIcon,
 }
@@ -60,9 +71,9 @@ export function SidebarNav({ collapsed, onToggleCollapse, onOpenProfile, onOpenN
   const location = useLocation()
 
   const visibleItems = useMemo(() => navigationItems.filter((item) => {
-    const role = user?.role || 'NONE'
+    const role = (user?.role_name || user?.role || user?.profile?.role_name || 'NONE').toUpperCase()
     return item.roles.includes(role)
-  }), [user?.role])
+  }), [user?.role, user?.role_name, user?.profile?.role_name])
 
   const groupedItems = useMemo(() => {
     const groups = sectionConfig.map((section) => ({

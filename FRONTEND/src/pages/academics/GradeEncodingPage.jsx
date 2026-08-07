@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useLocation } from 'react-router-dom'
 import { EmptyState } from '../../components/common/EmptyState'
 import { ErrorBanner } from '../../components/feedback/ErrorBanner'
 import { LoadingSpinner } from '../../components/common/LoadingSpinner'
@@ -59,6 +59,7 @@ function validateGradeValue(gradeValue) {
 
 export function GradeEncodingPage() {
   const { user } = useAuth()
+  const location = useLocation()
   const role = user?.role_name || user?.role || user?.profile?.role_name || 'NONE'
   const canManageGrades = role === 'SUPER_ADMIN' || role === 'SCHOOL_ADMIN' || role === 'TEACHER'
   const isAdministrator = role === 'SUPER_ADMIN' || role === 'SCHOOL_ADMIN'
@@ -82,6 +83,20 @@ export function GradeEncodingPage() {
   const [loadingClass, setLoadingClass] = useState(false)
   const [error, setError] = useState('')
   const [successMessage, setSuccessMessage] = useState('')
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.search)
+    const nextFilters = {
+      academicYear: params.get('academic_year') || '',
+      gradeLevel: params.get('grade_level') || '',
+      section: params.get('section') || '',
+      subject: params.get('subject') || '',
+      gradingPeriod: 'Quarter',
+      quarter: '1',
+    }
+
+    setFilters((currentFilters) => ({ ...currentFilters, ...nextFilters }))
+  }, [location.search])
 
   useEffect(() => {
     let active = true
@@ -124,6 +139,18 @@ export function GradeEncodingPage() {
     }
   }, [])
 
+  useEffect(() => {
+    const params = new URLSearchParams(location.search)
+    const academicYear = params.get('academic_year') || ''
+    const gradeLevel = params.get('grade_level') || ''
+    const section = params.get('section') || ''
+    const subject = params.get('subject') || ''
+
+    if (academicYear && gradeLevel && section && subject) {
+      loadClassData({ academicYear, gradeLevel, section, subject, gradingPeriod: filters.gradingPeriod, quarter: filters.quarter })
+    }
+  }, [location.search, filters.gradingPeriod, filters.quarter])
+
   const filteredSections = useMemo(() => {
     return sections.filter((section) => {
       const matchesYear = !filters.academicYear || String(section.academic_year) === String(filters.academicYear)
@@ -139,8 +166,8 @@ export function GradeEncodingPage() {
     })
   }, [filters.gradeLevel, subjects])
 
-  async function loadClassData() {
-    if (!filters.academicYear || !filters.gradeLevel || !filters.section || !filters.subject) {
+  async function loadClassData(nextFilters = filters) {
+    if (!nextFilters.academicYear || !nextFilters.gradeLevel || !nextFilters.section || !nextFilters.subject) {
       setError('Select an academic year, grade level, section, and subject before loading the grade sheet.')
       return
     }
@@ -151,8 +178,8 @@ export function GradeEncodingPage() {
 
     try {
       const [enrollmentsData, recordsData] = await Promise.all([
-        getEnrollments({ academic_year: filters.academicYear, grade_level: filters.gradeLevel, section: filters.section, enrollment_status: 'active' }),
-        getAcademicRecords({ academic_year: filters.academicYear, subject: filters.subject, grading_period_type: filters.gradingPeriod, quarter: filters.gradingPeriod === 'Quarter' ? filters.quarter : undefined }),
+        getEnrollments({ academic_year: nextFilters.academicYear, grade_level: nextFilters.gradeLevel, section: nextFilters.section, enrollment_status: 'active' }),
+        getAcademicRecords({ academic_year: nextFilters.academicYear, subject: nextFilters.subject, grading_period_type: nextFilters.gradingPeriod, quarter: nextFilters.gradingPeriod === 'Quarter' ? nextFilters.quarter : undefined }),
       ])
 
       const enrollments = normalizeListResponse(enrollmentsData).items

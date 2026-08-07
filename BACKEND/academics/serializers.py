@@ -1,6 +1,7 @@
 from rest_framework import serializers
+from rest_framework.validators import UniqueTogetherValidator
 
-from .models import AcademicRecord, AcademicYear, Enrollment, GradeLevel, Section, Strand, Subject
+from .models import AcademicRecord, AcademicYear, Enrollment, GradeLevel, Section, Strand, Subject, TeacherAssignment
 
 
 class AcademicYearSerializer(serializers.ModelSerializer):
@@ -8,11 +9,44 @@ class AcademicYearSerializer(serializers.ModelSerializer):
         model = AcademicYear
         fields = ['id', 'name', 'start_date', 'end_date', 'is_active']
 
+    def validate_name(self, value):
+        normalized_value = (value or '').strip()
+        if not normalized_value:
+            raise serializers.ValidationError('Academic year is required.')
+        return normalized_value
+
+    def validate(self, attrs):
+        is_active = attrs.get('is_active', getattr(self.instance, 'is_active', False))
+        if is_active:
+            queryset = AcademicYear.objects.filter(is_active=True)
+            if self.instance:
+                queryset = queryset.exclude(pk=self.instance.pk)
+            if queryset.exists():
+                raise serializers.ValidationError({'is_active': 'Only one academic year can be active at a time.'})
+        return attrs
+
 
 class GradeLevelSerializer(serializers.ModelSerializer):
     class Meta:
         model = GradeLevel
         fields = ['id', 'name', 'code', 'school_level', 'order', 'is_active']
+
+    def validate_name(self, value):
+        normalized_value = (value or '').strip()
+        if not normalized_value:
+            raise serializers.ValidationError('Grade level name is required.')
+        return normalized_value
+
+    def validate_code(self, value):
+        normalized_value = (value or '').strip().upper()
+        if not normalized_value:
+            raise serializers.ValidationError('Grade level code is required.')
+        queryset = GradeLevel.objects.filter(code=normalized_value)
+        if self.instance:
+            queryset = queryset.exclude(pk=self.instance.pk)
+        if queryset.exists():
+            raise serializers.ValidationError('A grade level with this code already exists.')
+        return normalized_value
 
 
 class SectionSerializer(serializers.ModelSerializer):
@@ -24,6 +58,13 @@ class SectionSerializer(serializers.ModelSerializer):
     class Meta:
         model = Section
         fields = ['id', 'grade_level', 'academic_year', 'name', 'capacity', 'description', 'adviser', 'is_active', 'student_count', 'academic_year_name', 'grade_level_name', 'adviser_name']
+        validators = [
+            UniqueTogetherValidator(
+                queryset=Section.objects.all(),
+                fields=('grade_level', 'academic_year', 'name'),
+                message='A section with this name already exists in the selected grade level and academic year.',
+            )
+        ]
 
     def get_student_count(self, obj):
         return obj.enrollments.filter(enrollment_status='active').count()
@@ -39,6 +80,28 @@ class SectionSerializer(serializers.ModelSerializer):
             return None
         return f"{obj.adviser.first_name} {obj.adviser.last_name}".strip() or obj.adviser.username
 
+    def validate_name(self, value):
+        normalized_value = (value or '').strip()
+        if not normalized_value:
+            raise serializers.ValidationError('Section name is required.')
+        return normalized_value
+
+    def validate(self, attrs):
+        grade_level = attrs.get('grade_level') or getattr(self.instance, 'grade_level', None)
+        academic_year = attrs.get('academic_year') or getattr(self.instance, 'academic_year', None)
+        name = attrs.get('name') or getattr(self.instance, 'name', None)
+        capacity = attrs.get('capacity', getattr(self.instance, 'capacity', 0))
+
+        if grade_level and academic_year and name:
+            queryset = Section.objects.filter(grade_level=grade_level, academic_year=academic_year, name=name)
+            if self.instance:
+                queryset = queryset.exclude(pk=self.instance.pk)
+            if queryset.exists():
+                raise serializers.ValidationError('A section with this name already exists in the selected grade level and academic year.')
+        if capacity is not None and capacity < 0:
+            raise serializers.ValidationError({'capacity': 'Capacity cannot be negative.'})
+        return attrs
+
 
 class StrandSerializer(serializers.ModelSerializer):
     class Meta:
@@ -49,7 +112,73 @@ class StrandSerializer(serializers.ModelSerializer):
 class SubjectSerializer(serializers.ModelSerializer):
     class Meta:
         model = Subject
-        fields = ['id', 'code', 'name', 'category', 'grade_level', 'strand', 'is_active']
+        fields = ['id', 'code', 'name', 'description', 'category', 'grade_level', 'strand', 'is_active']
+
+    def validate_code(self, value):
+        normalized_value = (value or '').strip().upper()
+        if not normalized_value:
+            raise serializers.ValidationError('Subject code is required.')
+        queryset = Subject.objects.filter(code=normalized_value)
+        if self.instance:
+            queryset = queryset.exclude(pk=self.instance.pk)
+        if queryset.exists():
+            raise serializers.ValidationError('A subject with this code already exists.')
+        return normalized_value
+
+    def validate_name(self, value):
+        normalized_value = (value or '').strip()
+        if not normalized_value:
+            raise serializers.ValidationError('Subject name is required.')
+        return normalized_value
+
+
+class TeacherAssignmentSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = TeacherAssignment
+        fields = ['id', 'teacher', 'academic_year', 'grade_level', 'section', 'subject', 'is_active']
+        validators = [
+            UniqueTogetherValidator(
+                queryset=TeacherAssignment.objects.all(),
+                fields=('teacher', 'academic_year', 'grade_level', 'section', 'subject'),
+                message='This teacher assignment already exists.',
+            )
+        ]
+
+    def validate(self, attrs):
+        teacher = attrs.get('teacher') or getattr(self.instance, 'teacher', None)
+        academic_year = attrs.get('academic_year') or getattr(self.instance, 'academic_year', None)
+        grade_level = attrs.get('grade_level') or getattr(self.instance, 'grade_level', None)
+        section = attrs.get('section') or getattr(self.instance, 'section', None)
+        subject = attrs.get('subject') or getattr(self.instance, 'subject', None)
+
+        if section and grade_level and section.grade_level_id != grade_level.id:
+            raise serializers.ValidationError({'section': 'The selected section does not belong to the selected grade level.'})
+
+        if not teacher:
+            raise serializers.ValidationError({'teacher': 'Teacher is required.'})
+        if not academic_year:
+            raise serializers.ValidationError({'academic_year': 'Academic year is required.'})
+        if not grade_level:
+            raise serializers.ValidationError({'grade_level': 'Grade level is required.'})
+        if not section:
+            raise serializers.ValidationError({'section': 'Section is required.'})
+        if not subject:
+            raise serializers.ValidationError({'subject': 'Subject is required.'})
+
+        if teacher and academic_year and grade_level and section and subject:
+            queryset = TeacherAssignment.objects.filter(
+                teacher=teacher,
+                academic_year=academic_year,
+                grade_level=grade_level,
+                section=section,
+                subject=subject,
+            )
+            if self.instance:
+                queryset = queryset.exclude(pk=self.instance.pk)
+            if queryset.exists():
+                raise serializers.ValidationError('This teacher assignment already exists.')
+
+        return attrs
 
 
 class EnrollmentSerializer(serializers.ModelSerializer):
@@ -81,6 +210,13 @@ class EnrollmentSerializer(serializers.ModelSerializer):
 
         if not section:
             raise serializers.ValidationError({'section': 'Section is required.'})
+
+        if student and academic_year and grade_level and section:
+            duplicate_enrollment = Enrollment.objects.filter(student=student, academic_year=academic_year, grade_level=grade_level, section=section)
+            if self.instance:
+                duplicate_enrollment = duplicate_enrollment.exclude(pk=self.instance.pk)
+            if duplicate_enrollment.exists():
+                raise serializers.ValidationError('This student is already enrolled in the selected section for the academic year.')
 
         return attrs
 

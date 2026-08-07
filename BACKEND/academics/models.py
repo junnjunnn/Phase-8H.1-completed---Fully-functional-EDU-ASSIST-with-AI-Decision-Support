@@ -93,6 +93,7 @@ class Subject(models.Model):
     ]
     code = models.CharField(max_length=30, unique=True)
     name = models.CharField(max_length=150)
+    description = models.TextField(blank=True, default='')
     category = models.CharField(max_length=30, choices=CATEGORY_CHOICES)
     grade_level = models.ForeignKey(GradeLevel, on_delete=models.CASCADE, related_name='subjects', null=True, blank=True)
     strand = models.ForeignKey(Strand, on_delete=models.SET_NULL, related_name='subjects', null=True, blank=True)
@@ -104,6 +105,25 @@ class Subject(models.Model):
 
     def __str__(self):
         return f"{self.code} - {self.name}"
+
+
+class TeacherAssignment(models.Model):
+    teacher = models.ForeignKey(get_user_model(), on_delete=models.CASCADE, related_name='teacher_assignments')
+    academic_year = models.ForeignKey(AcademicYear, on_delete=models.CASCADE, related_name='teacher_assignments')
+    grade_level = models.ForeignKey(GradeLevel, on_delete=models.CASCADE, related_name='teacher_assignments')
+    section = models.ForeignKey(Section, on_delete=models.CASCADE, related_name='teacher_assignments')
+    subject = models.ForeignKey(Subject, on_delete=models.CASCADE, related_name='teacher_assignments')
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = ('teacher', 'academic_year', 'grade_level', 'section', 'subject')
+        ordering = ['-created_at']
+        indexes = [models.Index(fields=['teacher', 'is_active']), models.Index(fields=['academic_year', 'grade_level'])]
+
+    def __str__(self):
+        return f"{self.teacher} - {self.section} - {self.subject}"
 
 
 class Enrollment(models.Model):
