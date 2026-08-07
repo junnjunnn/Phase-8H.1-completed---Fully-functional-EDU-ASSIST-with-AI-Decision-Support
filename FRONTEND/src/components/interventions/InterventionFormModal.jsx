@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { createIntervention, updateIntervention } from '../../services/interventionService'
 import { getApiErrorMessage } from '../../services/api'
 import { getUsers } from '../../services/userService'
@@ -33,7 +33,6 @@ export function InterventionFormModal({
   latestPredictionFactors,
   enrollmentId,
   onSaved,
-  userRole,
 }) {
   const [form, setForm] = useState({
     title: '',
@@ -72,35 +71,40 @@ export function InterventionFormModal({
     loadStaff()
   }, [isOpen])
 
+  // Avoid unnecessary setState loops by only applying when the next form differs
+  const _lastAppliedForm = useRef(null)
   useEffect(() => {
-    if (!isOpen) {
-      return
-    }
+    if (!isOpen) return
 
-    if (currentValue) {
-      setForm({
-        title: currentValue.title || currentValue.recommendation || '',
-        intervention_type: currentValue.intervention_type || 'Academic Monitoring',
-        assigned_personnel: currentValue.assigned_personnel || '',
-        recommendation: currentValue.recommendation || '',
-        start_date: currentValue.start_date || '',
-        end_date: currentValue.end_date || '',
-        priority: currentValue.priority || 'medium',
-        status: currentValue.status || 'planned',
-        notes: currentValue.notes || '',
-      })
-    } else {
-      setForm({
-        title: '',
-        intervention_type: 'Academic Monitoring',
-        assigned_personnel: '',
-        recommendation: latestPrediction?.explanation || '',
-        start_date: '',
-        end_date: '',
-        priority: 'medium',
-        status: 'planned',
-        notes: '',
-      })
+    const nextForm = currentValue
+      ? {
+          title: currentValue.title || currentValue.recommendation || '',
+          intervention_type: currentValue.intervention_type || 'Academic Monitoring',
+          assigned_personnel: currentValue.assigned_personnel || '',
+          recommendation: currentValue.recommendation || '',
+          start_date: currentValue.start_date || '',
+          end_date: currentValue.end_date || '',
+          priority: currentValue.priority || 'medium',
+          status: currentValue.status || 'planned',
+          notes: currentValue.notes || '',
+        }
+      : {
+          title: '',
+          intervention_type: 'Academic Monitoring',
+          assigned_personnel: '',
+          recommendation: latestPrediction?.explanation || '',
+          start_date: '',
+          end_date: '',
+          priority: 'medium',
+          status: 'planned',
+          notes: '',
+        }
+
+    const last = _lastAppliedForm.current
+    const changed = JSON.stringify(last) !== JSON.stringify(nextForm)
+    if (changed) {
+      setForm(nextForm)
+      _lastAppliedForm.current = nextForm
     }
   }, [currentValue, isOpen, latestPrediction])
 

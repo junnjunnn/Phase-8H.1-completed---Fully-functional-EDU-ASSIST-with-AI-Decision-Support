@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { EmptyState } from '../../components/common/EmptyState'
 import { ErrorBanner } from '../../components/feedback/ErrorBanner'
@@ -62,7 +62,6 @@ export function GradeEncodingPage() {
   const location = useLocation()
   const role = user?.role_name || user?.role || user?.profile?.role_name || 'NONE'
   const canManageGrades = role === 'SUPER_ADMIN' || role === 'SCHOOL_ADMIN' || role === 'TEACHER'
-  const isAdministrator = role === 'SUPER_ADMIN' || role === 'SCHOOL_ADMIN'
 
   const [academicYears, setAcademicYears] = useState([])
   const [gradeLevels, setGradeLevels] = useState([])
@@ -84,6 +83,8 @@ export function GradeEncodingPage() {
   const [error, setError] = useState('')
   const [successMessage, setSuccessMessage] = useState('')
 
+  // Only update filters when query params actually change to avoid unnecessary setState
+  const _lastAppliedFilters = useRef(null)
   useEffect(() => {
     const params = new URLSearchParams(location.search)
     const nextFilters = {
@@ -95,7 +96,12 @@ export function GradeEncodingPage() {
       quarter: '1',
     }
 
-    setFilters((currentFilters) => ({ ...currentFilters, ...nextFilters }))
+    const merged = { ...filters, ...nextFilters }
+    const last = _lastAppliedFilters.current
+    if (JSON.stringify(last) !== JSON.stringify(merged)) {
+      setFilters((currentFilters) => ({ ...currentFilters, ...nextFilters }))
+      _lastAppliedFilters.current = merged
+    }
   }, [location.search])
 
   useEffect(() => {

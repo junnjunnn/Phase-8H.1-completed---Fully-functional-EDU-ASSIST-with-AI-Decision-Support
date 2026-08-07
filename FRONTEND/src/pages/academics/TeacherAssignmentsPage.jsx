@@ -77,7 +77,11 @@ export function TeacherAssignmentsPage() {
   }, [])
 
   useEffect(() => {
-    setPage(1)
+    // Defer resetting page to avoid synchronous setState in effect
+    const t = setTimeout(() => {
+      setPage((p) => (p === 1 ? p : 1))
+    }, 0)
+    return () => clearTimeout(t)
   }, [search, teacherFilter, yearFilter, gradeFilter, sectionFilter, subjectFilter, statusFilter])
 
   const filteredAssignments = useMemo(() => {

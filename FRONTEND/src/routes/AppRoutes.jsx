@@ -23,7 +23,6 @@ import { UsersPage } from '../pages/users/UsersPage'
 import { ProfilePage } from '../pages/profile/ProfilePage'
 import { AuditLogsPage } from '../pages/admin/AuditLogsPage'
 import { SettingsPage } from '../pages/settings/SettingsPage'
-import { AccessDeniedPage } from '../pages/errors/AccessDeniedPage'
 import { NotFoundPage } from '../pages/errors/NotFoundPage'
 
 export function AppRoutes() {

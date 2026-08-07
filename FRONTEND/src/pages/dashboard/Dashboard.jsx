@@ -1,7 +1,6 @@
 import { Link } from 'react-router-dom'
 import { useEffect, useMemo, useState } from 'react'
 import {
-  AcademicCapIcon,
   ChartBarIcon,
   CheckCircleIcon,
   ExclamationTriangleIcon,
@@ -12,7 +11,6 @@ import {
 import { useAuth } from '../../context/AuthContext'
 import { EmptyState } from '../../components/common/EmptyState'
 import { ErrorBanner } from '../../components/feedback/ErrorBanner'
-import { LoadingSpinner } from '../../components/common/LoadingSpinner'
 import { getApiErrorMessage } from '../../services/api'
 import { getDashboardSummary } from '../../services/predictionService'
 

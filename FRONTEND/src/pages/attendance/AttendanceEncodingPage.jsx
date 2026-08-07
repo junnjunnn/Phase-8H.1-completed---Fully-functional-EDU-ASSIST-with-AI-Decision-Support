@@ -31,9 +31,7 @@ const ATTENDANCE_OPTIONS = [
   { value: 'excused', label: 'Excused' },
 ]
 
-function getStatusLabel(status) {
-  return ATTENDANCE_OPTIONS.find((entry) => entry.value === status)?.label || status || 'Pending'
-}
+// status label helper removed (unused) to avoid lint noise
 
 export function AttendanceEncodingPage() {
   const { user } = useAuth()
@@ -82,10 +80,9 @@ export function AttendanceEncodingPage() {
         }
         setError(getApiErrorMessage(err))
       } finally {
-        if (!active) {
-          return
+        if (active) {
+          setLoading(false)
         }
-        setLoading(false)
       }
     }
 
@@ -120,7 +117,7 @@ export function AttendanceEncodingPage() {
       const enrollments = normalizeListResponse(enrollmentsData).items
       const existingRecords = normalizeListResponse(attendanceData).items
       const recordMap = existingRecords.reduce((accumulator, record) => {
-        if (record.enrollment) {
+        if (record && record.enrollment) {
           accumulator[record.enrollment] = record
         }
         return accumulator
@@ -128,7 +125,7 @@ export function AttendanceEncodingPage() {
 
       const studentProfiles = await Promise.all(enrollments.map((enrollment) => getStudentById(enrollment.student)))
       const studentMap = studentProfiles.reduce((accumulator, student) => {
-        accumulator[student.id] = student
+        if (student && student.id) accumulator[student.id] = student
         return accumulator
       }, {})
 

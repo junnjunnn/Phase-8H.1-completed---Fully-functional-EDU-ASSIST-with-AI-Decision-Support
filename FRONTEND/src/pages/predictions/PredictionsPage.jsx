@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { EmptyState } from '../../components/common/EmptyState'
 import { ErrorBanner } from '../../components/feedback/ErrorBanner'
-import { LoadingSpinner } from '../../components/common/LoadingSpinner'
 import { PageHeader } from '../../components/common/PageHeader'
 import { getRiskPredictions, getPredictionFactors } from '../../services/predictionService'
 import { getApiErrorMessage } from '../../services/api'
@@ -60,6 +59,7 @@ function getPredictionGuidance(riskSummary) {
     ],
   }
 }
+
 export function PredictionsPage() {
   const [predictions, setPredictions] = useState([])
   const [loading, setLoading] = useState(true)
@@ -249,7 +249,7 @@ export function PredictionsPage() {
         ) : null}
 
         {!loading && !error && predictions.length > 0 ? (
-          <>
+          <div>
             <div className="record-table-header">
               <p>{pagination.count} prediction record{pagination.count === 1 ? '' : 's'} found.</p>
             </div>
@@ -295,7 +295,7 @@ export function PredictionsPage() {
                 </tbody>
               </table>
             </div>
-          </>
+          </div>
         ) : null}
       </div>
 

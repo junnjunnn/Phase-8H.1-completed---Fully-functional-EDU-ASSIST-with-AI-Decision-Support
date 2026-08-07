@@ -72,7 +72,7 @@ export function StudentsPage() {
   const canManageStudents = user?.role_name === 'SUPER_ADMIN' || user?.role_name === 'SCHOOL_ADMIN'
 
   const canCreateStudent = canManageStudents
-  const canEnrollStudent = canManageStudents
+  
 
   const sortedStudents = useMemo(() => {
     const rows = [...students]

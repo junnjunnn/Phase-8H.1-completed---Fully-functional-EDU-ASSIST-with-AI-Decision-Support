@@ -86,8 +86,6 @@ export function StudentDetailPage() {
   const [studentLoading, setStudentLoading] = useState(true)
 
   const [enrollments, setEnrollments] = useState([])
-  const [enrollmentError, setEnrollmentError] = useState('')
-  const [enrollmentLoading, setEnrollmentLoading] = useState(true)
 
   const [academicRecords, setAcademicRecords] = useState([])
   const [academicError, setAcademicError] = useState('')
@@ -133,8 +131,6 @@ export function StudentDetailPage() {
     async function loadStudentProfile() {
       setStudentLoading(true)
       setStudentError('')
-      setEnrollmentLoading(true)
-      setEnrollmentError('')
 
       try {
         const [studentData, enrollmentData] = await Promise.all([
@@ -154,11 +150,9 @@ export function StudentDetailPage() {
         }
         const message = getApiErrorMessage(err)
         setStudentError(message)
-        setEnrollmentError(message)
       } finally {
         if (active) {
           setStudentLoading(false)
-          setEnrollmentLoading(false)
         }
       }
     }

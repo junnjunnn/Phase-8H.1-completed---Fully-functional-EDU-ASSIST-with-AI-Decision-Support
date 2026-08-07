@@ -5,7 +5,6 @@ import { EmptyState } from '../../components/common/EmptyState'
 import { ErrorBanner } from '../../components/feedback/ErrorBanner'
 import { PageHeader } from '../../components/common/PageHeader'
 import apiClient, { getApiErrorMessage } from '../../services/api'
-import { getEnrollments } from '../../services/academicsService'
 import { getReportCenter } from '../../services/reportService'
 
 function normalizeListResponse(data) {
@@ -33,14 +32,14 @@ export function MyClassesPage() {
         })
 
         const assignmentsWithReports = await Promise.all(myAssignments.map(async (assignment) => {
-          let reportSummary = null
+          let reportSummary
           try {
             reportSummary = await getReportCenter({
               academic_year: assignment.academic_year,
               grade_level: assignment.grade_level,
               section: assignment.section,
             })
-          } catch (reportError) {
+          } catch {
             reportSummary = null
           }
 

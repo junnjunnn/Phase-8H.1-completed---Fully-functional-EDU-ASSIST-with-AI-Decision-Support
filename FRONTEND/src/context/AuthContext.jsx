@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components */
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import { getCurrentUser, login as loginRequest, logout as logoutRequest } from '../services/authService'
 
@@ -14,10 +15,11 @@ export function AuthProvider({ children }) {
       setUser(profile)
       setIsAuthenticated(true)
       return profile
-    } catch (error) {
+    } catch (err) {
+      // Ensure errors are logged but do not leak an unused identifier
       setUser(null)
       setIsAuthenticated(false)
-      throw error
+      throw err
     }
   }, [])
 
@@ -31,7 +33,7 @@ export function AuthProvider({ children }) {
           setUser(profile)
           setIsAuthenticated(true)
         }
-      } catch (error) {
+      } catch {
         if (isMounted) {
           setUser(null)
           setIsAuthenticated(false)

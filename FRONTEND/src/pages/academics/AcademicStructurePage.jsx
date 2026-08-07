@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useAuth } from '../../context/AuthContext'
 import { EmptyState } from '../../components/common/EmptyState'
 import { ErrorBanner } from '../../components/feedback/ErrorBanner'
 import { PageHeader } from '../../components/common/PageHeader'
@@ -32,7 +31,6 @@ function getNameById(items, id) {
 }
 
 export function AcademicStructurePage() {
-  const { user } = useAuth()
   const [academicYears, setAcademicYears] = useState([])
   const [gradeLevels, setGradeLevels] = useState([])
   const [sections, setSections] = useState([])

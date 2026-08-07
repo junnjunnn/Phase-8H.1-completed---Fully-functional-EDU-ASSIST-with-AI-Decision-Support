@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { EmptyState } from '../../components/common/EmptyState'
@@ -76,11 +76,16 @@ export function ReportsPage() {
     return categories
   }, [user])
 
+  // Only update active category when it actually differs to avoid synchronous setState loops
+  const _lastCategoryRef = useRef(null)
   useEffect(() => {
     const params = new URLSearchParams(location.search)
     const category = params.get('category')
     if (category && categories.some((item) => item.key === category)) {
-      setActiveCategory(category)
+      if (_lastCategoryRef.current !== category) {
+        setActiveCategory(category)
+        _lastCategoryRef.current = category
+      }
     }
   }, [location.search])
 
@@ -253,7 +258,7 @@ export function ReportsPage() {
       ) : null}
 
       {!loading && reportData ? (
-        <>
+        <div>
           <section className="dashboard-summary-grid" aria-label="Report summaries">
             <article className="dashboard-metric-card">
               <p className="stat-label">Students</p>
@@ -515,7 +520,7 @@ export function ReportsPage() {
               />
             </div>
           </section>
-        </>
+        </div>
       ) : null}
     </div>
   )

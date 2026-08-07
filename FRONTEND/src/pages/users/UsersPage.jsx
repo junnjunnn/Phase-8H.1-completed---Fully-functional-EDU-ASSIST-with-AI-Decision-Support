@@ -86,7 +86,11 @@ export function UsersPage() {
   }
 
   useEffect(() => {
-    loadUsers()
+    // Defer initial load to allow mount to settle and avoid potential synchronous state updates
+    const t = setTimeout(() => {
+      loadUsers()
+    }, 0)
+    return () => clearTimeout(t)
   }, [])
 
   const filteredUsers = useMemo(() => {

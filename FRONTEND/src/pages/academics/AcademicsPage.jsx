@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react'
 import { EmptyState } from '../../components/common/EmptyState'
 import { ErrorBanner } from '../../components/feedback/ErrorBanner'
-import { LoadingSpinner } from '../../components/common/LoadingSpinner'
 import { PageHeader } from '../../components/common/PageHeader'
 import {
   getAcademicYears,

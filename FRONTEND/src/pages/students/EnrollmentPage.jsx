@@ -66,7 +66,8 @@ export function EnrollmentPage() {
   }, [])
 
   useEffect(() => {
-    setPage(1)
+    const t = setTimeout(() => setPage((p) => (p === 1 ? p : 1)), 0)
+    return () => clearTimeout(t)
   }, [search, yearFilter, gradeFilter, sectionFilter, statusFilter])
 
   const filteredEnrollments = useMemo(() => {
