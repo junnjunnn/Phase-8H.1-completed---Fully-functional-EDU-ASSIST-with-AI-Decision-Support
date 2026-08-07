@@ -1,6 +1,5 @@
 import {
   AcademicCapIcon,
-  BellIcon,
   CalendarDaysIcon,
   ChartBarIcon,
   ChevronLeftIcon,
@@ -8,12 +7,11 @@ import {
   ClipboardDocumentListIcon,
   Cog6ToothIcon,
   HomeIcon,
-  MagnifyingGlassIcon,
   ShieldCheckIcon,
   SparklesIcon,
   UserGroupIcon,
 } from '@heroicons/react/24/outline'
-import { NavLink, useLocation } from 'react-router-dom'
+import { NavLink } from 'react-router-dom'
 import { useMemo } from 'react'
 import { useAuth } from '../../context/AuthContext'
 import { navigationItems } from '../../config/navigation'
@@ -25,7 +23,7 @@ const sectionConfig = [
   { key: 'academic-records', label: 'Academic Records', items: ['Grade Encoding', 'Attendance', 'Behavior'] },
   { key: 'ai', label: 'AI Decision Support', items: ['Predictions', 'Interventions', 'Reports'] },
   { key: 'admin', label: 'Administration', items: ['User Management', 'Audit Logs'] },
-  { key: 'account', label: 'Account', items: ['Profile'] },
+  { key: 'account', label: 'Account', items: ['Settings', 'Profile'] },
 ]
 
 const iconMap = {
@@ -51,24 +49,8 @@ const iconMap = {
   Settings: Cog6ToothIcon,
 }
 
-function getRoleLabel(role) {
-  switch (role) {
-    case 'SUPER_ADMIN':
-      return 'Administrator'
-    case 'SCHOOL_ADMIN':
-      return 'Administrator'
-    case 'GUIDANCE':
-      return 'Guidance'
-    case 'TEACHER':
-      return 'Teacher'
-    default:
-      return 'User'
-  }
-}
-
-export function SidebarNav({ collapsed, onToggleCollapse, onOpenProfile, onOpenNotifications }) {
+export function SidebarNav({ collapsed, onToggleCollapse }) {
   const { user } = useAuth()
-  const location = useLocation()
 
   const visibleItems = useMemo(() => navigationItems.filter((item) => {
     const role = (user?.role_name || user?.role || user?.profile?.role_name || 'NONE').toUpperCase()

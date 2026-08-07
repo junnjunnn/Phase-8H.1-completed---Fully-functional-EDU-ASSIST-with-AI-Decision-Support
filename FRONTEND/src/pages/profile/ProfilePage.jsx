@@ -29,7 +29,7 @@ export function ProfilePage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
-  const [form, setForm] = useState({ first_name: '', last_name: '', email: '', username: '' })
+  const [form, setForm] = useState({ first_name: '', last_name: '', email: '', username: '', employee_id: '', department: '', phone_number: '' })
   const [passwordForm, setPasswordForm] = useState({ current_password: '', new_password: '', confirm_password: '' })
   const [busy, setBusy] = useState(false)
   const [passwordBusy, setPasswordBusy] = useState(false)
@@ -63,6 +63,9 @@ export function ProfilePage() {
           last_name: data.last_name || '',
           email: data.email || '',
           username: data.username || '',
+          employee_id: data.employee_id || '',
+          department: data.department || '',
+          phone_number: data.phone_number || '',
         })
       } catch (err) {
         if (!active) return
@@ -91,6 +94,9 @@ export function ProfilePage() {
         last_name: form.last_name.trim(),
         email: form.email.trim(),
         username: form.username.trim(),
+        employee_id: form.employee_id.trim(),
+        department: form.department.trim(),
+        phone_number: form.phone_number.trim(),
       }
       const nextProfile = await updateCurrentUserProfile(payload)
       setProfile(nextProfile)
@@ -197,6 +203,20 @@ export function ProfilePage() {
                   <input type="email" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} />
                 </label>
               </div>
+              <div className="form-grid">
+                <label>
+                  <span>Employee ID</span>
+                  <input value={form.employee_id} onChange={(event) => setForm({ ...form, employee_id: event.target.value })} />
+                </label>
+                <label>
+                  <span>Department</span>
+                  <input value={form.department} onChange={(event) => setForm({ ...form, department: event.target.value })} />
+                </label>
+              </div>
+              <label>
+                <span>Phone number</span>
+                <input value={form.phone_number} onChange={(event) => setForm({ ...form, phone_number: event.target.value })} />
+              </label>
               <div className="modal-actions">
                 <button className="btn btn-primary" type="submit" disabled={busy}>
                   {busy ? 'Saving…' : 'Save changes'}

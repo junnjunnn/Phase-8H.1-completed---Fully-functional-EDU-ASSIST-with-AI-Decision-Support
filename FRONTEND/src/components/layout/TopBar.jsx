@@ -3,6 +3,7 @@ import {
   BellIcon,
   ChevronDownIcon,
   KeyIcon,
+  MagnifyingGlassIcon,
   UserCircleIcon,
 } from '@heroicons/react/24/outline'
 import { useMemo, useState } from 'react'
@@ -44,7 +45,7 @@ function getRoleLabel(role) {
   }
 }
 
-export function TopBar({ pageTitle, onOpenProfile, onOpenNotifications }) {
+export function TopBar({ pageTitle, onOpenProfile, onOpenNotifications, onOpenSearch }) {
   const { user, logout } = useAuth()
   const location = useLocation()
   const navigate = useNavigate()
@@ -62,7 +63,7 @@ export function TopBar({ pageTitle, onOpenProfile, onOpenNotifications }) {
   }, [location.pathname])
 
   const initials = (user?.username || 'U').slice(0, 1).toUpperCase()
-  const now = useMemo(() => new Date(), [location.pathname])
+  const now = new Date()
 
   async function handleLogout() {
     setDropdownOpen(false)
@@ -97,6 +98,9 @@ export function TopBar({ pageTitle, onOpenProfile, onOpenNotifications }) {
           <p>{currentDate}</p>
           <strong>{currentTime}</strong>
         </div>
+        <button type="button" className="icon-button icon-button--search" aria-label="Search" onClick={onOpenSearch}>
+          <MagnifyingGlassIcon className="icon" />
+        </button>
         <button type="button" className="icon-button icon-button--notification" aria-label="Notifications" onClick={onOpenNotifications}>
           <BellIcon className="icon" />
           <span className="notification-badge">0</span>
@@ -121,7 +125,7 @@ export function TopBar({ pageTitle, onOpenProfile, onOpenNotifications }) {
                   <span className="badge badge--info">{getRoleLabel(user?.role)}</span>
                 </div>
               </div>
-              <button type="button" className="profile-dropdown-item" role="menuitem" onClick={() => { setDropdownOpen(false); navigate('/profile') }}>
+              <button type="button" className="profile-dropdown-item" role="menuitem" onClick={() => { setDropdownOpen(false); onOpenProfile(); }}>
                 <UserCircleIcon className="icon" /> My Profile
               </button>
               <button type="button" className="profile-dropdown-item" role="menuitem" onClick={() => { setDropdownOpen(false); navigate('/profile?section=security') }}>

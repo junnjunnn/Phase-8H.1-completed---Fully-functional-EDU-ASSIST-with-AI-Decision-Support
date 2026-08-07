@@ -48,6 +48,15 @@ function riskBadgeClass(riskLevel) {
   return 'badge risk-badge low'
 }
 
+function formatFactorContribution(value) {
+  const contribution = Number(value)
+  if (Number.isNaN(contribution)) {
+    return 'Not available'
+  }
+  const prefix = contribution > 0 ? '+' : ''
+  return `${prefix}${contribution.toFixed(2)}`
+}
+
 function getBehaviorClassification(average) {
   const numericAverage = Number(average)
   if (Number.isNaN(numericAverage)) {
@@ -256,6 +265,19 @@ export function StudentDetailPage() {
     }
     return predictionFactors.filter((factor) => factor.prediction === latestPrediction.id)
   }, [latestPrediction, predictionFactors])
+
+  const latestPredictionDrivers = useMemo(() => {
+    return latestPredictionFactors
+      .map((factor) => ({
+        ...factor,
+        numericContribution: Number(factor.contribution),
+      }))
+      .filter((factor) => !Number.isNaN(factor.numericContribution))
+      .sort((a, b) => Math.abs(b.numericContribution) - Math.abs(a.numericContribution))
+      .slice(0, 4)
+  }, [latestPredictionFactors])
+
+  const predictionTimeline = useMemo(() => predictions.slice(0, 6), [predictions])
 
   async function refreshStudentRecords() {
     setInterventionLoading(true)
@@ -931,6 +953,56 @@ export function StudentDetailPage() {
                     {latestPrediction?.explanation || 'No explanation summary is available for the latest prediction.'}
                   </p>
                 </div>
+              </article>
+
+              <article className="detail-card prediction-drivers-card">
+                <div className="section-header">
+                  <div>
+                    <p className="eyebrow">Risk drivers</p>
+                    <h3>Top contributing factors</h3>
+                  </div>
+                </div>
+                {latestPredictionDrivers.length === 0 ? (
+                  <EmptyState title="No factor details" message="No factor contributions are available for the latest prediction." />
+                ) : (
+                  <div className="prediction-drivers-grid">
+                    {latestPredictionDrivers.map((factor) => (
+                      <article key={factor.id} className="driver-card">
+                        <p className="driver-label">{safeText(factor.feature_name)}</p>
+                        <p className="driver-value">{safeText(factor.feature_value)}</p>
+                        <div className="driver-meta">
+                          <span>{formatFactorContribution(factor.contribution)}</span>
+                          <span>{safeText(factor.direction)}</span>
+                        </div>
+                        <p className="driver-description">{safeText(factor.explanation_text)}</p>
+                      </article>
+                    ))}
+                  </div>
+                )}
+              </article>
+
+              <article className="detail-card prediction-timeline-card">
+                <div className="section-header">
+                  <div>
+                    <p className="eyebrow">Prediction timeline</p>
+                    <h3>Recent risk history</h3>
+                  </div>
+                </div>
+                <ul className="timeline-list">
+                  {predictionTimeline.map((prediction) => (
+                    <li key={prediction.id} className="timeline-item">
+                      <div className="timeline-item-top">
+                        <span>{safeText(prediction.prediction_date)}</span>
+                        <span className={riskBadgeClass(prediction.risk_level)}>{safeText(prediction.risk_level)}</span>
+                      </div>
+                      <div className="timeline-item-summary">
+                        <span>{formatProbability(prediction.probability)}</span>
+                        <span>{safeText(prediction.model_name)}</span>
+                      </div>
+                      <p>{prediction.explanation ? `${prediction.explanation.slice(0, 120)}${prediction.explanation.length > 120 ? '…' : ''}` : 'No summary available.'}</p>
+                    </li>
+                  ))}
+                </ul>
               </article>
 
               <article className="detail-card">

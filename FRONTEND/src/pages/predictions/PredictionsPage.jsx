@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { EmptyState } from '../../components/common/EmptyState'
 import { ErrorBanner } from '../../components/feedback/ErrorBanner'
 import { LoadingSpinner } from '../../components/common/LoadingSpinner'
 import { PageHeader } from '../../components/common/PageHeader'
-import { getRiskPredictions } from '../../services/predictionService'
+import { getRiskPredictions, getPredictionFactors } from '../../services/predictionService'
 import { getApiErrorMessage } from '../../services/api'
 
 function normalizeListResponse(data) {
@@ -14,9 +15,9 @@ function normalizeListResponse(data) {
 
 function formatRiskBadge(level) {
   const normalized = String(level || '').toLowerCase()
-  if (normalized.includes('high')) return 'badge badge--high'
-  if (normalized.includes('moderate')) return 'badge badge--warning'
-  if (normalized.includes('low')) return 'badge badge--success'
+  if (normalized.includes('high')) return 'risk-badge high'
+  if (normalized.includes('moderate')) return 'risk-badge moderate'
+  if (normalized.includes('low')) return 'risk-badge low'
   return 'badge badge--info'
 }
 
@@ -27,12 +28,48 @@ function getStudentName(item) {
   return name || 'Unknown student'
 }
 
+function getPredictionGuidance(riskSummary) {
+  if (riskSummary.high > 0) {
+    return {
+      title: 'High risk alert',
+      items: [
+        'Review high-risk students immediately and connect with teachers or guidance.',
+        'Prioritize attendance and academic support plans for these learners.',
+        'Use student profiles to validate the latest predictive factors.',
+      ],
+    }
+  }
+
+  if (riskSummary.moderate > 0) {
+    return {
+      title: 'Moderate risk monitoring',
+      items: [
+        'Monitor these students closely and look for early intervention opportunities.',
+        'Coordinate with subject teachers for targeted support.',
+        'Track attendance, grades, and behavior trends consistently.',
+      ],
+    }
+  }
+
+  return {
+    title: 'Low risk overview',
+    items: [
+      'Continue positive reinforcement and maintain current supports.',
+      'Share progress updates with the student and family.',
+      'Watch for changes over time as new predictions arrive.',
+    ],
+  }
+}
 export function PredictionsPage() {
   const [predictions, setPredictions] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [search, setSearch] = useState('')
   const [pagination, setPagination] = useState({ count: 0, next: null, previous: null })
+  const [selectedPrediction, setSelectedPrediction] = useState(null)
+  const [drawerFactors, setDrawerFactors] = useState([])
+  const [drawerLoading, setDrawerLoading] = useState(false)
+  const [drawerError, setDrawerError] = useState('')
 
   useEffect(() => {
     let active = true
@@ -68,6 +105,42 @@ export function PredictionsPage() {
     }
   }, [search])
 
+  async function openPredictionDetails(prediction) {
+    setSelectedPrediction(prediction)
+    setDrawerFactors([])
+    setDrawerError('')
+    setDrawerLoading(true)
+
+    try {
+      const data = await getPredictionFactors({ prediction: prediction.id, ordering: 'feature_name' })
+      const normalized = normalizeListResponse(data)
+      setDrawerFactors(normalized.items)
+    } catch (err) {
+      setDrawerError(getApiErrorMessage(err))
+    } finally {
+      setDrawerLoading(false)
+    }
+  }
+
+  function closePredictionDrawer() {
+    setSelectedPrediction(null)
+    setDrawerFactors([])
+    setDrawerError('')
+    setDrawerLoading(false)
+  }
+
+  function getRiskTrend(current, previous) {
+    if (!current || !previous) {
+      return 'No trend available yet.'
+    }
+    const ranking = { Low: 1, Moderate: 2, High: 3 }
+    const currentRank = ranking[current.risk_level] || 0
+    const previousRank = ranking[previous.risk_level] || 0
+    if (currentRank > previousRank) return 'Risk is increasing compared to the prior prediction.'
+    if (currentRank < previousRank) return 'Risk is decreasing compared to the prior prediction.'
+    return 'Risk trend remains stable from the previous prediction.'
+  }
+
   const riskSummary = predictions.reduce(
     (acc, item) => {
       const level = String(item.risk_level || '').toLowerCase()
@@ -78,6 +151,9 @@ export function PredictionsPage() {
     },
     { high: 0, moderate: 0, low: 0 },
   )
+
+  const predictionGuidance = useMemo(() => getPredictionGuidance(riskSummary), [riskSummary])
+  const recentAlerts = predictions.slice(0, 4)
 
   return (
     <div className="page-stack predictions-page">
@@ -123,7 +199,39 @@ export function PredictionsPage() {
           </div>
         </div>
 
+        <div className="prediction-guidance-panel">
+          <div>
+            <p className="eyebrow">AI decision support</p>
+            <h3>{predictionGuidance.title}</h3>
+          </div>
+          <ul className="support-list">
+            {predictionGuidance.items.map((item) => (
+              <li key={item}>{item}</li>
+            ))}
+          </ul>
+        </div>
+
         {error ? <ErrorBanner message={error} /> : null}
+
+        {!loading && recentAlerts.length > 0 ? (
+          <div className="recent-alerts-grid">
+            {recentAlerts.map((alert) => (
+              <article key={alert.id} className="detail-card alert-card">
+                <p className="eyebrow">{alert.risk_level || 'Risk'}</p>
+                <h3>{getStudentName(alert)}</h3>
+                <p>{alert.enrollment__grade_level__name || alert.grade_level || 'Grade unavailable'} · {alert.prediction_date || 'Date unavailable'}</p>
+                <div className="alert-card-meta">
+                  <span>{alert.probability != null ? `${Math.round(alert.probability * 100)}%` : 'N/A'}</span>
+                  {alert.enrollment__student__id ? (
+                    <Link to={`/students/${alert.enrollment__student__id}`} className="detail-link">
+                      Profile
+                    </Link>
+                  ) : null}
+                </div>
+              </article>
+            ))}
+          </div>
+        ) : null}
 
         {loading ? (
           <div className="table-skeleton-grid">
@@ -154,6 +262,8 @@ export function PredictionsPage() {
                     <th scope="col">Risk level</th>
                     <th scope="col">Probability</th>
                     <th scope="col">Predicted</th>
+                    <th scope="col">Profile</th>
+                    <th scope="col">Details</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -166,6 +276,20 @@ export function PredictionsPage() {
                       </td>
                       <td data-label="Probability">{item.probability != null ? `${Math.round(item.probability * 100)}%` : 'N/A'}</td>
                       <td data-label="Predicted">{item.prediction_date || '—'}</td>
+                      <td data-label="Profile">
+                        {item.enrollment__student__id ? (
+                          <Link to={`/students/${item.enrollment__student__id}`} className="detail-link">
+                            View
+                          </Link>
+                        ) : (
+                          '—'
+                        )}
+                      </td>
+                      <td data-label="Details">
+                        <button type="button" className="action-button action-button--outline" onClick={() => openPredictionDetails(item)}>
+                          Details
+                        </button>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -174,6 +298,95 @@ export function PredictionsPage() {
           </>
         ) : null}
       </div>
+
+      {selectedPrediction ? (
+        <div className="modal-backdrop" role="dialog" aria-modal="true" onClick={closePredictionDrawer}>
+          <aside className="detail-drawer" onClick={(event) => event.stopPropagation()}>
+            <div className="drawer-header">
+              <div>
+                <p className="eyebrow">Prediction details</p>
+                <h2>{getStudentName(selectedPrediction)}</h2>
+                <p>{selectedPrediction.enrollment__grade_level__name || selectedPrediction.grade_level || 'Grade unavailable'} · {selectedPrediction.prediction_date || 'Date unavailable'}</p>
+              </div>
+              <button type="button" className="icon-button" aria-label="Close details" onClick={closePredictionDrawer}>
+                ×
+              </button>
+            </div>
+
+            <div className="drawer-metrics-grid">
+              <div>
+                <p className="stat-label">Risk level</p>
+                <p className={formatRiskBadge(selectedPrediction.risk_level)}>{selectedPrediction.risk_level || 'Unknown'}</p>
+              </div>
+              <div>
+                <p className="stat-label">Confidence</p>
+                <p>{selectedPrediction.probability != null ? `${Math.round(selectedPrediction.probability * 100)}%` : 'N/A'}</p>
+              </div>
+              <div>
+                <p className="stat-label">Model</p>
+                <p>{selectedPrediction.model_name || selectedPrediction.model_version || 'Unknown'}</p>
+              </div>
+              <div>
+                <p className="stat-label">Prediction type</p>
+                <p>{selectedPrediction.prediction_type || 'N/A'}</p>
+              </div>
+            </div>
+
+            <div className="drawer-section">
+              <p className="eyebrow">Insight</p>
+              <p>{selectedPrediction.explanation || 'No explanation summary is available for this prediction.'}</p>
+            </div>
+
+            <div className="drawer-section">
+              <p className="eyebrow">Trend comparison</p>
+              <p>{getRiskTrend(selectedPrediction, predictions.find((item) => item.id !== selectedPrediction.id))}</p>
+            </div>
+
+            <div className="drawer-section">
+              <div className="section-header">
+                <div>
+                  <p className="eyebrow">Contributing factors</p>
+                  <h3>Prediction drivers</h3>
+                </div>
+              </div>
+              {drawerError ? <ErrorBanner message={drawerError} /> : null}
+              {drawerLoading ? (
+                <div className="table-skeleton-grid">
+                  <div className="table-skeleton-card" />
+                  <div className="table-skeleton-card" />
+                </div>
+              ) : null}
+              {!drawerLoading && !drawerError && drawerFactors.length === 0 ? (
+                <EmptyState title="No factor details" message="No prediction factors are available for this record." />
+              ) : null}
+              {!drawerLoading && drawerFactors.length > 0 ? (
+                <div className="table-card factor-table-card">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Feature</th>
+                        <th>Value</th>
+                        <th>Contribution</th>
+                        <th>Direction</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {drawerFactors.map((factor) => (
+                        <tr key={factor.id}>
+                          <td>{factor.feature_name}</td>
+                          <td>{factor.feature_value}</td>
+                          <td>{factor.contribution != null ? `${Math.round(factor.contribution * 100)}%` : 'N/A'}</td>
+                          <td>{factor.direction || 'N/A'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : null}
+            </div>
+          </aside>
+        </div>
+      ) : null}
     </div>
   )
 }

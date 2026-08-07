@@ -55,6 +55,7 @@ class CurrentUserView(APIView):
             profile = request.user.profile
             role = profile.role_name if profile else 'NONE'
         except UserProfile.DoesNotExist:
+            profile = None
             role = 'NONE'
         return Response({
             'id': request.user.pk,
@@ -65,6 +66,9 @@ class CurrentUserView(APIView):
             'role': role,
             'is_active': request.user.is_active,
             'date_joined': request.user.date_joined,
+            'employee_id': profile.employee_id if profile else '',
+            'department': profile.department if profile else '',
+            'phone_number': profile.phone_number if profile else '',
         })
 
     def patch(self, request):

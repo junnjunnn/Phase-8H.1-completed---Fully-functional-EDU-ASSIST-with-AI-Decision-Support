@@ -16,5 +16,6 @@ export const navigationItems = [
   { label: 'Reports', path: '/reports', roles: ['SUPER_ADMIN', 'SCHOOL_ADMIN', 'GUIDANCE', 'TEACHER'] },
   { label: 'User Management', path: '/users', roles: ['SUPER_ADMIN', 'SCHOOL_ADMIN'] },
   { label: 'Audit Logs', path: '/admin', roles: ['SUPER_ADMIN', 'SCHOOL_ADMIN'] },
+  { label: 'Settings', path: '/settings', roles: ['SUPER_ADMIN', 'SCHOOL_ADMIN', 'TEACHER', 'GUIDANCE'] },
   { label: 'Profile', path: '/profile', roles: ['SUPER_ADMIN', 'SCHOOL_ADMIN', 'TEACHER', 'GUIDANCE'] },
 ]

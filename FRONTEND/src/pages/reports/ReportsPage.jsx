@@ -120,20 +120,22 @@ export function ReportsPage() {
   const handleExport = async (format) => {
     try {
       const result = await exportReport({ ...filters, format })
-      if (format === 'csv' || format === 'xlsx') {
-        const payload = JSON.stringify(result.data || {}, null, 2)
-        const blob = new Blob([payload], { type: 'text/plain;charset=utf-8' })
-        const fileName = `report-export.${format === 'xlsx' ? 'xlsx' : 'csv'}`
-        const link = document.createElement('a')
-        link.href = URL.createObjectURL(blob)
-        link.download = fileName
-        link.click()
-        URL.revokeObjectURL(link.href)
-      }
+      const payload = result.data?.data || result.data || {}
+
       if (format === 'pdf') {
+        window.alert(result.message || 'Use print preview to save as PDF.')
         window.print()
+        return
       }
-      window.alert(result.message || `Exported as ${format}`)
+
+      const fileName = `report-export-${format || 'data'}-${new Date().toISOString().slice(0, 10)}.json`
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json;charset=utf-8' })
+      const link = document.createElement('a')
+      link.href = URL.createObjectURL(blob)
+      link.download = fileName
+      link.click()
+      URL.revokeObjectURL(link.href)
+      window.alert(result.message || `Report exported as ${fileName}`)
     } catch (err) {
       setError(getApiErrorMessage(err))
     }

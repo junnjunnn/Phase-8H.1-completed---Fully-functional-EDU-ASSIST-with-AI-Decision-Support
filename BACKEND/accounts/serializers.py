@@ -17,15 +17,30 @@ class UserProfileSerializer(serializers.ModelSerializer):
 class UserSerializer(serializers.ModelSerializer):
     profile = UserProfileSerializer(read_only=True)
     role_name = serializers.SerializerMethodField(read_only=True)
+    employee_id = serializers.SerializerMethodField(read_only=True)
+    department = serializers.SerializerMethodField(read_only=True)
+    phone_number = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = User
-        fields = ['id', 'username', 'first_name', 'last_name', 'email', 'is_active', 'date_joined', 'last_login', 'profile', 'role_name']
+        fields = ['id', 'username', 'first_name', 'last_name', 'email', 'is_active', 'date_joined', 'last_login', 'profile', 'role_name', 'employee_id', 'department', 'phone_number']
         read_only_fields = ['id', 'date_joined', 'last_login']
 
     def get_role_name(self, obj):
         profile = getattr(obj, 'profile', None)
         return profile.role_name if profile else 'TEACHER'
+
+    def get_employee_id(self, obj):
+        profile = getattr(obj, 'profile', None)
+        return profile.employee_id if profile else ''
+
+    def get_department(self, obj):
+        profile = getattr(obj, 'profile', None)
+        return profile.department if profile else ''
+
+    def get_phone_number(self, obj):
+        profile = getattr(obj, 'profile', None)
+        return profile.phone_number if profile else ''
 
 
 class LoginSerializer(serializers.Serializer):
@@ -77,10 +92,13 @@ class UserCreateSerializer(serializers.ModelSerializer):
 class UserUpdateSerializer(serializers.ModelSerializer):
     role_name = serializers.CharField(required=False, allow_blank=False, write_only=True)
     username = serializers.CharField(required=False)
+    employee_id = serializers.CharField(required=False, allow_blank=True, write_only=True)
+    department = serializers.CharField(required=False, allow_blank=True, write_only=True)
+    phone_number = serializers.CharField(required=False, allow_blank=True, write_only=True)
 
     class Meta:
         model = User
-        fields = ['username', 'first_name', 'last_name', 'email', 'is_active', 'role_name']
+        fields = ['username', 'first_name', 'last_name', 'email', 'is_active', 'role_name', 'employee_id', 'department', 'phone_number']
 
     def validate_username(self, value):
         if self.instance and User.objects.filter(username=value).exclude(pk=self.instance.pk).exists():
@@ -104,9 +122,26 @@ class UserUpdateSerializer(serializers.ModelSerializer):
 
     def update(self, instance, validated_data):
         role_name = validated_data.pop('role_name', None)
+        employee_id = validated_data.pop('employee_id', None)
+        department = validated_data.pop('department', None)
+        phone_number = validated_data.pop('phone_number', None)
         user = super().update(instance, validated_data)
-        if role_name is not None:
-            profile, _ = UserProfile.objects.get_or_create(user=user, defaults={'role_name': role_name})
+        profile, _ = UserProfile.objects.get_or_create(user=user, defaults={'role_name': role_name or 'TEACHER'})
+
+        changed = False
+        if role_name is not None and profile.role_name != role_name:
             profile.role_name = role_name
-            profile.save(update_fields=['role_name'])
+            changed = True
+        if employee_id is not None and profile.employee_id != employee_id:
+            profile.employee_id = employee_id
+            changed = True
+        if department is not None and profile.department != department:
+            profile.department = department
+            changed = True
+        if phone_number is not None and profile.phone_number != phone_number:
+            profile.phone_number = phone_number
+            changed = True
+
+        if changed:
+            profile.save(update_fields=['role_name', 'employee_id', 'department', 'phone_number'])
         return user

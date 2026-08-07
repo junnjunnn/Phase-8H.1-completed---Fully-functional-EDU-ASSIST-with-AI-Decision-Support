@@ -133,9 +133,28 @@ class SubjectSerializer(serializers.ModelSerializer):
 
 
 class TeacherAssignmentSerializer(serializers.ModelSerializer):
+    teacher_name = serializers.SerializerMethodField()
+    academic_year_name = serializers.CharField(source='academic_year.name', read_only=True)
+    grade_level_name = serializers.CharField(source='grade_level.name', read_only=True)
+    section_name = serializers.CharField(source='section.name', read_only=True)
+    subject_name = serializers.CharField(source='subject.name', read_only=True)
+
     class Meta:
         model = TeacherAssignment
-        fields = ['id', 'teacher', 'academic_year', 'grade_level', 'section', 'subject', 'is_active']
+        fields = [
+            'id',
+            'teacher',
+            'teacher_name',
+            'academic_year',
+            'academic_year_name',
+            'grade_level',
+            'grade_level_name',
+            'section',
+            'section_name',
+            'subject',
+            'subject_name',
+            'is_active',
+        ]
         validators = [
             UniqueTogetherValidator(
                 queryset=TeacherAssignment.objects.all(),
@@ -143,6 +162,12 @@ class TeacherAssignmentSerializer(serializers.ModelSerializer):
                 message='This teacher assignment already exists.',
             )
         ]
+
+    def get_teacher_name(self, obj):
+        if obj.teacher:
+            full_name = f"{obj.teacher.first_name or ''} {obj.teacher.last_name or ''}".strip()
+            return full_name or getattr(obj.teacher, 'username', None)
+        return None
 
     def validate(self, attrs):
         teacher = attrs.get('teacher') or getattr(self.instance, 'teacher', None)
