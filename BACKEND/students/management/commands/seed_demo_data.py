@@ -34,11 +34,11 @@ class Command(BaseCommand):
                 },
             )
             if created:
-                demo_teacher.set_password('DemoTeacher123!')
-                demo_teacher.save()
                 self.stdout.write(f'  Created user: {teacher_username}')
             else:
                 self.stdout.write(f'  Reusing existing user: {teacher_username}')
+            demo_teacher.set_password('DemoTeacher123!')
+            demo_teacher.save(update_fields=['password'])
 
             demo_admin, admin_created = User.objects.get_or_create(
                 username=admin_username,
@@ -48,11 +48,11 @@ class Command(BaseCommand):
                 },
             )
             if admin_created:
-                demo_admin.set_password('DemoAdmin123!')
-                demo_admin.save()
                 self.stdout.write(f'  Created user: {admin_username}')
             else:
                 self.stdout.write(f'  Reusing existing user: {admin_username}')
+            demo_admin.set_password('DemoAdmin123!')
+            demo_admin.save(update_fields=['password'])
 
             teacher_profile, _ = UserProfile.objects.get_or_create(
                 user=demo_teacher,

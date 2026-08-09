@@ -53,6 +53,11 @@ export function clearStoredTokens() {
 }
 
 apiClient.interceptors.request.use((config) => {
+  const requestUrl = config.url || ''
+  if (requestUrl.endsWith('/auth/login/') || requestUrl.endsWith('/auth/token/refresh/')) {
+    return config
+  }
+
   const accessToken = getStoredToken(TOKEN_STORAGE_KEYS.access)
   if (accessToken) {
     config.headers.Authorization = `Bearer ${accessToken}`
