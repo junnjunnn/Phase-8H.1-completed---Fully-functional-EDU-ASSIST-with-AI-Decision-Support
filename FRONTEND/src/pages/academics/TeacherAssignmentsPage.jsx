@@ -59,7 +59,12 @@ export function TeacherAssignmentsPage() {
         if (!active) return
 
         setAssignments(normalizeListResponse(assignmentData.data).items)
-        setTeachers(normalizeListResponse(teacherData.data).items || [])
+        const teacherPayload = teacherData?.data ?? teacherData
+        console.log('TeacherAssignmentsPage: API users payload', teacherData)
+        const teacherItems = normalizeListResponse(teacherPayload).items || []
+        console.log('TeacherAssignmentsPage: normalized teacher items', teacherItems)
+        setTeachers(teacherItems)
+        if (teacherItems.length === 0) console.warn('TeacherAssignmentsPage: no teachers returned', teacherData)
         setAcademicYears(normalizeListResponse(yearData).items)
         setGradeLevels(normalizeListResponse(gradeData).items)
         setSections(normalizeListResponse(sectionData).items)
@@ -75,6 +80,10 @@ export function TeacherAssignmentsPage() {
     loadData()
     return () => { active = false }
   }, [])
+
+  useEffect(() => {
+    console.log('TeacherAssignmentsPage: teachers state updated', teachers)
+  }, [teachers])
 
   useEffect(() => {
     // Defer resetting page to avoid synchronous setState in effect
@@ -207,9 +216,10 @@ export function TeacherAssignmentsPage() {
             <span>Teacher</span>
             <select value={form.teacher} onChange={(event) => setForm({ ...form, teacher: event.target.value })} required>
               <option value="">Select teacher</option>
-              {teachers.filter((teacher) => teacher.profile?.role_name === 'TEACHER' || teacher.role_name === 'TEACHER').map((teacher) => (
-                <option key={teacher.id} value={teacher.id}>{teacher.first_name} {teacher.last_name}</option>
-              ))}
+              {teachers.filter((teacher) => teacher.profile?.role_name === 'TEACHER' || teacher.role_name === 'TEACHER').map((teacher) => {
+                const displayName = `${(teacher.first_name || '').trim()} ${(teacher.last_name || '').trim()}`.trim() || teacher.username || 'Unknown'
+                return (<option key={teacher.id} value={teacher.id}>{displayName}</option>)
+              })}
             </select>
           </label>
           <label>
@@ -270,9 +280,10 @@ export function TeacherAssignmentsPage() {
             <span>Teacher</span>
             <select value={teacherFilter} onChange={(event) => setTeacherFilter(event.target.value)}>
               <option value="">All teachers</option>
-              {teachers.filter((teacher) => teacher.profile?.role_name === 'TEACHER' || teacher.role_name === 'TEACHER').map((teacher) => (
-                <option key={teacher.id} value={teacher.id}>{teacher.first_name} {teacher.last_name}</option>
-              ))}
+              {teachers.filter((teacher) => teacher.profile?.role_name === 'TEACHER' || teacher.role_name === 'TEACHER').map((teacher) => {
+                const displayName = `${(teacher.first_name || '').trim()} ${(teacher.last_name || '').trim()}`.trim() || teacher.username || 'Unknown'
+                return (<option key={teacher.id} value={teacher.id}>{displayName}</option>)
+              })}
             </select>
           </label>
           <label>
