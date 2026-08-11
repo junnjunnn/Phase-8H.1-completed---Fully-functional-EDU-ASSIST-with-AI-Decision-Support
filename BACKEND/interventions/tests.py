@@ -61,3 +61,56 @@ class InterventionAPITests(TestCase):
         intervention_ids = {item['id'] for item in response.data['results']}
         self.assertIn(self.intervention_a.id, intervention_ids)
         self.assertIn(self.intervention_b.id, intervention_ids)
+
+    def test_teacher_can_create_intervention_for_assigned_enrollment(self):
+        self.client.force_authenticate(user=self.teacher)
+        response = self.client.post('/api/interventions/', {
+            'enrollment': self.enrollment_a.id,
+            'intervention_type': 'Tutoring',
+            'recommendation': 'Focused review',
+            'status': 'planned',
+            'priority': 'medium',
+        }, format='json')
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data['intervention_type'], 'Tutoring')
+        self.assertEqual(response.data['enrollment'], self.enrollment_a.id)
+
+    def test_teacher_cannot_create_intervention_without_enrollment(self):
+        self.client.force_authenticate(user=self.teacher)
+        response = self.client.post('/api/interventions/', {
+            'intervention_type': 'Tutoring',
+            'recommendation': 'Focused review',
+            'status': 'planned',
+            'priority': 'medium',
+        }, format='json')
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('enrollment', response.data)
+
+    def test_teacher_cannot_create_intervention_for_unassigned_enrollment(self):
+        self.client.force_authenticate(user=self.teacher)
+        response = self.client.post('/api/interventions/', {
+            'enrollment': self.enrollment_b.id,
+            'intervention_type': 'Tutoring',
+            'recommendation': 'Focused review',
+            'status': 'planned',
+            'priority': 'medium',
+        }, format='json')
+        self.assertEqual(response.status_code, 403)
+
+    def test_teacher_cannot_create_intervention_for_inactive_enrollment(self):
+        inactive_enrollment = Enrollment.objects.create(
+            student=self.student_a,
+            academic_year=self.academic_year,
+            grade_level=self.grade_level,
+            section=self.enrollment_a.section,
+            enrollment_status='inactive',
+        )
+        self.client.force_authenticate(user=self.teacher)
+        response = self.client.post('/api/interventions/', {
+            'enrollment': inactive_enrollment.id,
+            'intervention_type': 'Tutoring',
+            'recommendation': 'Focused review',
+            'status': 'planned',
+            'priority': 'medium',
+        }, format='json')
+        self.assertEqual(response.status_code, 403)

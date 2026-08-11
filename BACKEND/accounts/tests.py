@@ -40,17 +40,58 @@ class AuthenticationAPITests(APITestCase):
         response = self.client.get('/api/students/')
         self.assertEqual(response.status_code, 401)
 
-    def test_authenticated_but_unauthorized_staff_cannot_access_restricted_user_list(self):
+    def test_teacher_can_list_users(self):
         self.client.force_authenticate(user=self.user)
         response = self.client.get('/api/auth/users/')
-        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(isinstance(response.data, list) or response.data.get('results') is not None)
 
-    def test_superadmin_can_manage_users(self):
-        superadmin = self.user_model.objects.create_user(username='superadmin_test', password='Pass1234!')
-        UserProfile.objects.create(user=superadmin, role_name='SUPER_ADMIN')
-        self.client.force_authenticate(user=superadmin)
+    def test_guidance_can_list_users(self):
+        guidance = self.user_model.objects.create_user(username='guidance_test', password='Pass1234!')
+        UserProfile.objects.create(user=guidance, role_name='GUIDANCE')
+        self.client.force_authenticate(user=guidance)
         response = self.client.get('/api/auth/users/')
         self.assertEqual(response.status_code, 200)
+
+    def test_school_admin_can_list_users(self):
+        school_admin = self.user_model.objects.create_user(username='school_admin_test', password='Pass1234!')
+        UserProfile.objects.create(user=school_admin, role_name='SCHOOL_ADMIN')
+        self.client.force_authenticate(user=school_admin)
+        response = self.client.get('/api/auth/users/')
+        self.assertEqual(response.status_code, 200)
+
+    def test_anonymous_cannot_list_users(self):
+        response = self.client.get('/api/auth/users/')
+        self.assertIn(response.status_code, (401, 403))
+
+    def test_teacher_cannot_create_user(self):
+        self.client.force_authenticate(user=self.user)
+        response = self.client.post('/api/auth/users/', {
+            'username': 'new_teacher',
+            'password': 'Pass1234!',
+            'role_name': 'TEACHER',
+        }, format='json')
+        self.assertEqual(response.status_code, 403)
+
+    def test_school_admin_can_create_user(self):
+        school_admin = self.user_model.objects.create_user(username='school_admin_create', password='Pass1234!')
+        UserProfile.objects.create(user=school_admin, role_name='SCHOOL_ADMIN')
+        self.client.force_authenticate(user=school_admin)
+        response = self.client.post('/api/auth/users/', {
+            'username': 'created_teacher',
+            'password': 'Pass1234!',
+            'role_name': 'TEACHER',
+        }, format='json')
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data['detail'], 'User created.')
+
+    def test_current_user_can_update_profile(self):
+        self.client.force_authenticate(user=self.user)
+        response = self.client.patch('/api/auth/me/', {'first_name': 'Ada', 'last_name': 'Lovelace', 'email': 'ada@example.com', 'username': 'ada'}, format='json')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['first_name'], 'Ada')
+        self.assertEqual(response.data['email'], 'ada@example.com')
+        self.assertEqual(response.data['username'], 'ada')
 
     def test_current_user_can_update_profile(self):
         self.client.force_authenticate(user=self.user)

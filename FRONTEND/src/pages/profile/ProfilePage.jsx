@@ -133,7 +133,7 @@ export function ProfilePage() {
         title="My profile"
         description="Review and update your account details securely."
         actions={
-          <button className="btn btn-outline" type="button" onClick={() => navigate('/dashboard')}>
+          <button className="action-button action-button--outline" type="button" onClick={() => navigate('/dashboard')}>
             Back to dashboard
           </button>
         }
@@ -156,19 +156,19 @@ export function ProfilePage() {
               </div>
             </div>
             <div className="profile-details-grid">
-              <div>
+              <div className="detail-card subtle-card">
                 <p className="stat-label">Username</p>
                 <p className="stat-value">{profile?.username || '—'}</p>
               </div>
-              <div>
+              <div className="detail-card subtle-card">
                 <p className="stat-label">Role</p>
                 <p className="stat-value">{getRoleLabel(user?.role)}</p>
               </div>
-              <div>
+              <div className="detail-card subtle-card">
                 <p className="stat-label">Account status</p>
                 <p className="stat-value">{profile?.is_active ? 'Active' : 'Inactive'}</p>
               </div>
-              <div>
+              <div className="detail-card subtle-card">
                 <p className="stat-label">Joined</p>
                 <p className="stat-value">{profile?.date_joined ? new Date(profile.date_joined).toLocaleDateString() : '—'}</p>
               </div>
@@ -218,7 +218,7 @@ export function ProfilePage() {
                 <input value={form.phone_number} onChange={(event) => setForm({ ...form, phone_number: event.target.value })} />
               </label>
               <div className="modal-actions">
-                <button className="btn btn-primary" type="submit" disabled={busy}>
+                <button className="action-button action-button--primary" type="submit" disabled={busy}>
                   {busy ? 'Saving…' : 'Save changes'}
                 </button>
               </div>
@@ -248,7 +248,7 @@ export function ProfilePage() {
                 </label>
               </div>
               <div className="modal-actions">
-                <button className="btn btn-secondary" type="submit" disabled={passwordBusy}>
+                <button className="action-button action-button--secondary" type="submit" disabled={passwordBusy}>
                   {passwordBusy ? 'Updating…' : 'Change password'}
                 </button>
               </div>

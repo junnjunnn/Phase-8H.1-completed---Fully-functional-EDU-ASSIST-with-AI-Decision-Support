@@ -4,6 +4,7 @@ import { EmptyState } from '../../components/common/EmptyState'
 import { ErrorBanner } from '../../components/feedback/ErrorBanner'
 import { LoadingSpinner } from '../../components/common/LoadingSpinner'
 import { PageHeader } from '../../components/common/PageHeader'
+import { useRoleAwareAutoLoad } from '../../hooks/useRoleAwareAutoLoad'
 import { useAuth } from '../../context/AuthContext'
 import { getApiErrorMessage } from '../../services/api'
 import {
@@ -17,6 +18,7 @@ import {
   updateAcademicRecord,
 } from '../../services/academicsService'
 import { getStudentById } from '../../services/studentService'
+import { subscribeSubjectsUpdated, unsubscribeSubjectsUpdated } from '../../services/referenceService'
 
 function normalizeListResponse(data) {
   const items = data?.results || data || []
@@ -62,6 +64,7 @@ export function GradeEncodingPage() {
   const location = useLocation()
   const role = user?.role_name || user?.role || user?.profile?.role_name || 'NONE'
   const canManageGrades = role === 'SUPER_ADMIN' || role === 'SCHOOL_ADMIN' || role === 'TEACHER'
+  const isTeacher = role === 'TEACHER'
 
   const [academicYears, setAcademicYears] = useState([])
   const [gradeLevels, setGradeLevels] = useState([])
@@ -146,16 +149,73 @@ export function GradeEncodingPage() {
   }, [])
 
   useEffect(() => {
+    let active = true
+
+    async function reloadSubjects() {
+      try {
+        const subjectsData = await getSubjects()
+        if (!active) {
+          return
+        }
+        setSubjects(normalizeListResponse(subjectsData).items)
+      } catch {
+        // Keep the existing subject list if the refresh fails.
+      }
+    }
+
+    function handleSubjectsUpdated() {
+      reloadSubjects()
+    }
+
+    subscribeSubjectsUpdated(handleSubjectsUpdated)
+    return () => {
+      active = false
+      unsubscribeSubjectsUpdated(handleSubjectsUpdated)
+    }
+  }, [])
+
+  useEffect(() => {
     const params = new URLSearchParams(location.search)
     const academicYear = params.get('academic_year') || ''
     const gradeLevel = params.get('grade_level') || ''
     const section = params.get('section') || ''
     const subject = params.get('subject') || ''
 
-    if (academicYear && gradeLevel && section && subject) {
+    if (academicYear || gradeLevel || section || subject) {
       loadClassData({ academicYear, gradeLevel, section, subject, gradingPeriod: filters.gradingPeriod, quarter: filters.quarter })
     }
   }, [location.search, filters.gradingPeriod, filters.quarter])
+
+  const getDefaultGradeFilters = () => {
+    const defaultSection = sections[0]
+    if (!defaultSection) {
+      return null
+    }
+
+    const defaultSubject = subjects.find((subject) => String(subject.grade_level) === String(defaultSection.grade_level)) || subjects[0]
+    if (!defaultSubject) {
+      return null
+    }
+
+    return {
+      academicYear: String(defaultSection.academic_year),
+      gradeLevel: String(defaultSection.grade_level),
+      section: String(defaultSection.id),
+      subject: String(defaultSubject.id),
+      gradingPeriod: 'Quarter',
+      quarter: '1',
+    }
+  }
+
+  useRoleAwareAutoLoad({
+    enabled: isTeacher,
+    loading,
+    filters,
+    setFilters,
+    getDefaultFilters: getDefaultGradeFilters,
+    onLoad: loadClassData,
+    dependencies: [academicYears.length, gradeLevels.length, sections.length, subjects.length],
+  })
 
   const filteredSections = useMemo(() => {
     return sections.filter((section) => {
@@ -310,9 +370,9 @@ export function GradeEncodingPage() {
   return (
     <div className="page-stack grade-encoding-page">
       <PageHeader
-        eyebrow="Academics"
-        title="Teacher grade encoding"
-        description="Select your assigned class, encode quarter grades, and save drafts or final marks without affecting the prediction workflow."
+        eyebrow="Academic workflow"
+        title="Grade encoding"
+        description="Start from your assigned class, enter grades quickly, and save a draft or finalize the record without extra steps."
         actions={(
           <Link className="action-button action-button--secondary" to="/academics">
             Back to academics
@@ -325,7 +385,10 @@ export function GradeEncodingPage() {
       ) : null}
 
       <section className="students-panel grade-encoding-panel">
-        <div className="grade-encoding-form">
+        <div className="form-section-card">
+          <div className="workflow-step">Choose a class and the subject you are recording.</div>
+          <div className="workflow-step">Enter grades for each student in the roster.</div>
+          <div className="workflow-step">Save the draft or finalize the marks when ready.</div>
           <div className="form-grid">
             <label>
               <span>Academic year</span>

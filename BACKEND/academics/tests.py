@@ -116,6 +116,23 @@ class AcademicsAPITests(TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertIn('already exists', str(response.data))
 
+    def test_new_subject_is_immediately_available_to_authorized_staff(self):
+        self.client.force_authenticate(user=self.superadmin)
+        response = self.client.post('/api/subjects/', {
+            'code': 'ENG11',
+            'name': 'English 11',
+            'category': 'Learning Area',
+            'grade_level': self.grade_level.id,
+            'is_active': True,
+        }, format='json')
+        self.assertEqual(response.status_code, 201)
+
+        self.client.force_authenticate(user=self.teacher)
+        response = self.client.get('/api/subjects/')
+        self.assertEqual(response.status_code, 200)
+        subject_codes = {item['code'] for item in response.data['results']}
+        self.assertIn('ENG11', subject_codes)
+
     def test_duplicate_teacher_assignment_is_rejected(self):
         self.client.force_authenticate(user=self.superadmin)
         subject = Subject.objects.create(code='SCI11', name='Science 11', category='Learning Area', grade_level=self.grade_level)

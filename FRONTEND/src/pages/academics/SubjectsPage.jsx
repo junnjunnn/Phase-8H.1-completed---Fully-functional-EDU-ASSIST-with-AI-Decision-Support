@@ -4,6 +4,7 @@ import { ErrorBanner } from '../../components/feedback/ErrorBanner'
 import { PageHeader } from '../../components/common/PageHeader'
 import { getApiErrorMessage } from '../../services/api'
 import { createSubject, getGradeLevels, getStrands, getSubjects, updateSubject } from '../../services/academicsService'
+import { notifySubjectsUpdated } from '../../services/referenceService'
 
 function normalizeListResponse(data) {
   const items = data?.results || data || []
@@ -90,6 +91,7 @@ export function SubjectsPage() {
       }
       const refreshed = await getSubjects()
       setSubjects(normalizeListResponse(refreshed).items)
+      notifySubjectsUpdated()
       setForm({ id: '', code: '', name: '', category: 'Learning Area', grade_level: '', strand: '', is_active: true })
     } catch (err) {
       setError(getApiErrorMessage(err))
@@ -117,6 +119,7 @@ export function SubjectsPage() {
       await updateSubject(subject.id, { is_active: !subject.is_active })
       const refreshed = await getSubjects()
       setSubjects(normalizeListResponse(refreshed).items)
+      notifySubjectsUpdated()
     } catch (err) {
       setError(getApiErrorMessage(err))
     }

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { createIntervention, updateIntervention } from '../../services/interventionService'
 import { getApiErrorMessage } from '../../services/api'
+import { getEnrollments } from '../../services/academicsService'
 import { getUsers } from '../../services/userService'
 
 const STATUS_OPTIONS = [
@@ -35,6 +36,7 @@ export function InterventionFormModal({
   onSaved,
 }) {
   const [form, setForm] = useState({
+    enrollment: enrollmentId || '',
     title: '',
     intervention_type: 'Academic Monitoring',
     assigned_personnel: '',
@@ -46,7 +48,9 @@ export function InterventionFormModal({
     notes: '',
   })
   const [staff, setStaff] = useState([])
+  const [eligibleEnrollments, setEligibleEnrollments] = useState([])
   const [loadingStaff, setLoadingStaff] = useState(false)
+  const [loadingEnrollments, setLoadingEnrollments] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
@@ -71,6 +75,27 @@ export function InterventionFormModal({
     loadStaff()
   }, [isOpen])
 
+  useEffect(() => {
+    if (!isOpen || enrollmentId) {
+      return
+    }
+
+    async function loadEnrollments() {
+      setLoadingEnrollments(true)
+      try {
+        const enrollmentsData = await getEnrollments({ enrollment_status: 'active', ordering: '-enrollment_date' })
+        const normalized = normalizeListResponse(enrollmentsData)
+        setEligibleEnrollments(normalized.items)
+      } catch (err) {
+        setError(getApiErrorMessage(err))
+      } finally {
+        setLoadingEnrollments(false)
+      }
+    }
+
+    loadEnrollments()
+  }, [isOpen, enrollmentId])
+
   // Avoid unnecessary setState loops by only applying when the next form differs
   const _lastAppliedForm = useRef(null)
   useEffect(() => {
@@ -78,6 +103,7 @@ export function InterventionFormModal({
 
     const nextForm = currentValue
       ? {
+          enrollment: currentValue.enrollment || enrollmentId || '',
           title: currentValue.title || currentValue.recommendation || '',
           intervention_type: currentValue.intervention_type || 'Academic Monitoring',
           assigned_personnel: currentValue.assigned_personnel || '',
@@ -89,6 +115,7 @@ export function InterventionFormModal({
           notes: currentValue.notes || '',
         }
       : {
+          enrollment: enrollmentId || '',
           title: '',
           intervention_type: 'Academic Monitoring',
           assigned_personnel: '',
@@ -130,8 +157,15 @@ export function InterventionFormModal({
     setError('')
 
     try {
+      const selectedEnrollment = form.enrollment || enrollmentId
+      if (!selectedEnrollment) {
+        setError('Please select a student enrollment before saving.')
+        setSaving(false)
+        return
+      }
+
       const payload = {
-        enrollment: enrollmentId,
+        enrollment: Number(selectedEnrollment),
         risk_type: latestPrediction?.risk_level || 'Academic Risk',
         intervention_type: form.intervention_type,
         recommendation: form.recommendation || form.title || 'Intervention planned',
@@ -197,6 +231,20 @@ export function InterventionFormModal({
         </div>
 
         <form className="form-grid intervention-form-grid" onSubmit={handleSubmit}>
+          {!enrollmentId ? (
+            <label>
+              <span>Student</span>
+              <select value={form.enrollment} onChange={(event) => setForm({ ...form, enrollment: event.target.value })} required>
+                <option value="">Select student</option>
+                {loadingEnrollments ? <option value="">Loading active students...</option> : null}
+                {eligibleEnrollments.map((enrollment) => (
+                  <option key={enrollment.id} value={enrollment.id}>
+                    {enrollment.student_name || `Student ${enrollment.student}`} {enrollment.academic_year ? `· ${enrollment.academic_year}` : ''}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
           <label>
             <span>Intervention title</span>
             <input value={form.title} onChange={(event) => setForm({ ...form, title: event.target.value })} required />

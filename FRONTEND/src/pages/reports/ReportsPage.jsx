@@ -4,6 +4,7 @@ import { useAuth } from '../../context/AuthContext'
 import { EmptyState } from '../../components/common/EmptyState'
 import { ErrorBanner } from '../../components/feedback/ErrorBanner'
 import { PageHeader } from '../../components/common/PageHeader'
+import { FilterBar, KpiCard, SearchBar, SectionHeader } from '../../components/design-system/DesignSystem'
 import { getApiErrorMessage } from '../../services/api'
 import { exportReport, getReportCenter } from '../../services/reportService'
 
@@ -130,7 +131,7 @@ export function ReportsPage() {
       const fileName = result?.download_file || `report-export-${responseFormat || 'data'}-${new Date().toISOString().slice(0, 10)}.${responseFormat === 'pdf' ? 'pdf' : responseFormat === 'xlsx' ? 'xlsx' : 'csv'}`
 
       if (responseFormat === 'pdf') {
-        window.alert(result.message || 'Use print preview to save as PDF.')
+        window.alert(result?.message || 'Use print preview to save as PDF.')
         window.print()
         return
       }
@@ -138,7 +139,9 @@ export function ReportsPage() {
       const downloadData = payload?.data || payload
       const exportContent = responseFormat === 'csv'
         ? Object.entries(downloadData || {}).map(([key, value]) => `${key},${String(value ?? '')}`).join('\n')
-        : JSON.stringify(downloadData, null, 2)
+        : typeof downloadData === 'string'
+          ? downloadData
+          : JSON.stringify(downloadData, null, 2)
 
       const contentType = responseFormat === 'csv'
         ? 'text/csv;charset=utf-8'
@@ -155,7 +158,7 @@ export function ReportsPage() {
       link.click()
       document.body.removeChild(link)
       URL.revokeObjectURL(url)
-      window.alert(result.message || `Report exported as ${fileName}`)
+      window.alert(result?.message || `Report exported as ${fileName}`)
     } catch (err) {
       setError(getApiErrorMessage(err))
     }
@@ -171,14 +174,14 @@ export function ReportsPage() {
   return (
     <div className="page-stack">
       <PageHeader
-        eyebrow="Reports Center"
-        title="Reports, analytics and exports"
-        description="Use existing school data to review student outcomes, attendance, interventions, and AI risk trends."
+        eyebrow="Reporting workspace"
+        title="Reports"
+        description="Jump into the right report category, review the key metrics, and export the evidence you need in one step."
         actions={[
-          <button key="csv" type="button" className="btn btn-secondary" onClick={() => handleExport('csv')}>
+          <button key="csv" type="button" className="action-button action-button--secondary" onClick={() => handleExport('csv')}>
             Export CSV
           </button>,
-          <button key="print" type="button" className="btn btn-outline" onClick={() => window.print()}>
+          <button key="print" type="button" className="action-button action-button--outline" onClick={() => window.print()}>
             Print
           </button>,
         ]}
@@ -192,57 +195,52 @@ export function ReportsPage() {
         </p>
       </div>
 
-      <section className="panel-card" aria-label="Report filters">
-        <div className="form-grid">
-          <label>
-            Search
-            <input name="search" value={filters.search} onChange={handleChange} placeholder="Search student" />
-          </label>
-          <label>
-            Academic Year
-            <input name="academic_year" value={filters.academic_year} onChange={handleChange} placeholder="2024-2025" />
-          </label>
-          <label>
-            Grade Level
-            <input name="grade_level" value={filters.grade_level} onChange={handleChange} placeholder="Grade 10" />
-          </label>
-          <label>
-            Section
-            <input name="section" value={filters.section} onChange={handleChange} placeholder="Section A" />
-          </label>
-          <label>
-            Teacher
-            <input name="teacher" value={filters.teacher} onChange={handleChange} placeholder="Teacher ID" />
-          </label>
-          <label>
-            Risk Level
-            <select name="risk_level" value={filters.risk_level} onChange={handleChange}>
-              <option value="">All</option>
-              <option value="Low">Low</option>
-              <option value="Moderate">Moderate</option>
-              <option value="High">High</option>
-            </select>
-          </label>
-          <label>
-            Status
-            <select name="status" value={filters.status} onChange={handleChange}>
-              <option value="">All</option>
-              <option value="planned">Planned</option>
-              <option value="in_progress">In Progress</option>
-              <option value="completed">Completed</option>
-              <option value="cancelled">Cancelled</option>
-            </select>
-          </label>
-          <label>
-            Date From
-            <input type="date" name="date_from" value={filters.date_from || ''} onChange={handleChange} />
-          </label>
-          <label>
-            Date To
-            <input type="date" name="date_to" value={filters.date_to || ''} onChange={handleChange} />
-          </label>
-        </div>
-      </section>
+      <FilterBar title="Report filters">
+        <SearchBar value={filters.search} onChange={(event) => handleChange({ target: { name: 'search', value: event.target.value } })} placeholder="Search student" ariaLabel="Search reports" />
+        <label>
+          Academic Year
+          <input name="academic_year" value={filters.academic_year} onChange={handleChange} placeholder="2024-2025" />
+        </label>
+        <label>
+          Grade Level
+          <input name="grade_level" value={filters.grade_level} onChange={handleChange} placeholder="Grade 10" />
+        </label>
+        <label>
+          Section
+          <input name="section" value={filters.section} onChange={handleChange} placeholder="Section A" />
+        </label>
+        <label>
+          Teacher
+          <input name="teacher" value={filters.teacher} onChange={handleChange} placeholder="Teacher ID" />
+        </label>
+        <label>
+          Risk Level
+          <select name="risk_level" value={filters.risk_level} onChange={handleChange}>
+            <option value="">All</option>
+            <option value="Low">Low</option>
+            <option value="Moderate">Moderate</option>
+            <option value="High">High</option>
+          </select>
+        </label>
+        <label>
+          Status
+          <select name="status" value={filters.status} onChange={handleChange}>
+            <option value="">All</option>
+            <option value="planned">Planned</option>
+            <option value="in_progress">In Progress</option>
+            <option value="completed">Completed</option>
+            <option value="cancelled">Cancelled</option>
+          </select>
+        </label>
+        <label>
+          Date From
+          <input type="date" name="date_from" value={filters.date_from || ''} onChange={handleChange} />
+        </label>
+        <label>
+          Date To
+          <input type="date" name="date_to" value={filters.date_to || ''} onChange={handleChange} />
+        </label>
+      </FilterBar>
 
       <section className="panel-card" aria-label="Report categories">
         <div className="chip-list">
@@ -257,7 +255,7 @@ export function ReportsPage() {
             </button>
           ))}
         </div>
-        <p>{visibleCategories.find((category) => category.key === activeCategory)?.description}</p>
+        <p className="subtle-copy">{visibleCategories.find((category) => category.key === activeCategory)?.description}</p>
       </section>
 
       {error ? <ErrorBanner message={error} /> : null}
@@ -275,35 +273,17 @@ export function ReportsPage() {
       {!loading && reportData ? (
         <div>
           <section className="dashboard-summary-grid" aria-label="Report summaries">
-            <article className="dashboard-metric-card">
-              <p className="stat-label">Students</p>
-              <p className="stat-value">{studentReports.student_count ?? 0}</p>
-            </article>
-            <article className="dashboard-metric-card">
-              <p className="stat-label">Enrollments</p>
-              <p className="stat-value">{studentReports.enrollment_count ?? 0}</p>
-            </article>
-            <article className="dashboard-metric-card">
-              <p className="stat-label">Attendance %</p>
-              <p className="stat-value">{attendanceReports.summary?.attendance_percentage ?? 0}%</p>
-            </article>
-            <article className="dashboard-metric-card">
-              <p className="stat-label">Behavior average</p>
-              <p className="stat-value">{behaviorReports.summary?.behavior_average ?? 0}</p>
-            </article>
-            <article className="dashboard-metric-card">
-              <p className="stat-label">Predictions</p>
-              <p className="stat-value">{aiReports.summary?.prediction_count ?? 0}</p>
-            </article>
-            <article className="dashboard-metric-card">
-              <p className="stat-label">Interventions</p>
-              <p className="stat-value">{interventionReports.summary?.total ?? 0}</p>
-            </article>
+            <KpiCard label="Students" value={studentReports.student_count ?? 0} tone="primary" />
+            <KpiCard label="Enrollments" value={studentReports.enrollment_count ?? 0} tone="primary" />
+            <KpiCard label="Attendance %" value={`${attendanceReports.summary?.attendance_percentage ?? 0}%`} tone="success" />
+            <KpiCard label="Behavior average" value={behaviorReports.summary?.behavior_average ?? 0} tone="warning" />
+            <KpiCard label="Predictions" value={aiReports.summary?.prediction_count ?? 0} tone="info" />
+            <KpiCard label="Interventions" value={interventionReports.summary?.total ?? 0} tone="neutral" />
           </section>
 
           {activeCategory === 'student' ? (
             <section className="panel-card">
-              <h2>Student Reports</h2>
+              <SectionHeader eyebrow="Student reports" title="Student Reports" />
               <div className="table-card">
                 <table>
                   <thead>
@@ -341,7 +321,7 @@ export function ReportsPage() {
 
           {activeCategory === 'academic' ? (
             <section className="panel-card">
-              <h2>Academic Reports</h2>
+              <SectionHeader eyebrow="Academic reports" title="Academic Reports" />
               <div className="table-card">
                 <table>
                   <thead>
@@ -379,7 +359,7 @@ export function ReportsPage() {
 
           {activeCategory === 'attendance' ? (
             <section className="panel-card">
-              <h2>Attendance Reports</h2>
+              <SectionHeader eyebrow="Attendance reports" title="Attendance Reports" />
               <div className="table-card">
                 <table>
                   <thead>
@@ -413,7 +393,7 @@ export function ReportsPage() {
 
           {activeCategory === 'behavior' ? (
             <section className="panel-card">
-              <h2>Behavior Reports</h2>
+              <SectionHeader eyebrow="Behavior reports" title="Behavior Reports" />
               <div className="table-card">
                 <table>
                   <thead>
@@ -439,7 +419,7 @@ export function ReportsPage() {
 
           {activeCategory === 'ai' ? (
             <section className="panel-card">
-              <h2>AI Reports</h2>
+              <SectionHeader eyebrow="AI reports" title="AI Reports" />
               <div className="table-card">
                 <table>
                   <thead>
@@ -469,7 +449,7 @@ export function ReportsPage() {
 
           {activeCategory === 'intervention' ? (
             <section className="panel-card">
-              <h2>Intervention Reports</h2>
+              <SectionHeader eyebrow="Intervention reports" title="Intervention Reports" />
               <div className="table-card">
                 <table>
                   <thead>

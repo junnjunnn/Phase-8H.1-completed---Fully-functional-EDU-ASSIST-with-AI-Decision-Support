@@ -41,6 +41,7 @@ export function StudentsPage() {
   const [sortDirection, setSortDirection] = useState('asc')
   const [pagination, setPagination] = useState({ count: 0, next: null, previous: null })
   const [showRegisterModal, setShowRegisterModal] = useState(false)
+  const [registrationStep, setRegistrationStep] = useState(1)
   const [registerForm, setRegisterForm] = useState({
     lrn: '',
     first_name: '',
@@ -49,6 +50,7 @@ export function StudentsPage() {
     gender: '',
     birth_date: '',
     student_status: 'active',
+    student_type: 'Continuing',
     academic_year: '',
     grade_level: '',
     section: '',
@@ -72,7 +74,27 @@ export function StudentsPage() {
   const canManageStudents = user?.role_name === 'SUPER_ADMIN' || user?.role_name === 'SCHOOL_ADMIN'
 
   const canCreateStudent = canManageStudents
-  
+
+  function resetRegisterForm() {
+    setRegisterForm({
+      lrn: '',
+      first_name: '',
+      middle_name: '',
+      last_name: '',
+      gender: '',
+      birth_date: '',
+      student_status: 'active',
+      student_type: 'Continuing',
+      academic_year: '',
+      grade_level: '',
+      section: '',
+      enrollment_status: 'active',
+    })
+    setRegisterErrors({})
+    setSelectedYear('')
+    setSelectedGrade('')
+    setRegistrationStep(1)
+  }
 
   const sortedStudents = useMemo(() => {
     const rows = [...students]
@@ -270,11 +292,15 @@ export function StudentsPage() {
         gender: '',
         birth_date: '',
         student_status: 'active',
+        student_type: 'Continuing',
         academic_year: '',
         grade_level: '',
         section: '',
         enrollment_status: 'active',
       })
+      setSelectedYear('')
+      setSelectedGrade('')
+      setRegistrationStep(1)
       setShowRegisterModal(false)
       setError('')
       const refreshed = await getStudents({ search })
@@ -296,8 +322,8 @@ export function StudentsPage() {
 
   return (
     <div className="page-stack students-page">
-      <PageHeader eyebrow="Students" title="Student management" description="Browse student records from the backend." actions={canCreateStudent ? (
-        <button type="button" className="action-button action-button--primary" onClick={() => setShowRegisterModal(true)}>
+      <PageHeader eyebrow="Student management" title="Students" description="Manage the current learner roster and move quickly into enrollment, profile review, or student status updates." actions={canCreateStudent ? (
+        <button type="button" className="action-button action-button--primary" onClick={() => { resetRegisterForm(); setShowRegisterModal(true) }}>
           <PlusIcon className="icon" /> Register student
         </button>
       ) : null} />
@@ -446,8 +472,8 @@ export function StudentsPage() {
                 </label>
               </div>
               <div className="modal-actions">
-                <button type="button" className="btn btn-outline" onClick={() => setEditModalOpen(false)}>Cancel</button>
-                <button type="submit" className="btn btn-primary" disabled={editSaving}>{editSaving ? 'Saving...' : 'Save changes'}</button>
+                <button type="button" className="action-button action-button--neutral" onClick={() => setEditModalOpen(false)}>Cancel</button>
+                <button type="submit" className="action-button action-button--primary" disabled={editSaving}>{editSaving ? 'Saving...' : 'Save changes'}</button>
               </div>
             </form>
           </div>
@@ -469,87 +495,115 @@ export function StudentsPage() {
 
             <form className="registration-form" onSubmit={handleRegisterSubmit}>
               {registerErrors.form ? <ErrorBanner message={registerErrors.form} /> : null}
-              <div className="form-grid">
-                <label>
-                  <span>Student ID</span>
-                  <input name="lrn" value={registerForm.lrn} onChange={updateRegisterField} aria-invalid={Boolean(registerErrors.lrn)} />
-                  {registerErrors.lrn ? <small className="field-error">{registerErrors.lrn}</small> : null}
-                </label>
-                <label>
-                  <span>First name</span>
-                  <input name="first_name" value={registerForm.first_name} onChange={updateRegisterField} aria-invalid={Boolean(registerErrors.first_name)} />
-                  {registerErrors.first_name ? <small className="field-error">{registerErrors.first_name}</small> : null}
-                </label>
-                <label>
-                  <span>Middle name</span>
-                  <input name="middle_name" value={registerForm.middle_name} onChange={updateRegisterField} />
-                </label>
-                <label>
-                  <span>Last name</span>
-                  <input name="last_name" value={registerForm.last_name} onChange={updateRegisterField} aria-invalid={Boolean(registerErrors.last_name)} />
-                  {registerErrors.last_name ? <small className="field-error">{registerErrors.last_name}</small> : null}
-                </label>
-                <label>
-                  <span>Sex</span>
-                  <select name="gender" value={registerForm.gender} onChange={updateRegisterField}>
-                    <option value="">Select</option>
-                    <option value="Male">Male</option>
-                    <option value="Female">Female</option>
-                  </select>
-                </label>
-                <label>
-                  <span>Date of birth</span>
-                  <input type="date" name="birth_date" value={registerForm.birth_date} onChange={updateRegisterField} />
-                </label>
-                <label>
-                  <span>Academic year</span>
-                  <select name="academic_year" value={registerForm.academic_year} onChange={updateRegisterField} aria-invalid={Boolean(registerErrors.academic_year)}>
-                    <option value="">Select</option>
-                    {academicYears.map((year) => <option key={year.id} value={year.id}>{year.name}</option>)}
-                  </select>
-                  {registerErrors.academic_year ? <small className="field-error">{registerErrors.academic_year}</small> : null}
-                </label>
-                <label>
-                  <span>Grade level</span>
-                  <select name="grade_level" value={registerForm.grade_level} onChange={updateRegisterField} aria-invalid={Boolean(registerErrors.grade_level)}>
-                    <option value="">Select</option>
-                    {gradeLevels.map((grade) => <option key={grade.id} value={grade.id}>{grade.name}</option>)}
-                  </select>
-                  {registerErrors.grade_level ? <small className="field-error">{registerErrors.grade_level}</small> : null}
-                </label>
-                <label>
-                  <span>Section</span>
-                  <select name="section" value={registerForm.section} onChange={updateRegisterField} aria-invalid={Boolean(registerErrors.section)}>
-                    <option value="">Select</option>
-                    {sections.filter((section) => {
+              <div className="form-stepper" aria-label="Registration steps">
+                <button type="button" className={`step-pill ${registrationStep === 1 ? 'step-pill--active' : ''}`} onClick={() => setRegistrationStep(1)}>1. Student profile</button>
+                <button type="button" className={`step-pill ${registrationStep === 2 ? 'step-pill--active' : ''}`} onClick={() => setRegistrationStep(2)}>2. Enrollment details</button>
+              </div>
+              {registrationStep === 1 ? (
+                <div className="form-grid">
+                  <label>
+                    <span>Student ID</span>
+                    <input name="lrn" value={registerForm.lrn} onChange={updateRegisterField} aria-invalid={Boolean(registerErrors.lrn)} />
+                    {registerErrors.lrn ? <small className="field-error">{registerErrors.lrn}</small> : null}
+                  </label>
+                  <label>
+                    <span>First name</span>
+                    <input name="first_name" value={registerForm.first_name} onChange={updateRegisterField} aria-invalid={Boolean(registerErrors.first_name)} />
+                    {registerErrors.first_name ? <small className="field-error">{registerErrors.first_name}</small> : null}
+                  </label>
+                  <label>
+                    <span>Middle name</span>
+                    <input name="middle_name" value={registerForm.middle_name} onChange={updateRegisterField} />
+                  </label>
+                  <label>
+                    <span>Last name</span>
+                    <input name="last_name" value={registerForm.last_name} onChange={updateRegisterField} aria-invalid={Boolean(registerErrors.last_name)} />
+                    {registerErrors.last_name ? <small className="field-error">{registerErrors.last_name}</small> : null}
+                  </label>
+                  <label>
+                    <span>Sex</span>
+                    <select name="gender" value={registerForm.gender} onChange={updateRegisterField}>
+                      <option value="">Select</option>
+                      <option value="Male">Male</option>
+                      <option value="Female">Female</option>
+                    </select>
+                  </label>
+                  <label>
+                    <span>Date of birth</span>
+                    <input type="date" name="birth_date" value={registerForm.birth_date} onChange={updateRegisterField} />
+                  </label>
+                </div>
+              ) : (
+                <div className="form-grid">
+                  <label>
+                    <span>Enrollment type</span>
+                    <select name="student_type" value={registerForm.student_type} onChange={updateRegisterField}>
+                      <option value="Continuing">Continuing</option>
+                      <option value="New">New</option>
+                      <option value="Transferee">Transferee</option>
+                    </select>
+                  </label>
+                  <label>
+                    <span>Academic year</span>
+                    <select name="academic_year" value={registerForm.academic_year} onChange={updateRegisterField} aria-invalid={Boolean(registerErrors.academic_year)}>
+                      <option value="">Select</option>
+                      {academicYears.map((year) => <option key={year.id} value={year.id}>{year.name}</option>)}
+                    </select>
+                    {registerErrors.academic_year ? <small className="field-error">{registerErrors.academic_year}</small> : null}
+                  </label>
+                  <label>
+                    <span>Grade level</span>
+                    <select name="grade_level" value={registerForm.grade_level} onChange={updateRegisterField} aria-invalid={Boolean(registerErrors.grade_level)}>
+                      <option value="">Select</option>
+                      {gradeLevels.map((grade) => <option key={grade.id} value={grade.id}>{grade.name}</option>)}
+                    </select>
+                    {registerErrors.grade_level ? <small className="field-error">{registerErrors.grade_level}</small> : null}
+                  </label>
+                  <label>
+                    <span>Section</span>
+                    <select name="section" value={registerForm.section} onChange={updateRegisterField} aria-invalid={Boolean(registerErrors.section)}>
+                      <option value="">Select</option>
+                      {sections.filter((section) => {
+                        const matchesYear = !selectedYear || String(section.academic_year) === String(selectedYear) || String(section.academic_year_id || section.academic_year) === String(selectedYear)
+                        const matchesGrade = !selectedGrade || String(section.grade_level) === String(selectedGrade) || String(section.grade_level_id || section.grade_level) === String(selectedGrade)
+                        return matchesYear && matchesGrade
+                      }).map((section) => <option key={section.id} value={section.id}>{getSectionLabel(section)}</option>)}
+                    </select>
+                    {selectedYear && selectedGrade && sections.filter((section) => {
                       const matchesYear = !selectedYear || String(section.academic_year) === String(selectedYear) || String(section.academic_year_id || section.academic_year) === String(selectedYear)
                       const matchesGrade = !selectedGrade || String(section.grade_level) === String(selectedGrade) || String(section.grade_level_id || section.grade_level) === String(selectedGrade)
                       return matchesYear && matchesGrade
-                    }).map((section) => <option key={section.id} value={section.id}>{getSectionLabel(section)}</option>)}
-                  </select>
-                  {selectedYear && selectedGrade && sections.filter((section) => {
-                    const matchesYear = !selectedYear || String(section.academic_year) === String(selectedYear) || String(section.academic_year_id || section.academic_year) === String(selectedYear)
-                    const matchesGrade = !selectedGrade || String(section.grade_level) === String(selectedGrade) || String(section.grade_level_id || section.grade_level) === String(selectedGrade)
-                    return matchesYear && matchesGrade
-                  }).length === 0 ? <small className="field-hint">No sections are available for the selected year and grade yet.</small> : null}
-                  {registerErrors.section ? <small className="field-error">{registerErrors.section}</small> : null}
-                </label>
-                <label>
-                  <span>Status</span>
-                  <select name="enrollment_status" value={registerForm.enrollment_status} onChange={updateRegisterField}>
-                    <option value="active">Enrolled</option>
-                    <option value="transferred">Transferred</option>
-                    <option value="inactive">Inactive</option>
-                    <option value="graduated">Graduated</option>
-                  </select>
-                </label>
-              </div>
+                    }).length === 0 ? <small className="field-hint">No sections are available for the selected year and grade yet.</small> : null}
+                    {registerErrors.section ? <small className="field-error">{registerErrors.section}</small> : null}
+                  </label>
+                  <label>
+                    <span>Status</span>
+                    <select name="enrollment_status" value={registerForm.enrollment_status} onChange={updateRegisterField}>
+                      <option value="active">Enrolled</option>
+                      <option value="transferred">Transferred</option>
+                      <option value="inactive">Inactive</option>
+                      <option value="graduated">Graduated</option>
+                    </select>
+                  </label>
+                  <div className="detail-card form-grid-full">
+                    <p className="eyebrow">Enrollment summary</p>
+                    <p>{registerForm.student_type} student · {academicYears.find((year) => String(year.id) === String(registerForm.academic_year))?.name || 'Academic year pending'} · {gradeLevels.find((grade) => String(grade.id) === String(registerForm.grade_level))?.name || 'Grade pending'}</p>
+                  </div>
+                </div>
+              )}
 
               <div className="modal-actions">
-                <button type="button" className="action-button action-button--neutral" onClick={() => setShowRegisterModal(false)}>Cancel</button>
-                <button type="submit" className="action-button action-button--primary" disabled={submitting}>
-                  {submitting ? <LoadingSpinner label="Saving..." /> : <><UserPlusIcon className="icon" /> Register student</>}
-                </button>
+                <button type="button" className="action-button action-button--neutral" onClick={() => { setShowRegisterModal(false); resetRegisterForm() }}>Cancel</button>
+                {registrationStep === 2 ? (
+                  <button type="button" className="action-button action-button--neutral" onClick={() => setRegistrationStep(1)}>Back</button>
+                ) : null}
+                {registrationStep === 1 ? (
+                  <button type="button" className="action-button action-button--primary" onClick={() => setRegistrationStep(2)}>Continue</button>
+                ) : (
+                  <button type="submit" className="action-button action-button--primary" disabled={submitting}>
+                    {submitting ? <LoadingSpinner label="Saving..." /> : <><UserPlusIcon className="icon" /> Register student</>}
+                  </button>
+                )}
               </div>
             </form>
           </div>

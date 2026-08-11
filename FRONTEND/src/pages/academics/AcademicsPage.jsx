@@ -87,8 +87,27 @@ export function AcademicsPage() {
       <PageHeader
         eyebrow="Academics"
         title="Academic monitoring"
-        description="Browse academic years, enrollments, subjects, and academic records from the backend."
+        description="Use this workspace to review academic outcomes, spot follow-ups, and move quickly from record review to grade entry."
       />
+
+      <section className="detail-card workflow-guide-card">
+        <div className="section-header">
+          <div>
+            <p className="eyebrow">Workflow guidance</p>
+            <h3>Keep academic reviews action-ready</h3>
+          </div>
+        </div>
+        <ul className="workflow-guide-list">
+          <li>Review the latest evaluations before planning a teacher follow-up.</li>
+          <li>Search by student or subject to isolate a specific performance concern.</li>
+          <li>Open the grade encoding flow when a class needs the next action.</li>
+        </ul>
+        <div className="workflow-guide-actions">
+          <a className="action-button" href="/academics/encode">Encode grades</a>
+          <span className="action-chip">Instructional review</span>
+          <span className="action-chip">Progress tracking</span>
+        </div>
+      </section>
 
       <div className="record-summary-grid">
         <article className="detail-card stat-card-accent">

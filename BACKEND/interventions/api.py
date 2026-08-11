@@ -1,10 +1,12 @@
 from rest_framework import mixins, permissions, viewsets
+from rest_framework.exceptions import PermissionDenied
 from rest_framework.filters import OrderingFilter, SearchFilter
 from django_filters.rest_framework import DjangoFilterBackend
 
 from audit.models import AuditLog
 from accounts.permissions import IsAuthorizedStaff
-from accounts.utils import get_authorized_enrollment_queryset
+from accounts.utils import get_authorized_enrollment_queryset, get_user_scope
+from academics.models import Enrollment
 from .models import Intervention
 from .serializers import InterventionSerializer
 
@@ -22,7 +24,16 @@ class InterventionViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixi
     def get_queryset(self):
         return get_authorized_enrollment_queryset(self.request.user, super().get_queryset(), enrollment_field='enrollment')
 
+    def _authorize_enrollment(self, enrollment):
+        if get_user_scope(self.request.user) != 'teacher':
+            return
+
+        authorized_enrollments = get_authorized_enrollment_queryset(self.request.user, Enrollment.objects.all())
+        if not authorized_enrollments.filter(pk=enrollment.pk).exists():
+            raise PermissionDenied('You are not authorized to create or modify interventions for this enrollment.')
+
     def perform_create(self, serializer):
+        self._authorize_enrollment(serializer.validated_data['enrollment'])
         instance = serializer.save()
         AuditLog.objects.create(
             user=self.request.user if self.request.user.is_authenticated else None,
@@ -33,6 +44,8 @@ class InterventionViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixi
         )
 
     def perform_update(self, serializer):
+        enrollment = serializer.validated_data.get('enrollment', serializer.instance.enrollment)
+        self._authorize_enrollment(enrollment)
         instance = serializer.save()
         AuditLog.objects.create(
             user=self.request.user if self.request.user.is_authenticated else None,

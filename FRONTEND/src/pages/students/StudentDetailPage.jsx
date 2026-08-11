@@ -5,7 +5,9 @@ import { ErrorBanner } from '../../components/feedback/ErrorBanner'
 import { LoadingSpinner } from '../../components/common/LoadingSpinner'
 import { PageHeader } from '../../components/common/PageHeader'
 import { InterventionFormModal } from '../../components/interventions/InterventionFormModal'
+import { useAuth } from '../../context/AuthContext'
 import { getApiErrorMessage } from '../../services/api'
+import { generatePrediction } from '../../services/predictionService'
 import { getStudentById } from '../../services/studentService'
 import {
   getStudentRelatedAcademicRecords,
@@ -103,9 +105,12 @@ export function StudentDetailPage() {
   const [interventionError, setInterventionError] = useState('')
   const [interventionLoading, setInterventionLoading] = useState(true)
 
+  const { user } = useAuth()
   const [predictions, setPredictions] = useState([])
   const [predictionError, setPredictionError] = useState('')
   const [predictionLoading, setPredictionLoading] = useState(true)
+  const [generatingPrediction, setGeneratingPrediction] = useState(false)
+  const [generationMessage, setGenerationMessage] = useState('')
 
   const [predictionFactors, setPredictionFactors] = useState([])
   const [predictionFactorError, setPredictionFactorError] = useState('')
@@ -349,6 +354,43 @@ export function StudentDetailPage() {
     return behaviorAverage ? getBehaviorClassification(behaviorAverage) : 'Pending'
   }, [behaviorAverage])
 
+  const canGeneratePrediction = ['SUPER_ADMIN', 'SCHOOL_ADMIN', 'TEACHER'].includes(user?.role_name)
+
+  async function handleGeneratePrediction() {
+    if (!canGeneratePrediction) {
+      setPredictionError('You do not have permission to generate a prediction.')
+      return
+    }
+
+    setGeneratingPrediction(true)
+    setGenerationMessage('')
+    setPredictionError('')
+
+    try {
+      await generatePrediction(id)
+      const [predictionData, factorData] = await Promise.all([
+        getStudentRelatedRiskPredictions(id, { ordering: '-prediction_date' }),
+        getStudentRelatedPredictionFactors(id, { ordering: 'feature_name' }),
+      ])
+
+      const normalizedPredictions = normalizeListResponse(predictionData)
+      const normalizedFactors = normalizeListResponse(factorData)
+
+      setPredictions(normalizedPredictions.items)
+      setPredictionFactors(normalizedFactors.items)
+      setStudentSummary((current) => ({
+        ...current,
+        predictionCount: normalizedPredictions.count,
+        predictionFactorCount: normalizedFactors.count,
+      }))
+      setGenerationMessage('Prediction generated successfully. Refreshing the latest scores.')
+    } catch (err) {
+      setPredictionError(getApiErrorMessage(err))
+    } finally {
+      setGeneratingPrediction(false)
+    }
+  }
+
   const enrollmentSummary = useMemo(() => {
     if (!enrollments.length) {
       return null
@@ -506,6 +548,23 @@ export function StudentDetailPage() {
 
       {activeTab === 'overview' && (
         <section className="student-section overview-section">
+          <section className="detail-card workflow-guide-card" style={{ marginBottom: 'var(--space-4)' }}>
+            <div className="section-header">
+              <div>
+                <p className="eyebrow">Support workflow</p>
+                <h3>What to review next</h3>
+              </div>
+            </div>
+            <ul className="workflow-guide-list">
+              <li>Review the latest prediction and the top risk drivers before planning a response.</li>
+              <li>Use the academics, attendance, and behavior tabs to confirm whether the concern is growing or improving.</li>
+              <li>Create an intervention when the student needs a coordinated follow-up or escalation.</li>
+            </ul>
+            <div className="workflow-guide-actions">
+              <span className="action-chip">Student-centered view</span>
+              <span className="action-chip">Action-ready support</span>
+            </div>
+          </section>
           <div className="overview-grid">
             <article className="detail-card">
               <div className="section-header">
@@ -634,6 +693,14 @@ export function StudentDetailPage() {
                       <button type="button" className="action-button" onClick={() => setShowInterventionModal(true)}>
                         Create intervention
                       </button>
+                    </div>
+                  ) : null}
+                  {canGeneratePrediction ? (
+                    <div className="grade-encoding-actions" style={{ marginTop: '1rem' }}>
+                      <button type="button" className="action-button action-button--secondary" onClick={handleGeneratePrediction} disabled={generatingPrediction}>
+                        {generatingPrediction ? 'Generating prediction…' : 'Generate prediction now'}
+                      </button>
+                      {generationMessage ? <span className="status-text">{generationMessage}</span> : null}
                     </div>
                   ) : null}
                 </>
@@ -909,6 +976,7 @@ export function StudentDetailPage() {
           </div>
 
           {predictionError ? <ErrorBanner message={predictionError} /> : null}
+          {generationMessage ? <div className="status-banner status-banner--success">{generationMessage}</div> : null}
           {predictionLoading ? <div className="table-skeleton"><div /><div /><div /></div> : null}
           {!predictionLoading && !predictionError && predictions.length === 0 ? (
             <EmptyState title="No prediction history" message="No prediction records are available for this student." />

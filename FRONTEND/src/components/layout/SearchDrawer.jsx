@@ -86,7 +86,9 @@ export function SearchDrawer({ open, onClose }) {
 
         <div className="drawer-section">
           {loading ? (
-            <p>Searching for “{query}” …</p>
+            <div className="search-suggestions">
+              <p>Searching for “{query}” …</p>
+            </div>
           ) : error ? (
             <p className="error-text">{error}</p>
           ) : !query.trim() ? (
@@ -99,11 +101,13 @@ export function SearchDrawer({ open, onClose }) {
               </ul>
             </div>
           ) : totalCount === 0 ? (
-            <p>No results were found for “{query}”.</p>
+            <div className="search-suggestions">
+              <p>No results were found for “{query}”.</p>
+            </div>
           ) : (
             <div className="search-results">
               <div className="search-summary">
-                <p>{totalCount} result{totalCount === 1 ? '' : 's'} found</p>
+                <p>{totalCount} result{totalCount === 1 ? '' : 's'} found across {studentCount} student{studentCount === 1 ? '' : 's'}, {predictionCount} prediction{predictionCount === 1 ? '' : 's'}, and {userCount} account{userCount === 1 ? '' : 's'}.</p>
               </div>
               {studentCount > 0 ? (
                 <section>

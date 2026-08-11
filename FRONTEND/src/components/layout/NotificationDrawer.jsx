@@ -66,11 +66,15 @@ export function NotificationDrawer({ open, onClose }) {
         <div className="drawer-section">
           <p className="section-description">You have {notificationCount} active notification{notificationCount === 1 ? '' : 's'}.</p>
           {loading ? (
-            <p>Loading notifications…</p>
+            <div className="search-suggestions">
+              <p>Loading notifications…</p>
+            </div>
           ) : error ? (
             <p className="error-text">{error}</p>
           ) : notifications.length === 0 ? (
-            <p>No notifications are available right now.</p>
+            <div className="search-suggestions">
+              <p>No notifications are available right now.</p>
+            </div>
           ) : (
             <ul className="notification-list">
               {notifications.map((item) => (

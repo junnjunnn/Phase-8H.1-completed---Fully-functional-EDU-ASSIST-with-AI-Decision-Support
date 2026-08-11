@@ -19,6 +19,7 @@ import {
   updateSubject,
 } from '../../services/academicsService'
 import { getUsers as getUserProfiles } from '../../services/userService'
+import { notifySubjectsUpdated, subscribeSubjectsUpdated, unsubscribeSubjectsUpdated } from '../../services/referenceService'
 
 function normalizeListResponse(data) {
   const items = data?.results || data || []
@@ -152,6 +153,32 @@ export function AcademicStructurePage() {
     loadReferenceData()
   }, [])
 
+  useEffect(() => {
+    let active = true
+
+    async function reloadSubjects() {
+      try {
+        const refreshed = await getSubjects()
+        if (!active) {
+          return
+        }
+        setSubjects(normalizeListResponse(refreshed).items)
+      } catch {
+        // Keep the existing subjects list if the refresh fails.
+      }
+    }
+
+    function handleSubjectsUpdated() {
+      reloadSubjects()
+    }
+
+    subscribeSubjectsUpdated(handleSubjectsUpdated)
+    return () => {
+      active = false
+      unsubscribeSubjectsUpdated(handleSubjectsUpdated)
+    }
+  }, [])
+
   async function handleYearSubmit(event) {
     event.preventDefault()
     setSaving(true)
@@ -234,6 +261,7 @@ export function AcademicStructurePage() {
       }
       const refreshed = await getSubjects()
       setSubjects(normalizeListResponse(refreshed).items)
+      notifySubjectsUpdated()
       setSubjectForm({ id: '', code: '', name: '', category: 'Learning Area', grade_level: '', strand: '', is_active: true })
     } catch (err) {
       setError(getApiErrorMessage(err))
@@ -310,6 +338,7 @@ export function AcademicStructurePage() {
       await updateSubject(subject.id, { is_active: !subject.is_active })
       const refreshed = await getSubjects()
       setSubjects(normalizeListResponse(refreshed).items)
+      notifySubjectsUpdated()
     } catch (err) {
       setError(getApiErrorMessage(err))
     }

@@ -152,62 +152,77 @@ textarea {
 }
 
 /* Buttons */
-.btn {
+.btn,
+.action-button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: var(--space-2);
   min-height: 44px;
   padding: 0 var(--space-4);
-  border-radius: var(--radius-medium);
+  border-radius: var(--radius-pill);
   font-weight: var(--font-weight-semibold);
   line-height: 1;
   text-align: center;
+  text-decoration: none;
   transition: transform var(--transition-fast), box-shadow var(--transition-fast), background-color var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
 }
 
-.btn:hover:not(:disabled) {
+.btn:hover:not(:disabled),
+.action-button:hover:not(:disabled) {
   transform: translateY(-1px);
 }
 
-.btn:focus-visible {
-  box-shadow: 0 0 0 4px rgba(245, 158, 11, 0.18);
+.btn:focus-visible,
+.action-button:focus-visible {
+  box-shadow: 0 0 0 4px rgba(17, 63, 138, 0.16);
 }
 
-.btn-primary {
+.btn-primary,
+.action-button--primary,
+.action-button:not([class*='--']):not(.action-button--ghost) {
   background: var(--color-primary);
   color: var(--color-secondary);
   box-shadow: var(--shadow-small);
 }
 
 .btn-secondary,
-.secondary-button {
+.secondary-button,
+.action-button--secondary {
   background: var(--color-primary-soft);
   color: var(--color-primary-dark);
+  border: 1px solid rgba(17, 63, 138, 0.16);
 }
 
-.btn-outline {
+.btn-outline,
+.action-button--outline {
   background: transparent;
   border: 1px solid var(--color-border-strong);
   color: var(--color-text-primary);
 }
 
-.btn-danger {
+.btn-danger,
+.action-button--danger {
   background: var(--color-danger);
   color: var(--color-secondary);
 }
 
-.btn-success {
+.btn-success,
+.action-button--success {
   background: var(--color-success);
   color: var(--color-secondary);
 }
 
-.btn-ghost {
+.btn-ghost,
+.action-button--ghost,
+.action-button--neutral {
   background: transparent;
   color: var(--color-text-primary);
+  border: 1px solid transparent;
 }
 
-.btn-loading {
+.btn-loading,
+.action-button[disabled] {
   opacity: 0.8;
   pointer-events: none;
 }
@@ -231,6 +246,7 @@ textarea {
   border: 1px solid var(--color-border);
   background: var(--color-surface);
   color: var(--color-text-primary);
+  font-size: var(--font-size-body);
 }
 
 textarea {
@@ -391,6 +407,39 @@ button:disabled {
 .table-card {
   width: 100%;
   overflow-x: auto;
+  border-radius: var(--radius-large);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+}
+
+.table-card table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 640px;
+}
+
+.table-card th,
+.table-card td {
+  text-align: left;
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--color-border);
+  vertical-align: top;
+}
+
+.table-card th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: rgba(248, 250, 252, 0.96);
+  backdrop-filter: blur(8px);
+}
+
+.table-card tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.table-card tbody tr:hover {
+  background: rgba(241, 247, 255, 0.7);
 }
 
 .chip-list {
@@ -445,42 +494,37 @@ button:disabled {
 
 .form-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 1rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-4);
+  margin-bottom: var(--space-4);
+}
+
+.form-grid label {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.form-grid-full {
+  grid-column: 1 / -1;
 }
 
 .page-stack {
   display: grid;
-  gap: 1.2rem;
+  gap: var(--space-5);
 }
 
-@media (max-width: 720px) {
+.page-content {
+  padding: var(--space-5) var(--space-4) var(--space-6);
+  width: min(100%, 1480px);
+  margin: 0 auto;
+  display: grid;
+  gap: var(--space-4);
+}
+
+@media (max-width: 960px) {
   .form-grid {
     grid-template-columns: 1fr;
   }
-}
-
-.table-card table {
-  width: 100%;
-  border-collapse: collapse;
-  min-width: 640px;
-}
-
-.table-card th,
-.table-card td {
-  text-align: left;
-  padding: var(--space-3) var(--space-4);
-  border-bottom: 1px solid var(--color-border);
-}
-
-.table-card th {
-    position: sticky;
-    top: 0;
-    z-index: 1;
-}
-
-.table-card tbody tr:last-child td {
-  border-bottom: none;
 }
 
 .table-card a {
@@ -504,13 +548,23 @@ button:disabled {
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
 }
 
-.section-header {
+.section-header,
+.ds-section-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
   gap: var(--space-4);
   flex-wrap: wrap;
   margin-bottom: var(--space-3);
+}
+
+.ds-section-header--start {
+  align-items: flex-start;
+}
+
+.ds-section-copy {
+  display: grid;
+  gap: var(--space-2);
 }
 
 .section-actions,

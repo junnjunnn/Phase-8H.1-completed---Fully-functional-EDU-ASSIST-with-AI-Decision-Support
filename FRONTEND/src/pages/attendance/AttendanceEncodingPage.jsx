@@ -4,6 +4,7 @@ import { EmptyState } from '../../components/common/EmptyState'
 import { ErrorBanner } from '../../components/feedback/ErrorBanner'
 import { LoadingSpinner } from '../../components/common/LoadingSpinner'
 import { PageHeader } from '../../components/common/PageHeader'
+import { useRoleAwareAutoLoad } from '../../hooks/useRoleAwareAutoLoad'
 import { useAuth } from '../../context/AuthContext'
 import { getApiErrorMessage } from '../../services/api'
 import {
@@ -92,6 +93,30 @@ export function AttendanceEncodingPage() {
     }
   }, [])
 
+  const getDefaultAttendanceFilters = () => {
+    const defaultSection = sections[0]
+    if (!defaultSection) {
+      return null
+    }
+
+    return {
+      academicYear: String(defaultSection.academic_year),
+      gradeLevel: String(defaultSection.grade_level),
+      section: String(defaultSection.id),
+      attendanceDate: filters.attendanceDate,
+    }
+  }
+
+  useRoleAwareAutoLoad({
+    enabled: canManageAttendance,
+    loading,
+    filters,
+    setFilters,
+    getDefaultFilters: getDefaultAttendanceFilters,
+    onLoad: loadClassData,
+    dependencies: [academicYears.length, gradeLevels.length, sections.length, filters.attendanceDate],
+  })
+
   const filteredSections = useMemo(() => {
     return sections.filter((section) => {
       const matchesYear = !filters.academicYear || String(section.academic_year) === String(filters.academicYear)
@@ -100,8 +125,8 @@ export function AttendanceEncodingPage() {
     })
   }, [filters.academicYear, filters.gradeLevel, sections])
 
-  async function loadClassData() {
-    if (!filters.academicYear || !filters.gradeLevel || !filters.section) {
+  async function loadClassData(nextFilters = filters) {
+    if (!nextFilters.academicYear || !nextFilters.gradeLevel || !nextFilters.section) {
       setError('Select an academic year, grade level, and section before loading the class roster.')
       return
     }
@@ -111,8 +136,8 @@ export function AttendanceEncodingPage() {
     setSuccessMessage('')
 
     try {
-      const enrollmentsData = await getEnrollments({ academic_year: filters.academicYear, grade_level: filters.gradeLevel, section: filters.section, enrollment_status: 'active' })
-      const attendanceData = await getAttendanceRecords({ month: filters.attendanceDate, enrollment__student: undefined })
+      const enrollmentsData = await getEnrollments({ academic_year: nextFilters.academicYear, grade_level: nextFilters.gradeLevel, section: nextFilters.section, enrollment_status: 'active' })
+      const attendanceData = await getAttendanceRecords({ month: nextFilters.attendanceDate, enrollment__student: undefined })
 
       const enrollments = normalizeListResponse(enrollmentsData).items
       const existingRecords = normalizeListResponse(attendanceData).items
@@ -204,9 +229,9 @@ export function AttendanceEncodingPage() {
   return (
     <div className="page-stack attendance-encoding-page">
       <PageHeader
-        eyebrow="Attendance"
+        eyebrow="Attendance workflow"
         title="Attendance encoding"
-        description="Select a class, mark the attendance status for each student, and save the roster for the selected date."
+        description="Open the assigned class, mark the student status for today, and save the roster in one guided flow."
         actions={(
           <Link className="action-button action-button--secondary" to="/attendance">
             Back to attendance
@@ -219,7 +244,10 @@ export function AttendanceEncodingPage() {
       ) : null}
 
       <section className="students-panel attendance-encoding-panel">
-        <div className="grade-encoding-form">
+        <div className="form-section-card">
+          <div className="workflow-step">Select the class and date you are recording.</div>
+          <div className="workflow-step">Mark attendance for students in the roster.</div>
+          <div className="workflow-step">Save the attendance entry when the list is complete.</div>
           <div className="form-grid">
             <label>
               <span>Academic year</span>

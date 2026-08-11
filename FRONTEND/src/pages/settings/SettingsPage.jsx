@@ -58,6 +58,7 @@ export function SettingsPage() {
               </label>
             ))}
           </div>
+          <p className="section-description">Switch themes instantly to match your working environment and reduce screen fatigue.</p>
         </section>
 
         <section className="panel-card">

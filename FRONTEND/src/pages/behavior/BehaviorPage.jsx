@@ -67,13 +67,31 @@ export function BehaviorPage() {
       <PageHeader
         eyebrow="Behavior"
         title="Behavior monitoring"
-        description="Review behavioral assessments and risk factor summaries from the backend."
+        description="Review behavioral assessments and use the latest patterns to coordinate support and intervention planning."
         actions={canManageBehavior ? (
           <Link className="action-button" to="/behavior/encode">
             Encode behavior
           </Link>
         ) : null}
       />
+
+      <section className="detail-card workflow-guide-card">
+        <div className="section-header">
+          <div>
+            <p className="eyebrow">Workflow guidance</p>
+            <h3>Turn behavior insight into action</h3>
+          </div>
+        </div>
+        <ul className="workflow-guide-list">
+          <li>Review recent evaluations to identify students who may need coordinated support.</li>
+          <li>Use search to focus on a single student or indicator before sharing the results.</li>
+          <li>Move to encoding when the latest assessment needs to be captured immediately.</li>
+        </ul>
+        <div className="workflow-guide-actions">
+          <span className="action-chip">Behavior review</span>
+          <span className="action-chip">Support planning</span>
+        </div>
+      </section>
 
       <div className="record-summary-grid">
         <article className="detail-card stat-card-accent">

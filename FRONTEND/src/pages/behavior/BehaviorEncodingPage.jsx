@@ -4,6 +4,7 @@ import { EmptyState } from '../../components/common/EmptyState'
 import { ErrorBanner } from '../../components/feedback/ErrorBanner'
 import { LoadingSpinner } from '../../components/common/LoadingSpinner'
 import { PageHeader } from '../../components/common/PageHeader'
+import { useRoleAwareAutoLoad } from '../../hooks/useRoleAwareAutoLoad'
 import { useAuth } from '../../context/AuthContext'
 import { getApiErrorMessage } from '../../services/api'
 import {
@@ -119,6 +120,31 @@ export function BehaviorEncodingPage() {
     }
   }, [])
 
+  const getDefaultBehaviorFilters = () => {
+    const defaultSection = sections[0]
+    if (!defaultSection) {
+      return null
+    }
+
+    return {
+      academicYear: String(defaultSection.academic_year),
+      gradeLevel: String(defaultSection.grade_level),
+      section: String(defaultSection.id),
+      gradingPeriod: filters.gradingPeriod,
+      quarter: filters.quarter,
+    }
+  }
+
+  useRoleAwareAutoLoad({
+    enabled: canManageBehavior,
+    loading,
+    filters,
+    setFilters,
+    getDefaultFilters: getDefaultBehaviorFilters,
+    onLoad: loadClassData,
+    dependencies: [academicYears.length, gradeLevels.length, sections.length, filters.gradingPeriod, filters.quarter],
+  })
+
   const filteredSections = useMemo(() => {
     return sections.filter((section) => {
       const matchesYear = !filters.academicYear || String(section.academic_year) === String(filters.academicYear)
@@ -127,8 +153,8 @@ export function BehaviorEncodingPage() {
     })
   }, [filters.academicYear, filters.gradeLevel, sections])
 
-  async function loadClassData() {
-    if (!filters.academicYear || !filters.gradeLevel || !filters.section) {
+  async function loadClassData(nextFilters = filters) {
+    if (!nextFilters.academicYear || !nextFilters.gradeLevel || !nextFilters.section) {
       setError('Select an academic year, grade level, and section before loading the behavior roster.')
       return
     }
@@ -139,12 +165,12 @@ export function BehaviorEncodingPage() {
 
     try {
       const [enrollmentsData, assessmentsData] = await Promise.all([
-        getEnrollments({ academic_year: filters.academicYear, grade_level: filters.gradeLevel, section: filters.section, enrollment_status: 'active' }),
+        getEnrollments({ academic_year: nextFilters.academicYear, grade_level: nextFilters.gradeLevel, section: nextFilters.section, enrollment_status: 'active' }),
         getBehavioralAssessments({
-          academic_year: filters.academicYear,
-          grading_period_type: filters.gradingPeriod,
-          quarter: filters.gradingPeriod === 'Quarter' ? filters.quarter : undefined,
-          semester: filters.gradingPeriod === 'Semester' ? 1 : undefined,
+          academic_year: nextFilters.academicYear,
+          grading_period_type: nextFilters.gradingPeriod,
+          quarter: nextFilters.gradingPeriod === 'Quarter' ? nextFilters.quarter : undefined,
+          semester: nextFilters.gradingPeriod === 'Semester' ? 1 : undefined,
         }),
       ])
 
@@ -291,9 +317,9 @@ export function BehaviorEncodingPage() {
   return (
     <div className="page-stack behavior-encoding-page">
       <PageHeader
-        eyebrow="Behavior"
+        eyebrow="Behavior workflow"
         title="Behavior encoding"
-        description="Select your class, rate each student’s behavior indicators, and save a draft or finalize the evaluation without changing the prediction workflow."
+        description="Open the assigned class, rate each student’s indicators, and save the evaluation in a single guided workflow."
         actions={(
           <Link className="action-button action-button--secondary" to="/behavior">
             Back to behavior
@@ -306,7 +332,10 @@ export function BehaviorEncodingPage() {
       ) : null}
 
       <section className="students-panel behavior-encoding-panel">
-        <div className="grade-encoding-form">
+        <div className="form-section-card">
+          <div className="workflow-step">Choose the class and grading period.</div>
+          <div className="workflow-step">Rate the indicators for each student.</div>
+          <div className="workflow-step">Save the draft or finalize the evaluation.</div>
           <div className="form-grid">
             <label>
               <span>Academic year</span>

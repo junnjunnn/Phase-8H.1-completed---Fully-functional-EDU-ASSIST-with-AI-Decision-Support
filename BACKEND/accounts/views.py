@@ -10,7 +10,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 
 from audit.models import AuditLog
 from .models import UserProfile
-from .permissions import IsSchoolAdmin
+from .permissions import IsSchoolAdmin, IsAuthorizedStaff
 from .serializers import LoginSerializer, UserCreateSerializer, UserSerializer, UserUpdateSerializer
 
 logger = logging.getLogger(__name__)
@@ -129,7 +129,12 @@ class LogoutView(APIView):
 class UserListCreateView(generics.ListCreateAPIView):
     queryset = User.objects.all().order_by('id')
     serializer_class = UserSerializer
-    permission_classes = [IsSchoolAdmin]
+    permission_classes = [permissions.IsAuthenticated, IsAuthorizedStaff]
+
+    def get_permissions(self):
+        if self.request.method == 'POST':
+            return [permissions.IsAuthenticated(), IsSchoolAdmin()]
+        return [permissions.IsAuthenticated(), IsAuthorizedStaff()]
 
     def get_serializer_class(self):
         if self.request.method == 'POST':

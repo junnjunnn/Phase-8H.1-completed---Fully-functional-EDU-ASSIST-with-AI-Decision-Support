@@ -207,15 +207,20 @@ class TeacherAssignmentSerializer(serializers.ModelSerializer):
 
 
 class EnrollmentSerializer(serializers.ModelSerializer):
+    student_name = serializers.SerializerMethodField()
+
     class Meta:
         model = Enrollment
-        fields = ['id', 'student', 'academic_year', 'grade_level', 'section', 'strand', 'enrollment_status', 'enrollment_date']
+        fields = ['id', 'student', 'student_name', 'academic_year', 'grade_level', 'section', 'strand', 'enrollment_status', 'enrollment_date']
         extra_kwargs = {
             'academic_year': {'required': True},
             'grade_level': {'required': True},
             'section': {'required': True},
             'enrollment_status': {'required': True},
         }
+
+    def get_student_name(self, obj):
+        return str(obj.student) if obj.student else None
 
     def validate(self, attrs):
         student = attrs.get('student') or getattr(self.instance, 'student', None)

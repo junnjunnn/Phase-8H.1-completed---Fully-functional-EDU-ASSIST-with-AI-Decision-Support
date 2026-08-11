@@ -69,15 +69,15 @@ export function MyClassesPage() {
 
   return (
     <div className="page-stack">
-      <PageHeader eyebrow="My Classes" title="Assigned classes" description="View the sections you are assigned to teach." />
+      <PageHeader eyebrow="Teaching workspace" title="My classes" description="Your assigned classes appear immediately so you can move straight into attendance, grading, and follow-up actions." />
       {error ? <ErrorBanner message={error} /> : null}
       {loading ? <div className="table-skeleton-grid"><div className="table-skeleton-card" /></div> : null}
       {!loading && assignments.length === 0 ? <EmptyState title="No classes assigned" message="You do not have any assigned classes yet." /> : null}
       {!loading && assignments.length > 0 ? (
         <div className="panel-card record-panel">
-          <div className="record-summary-grid">
+          <div className="workflow-grid">
             {assignments.map((assignment) => (
-              <article key={assignment.id} className="detail-card class-insight-card">
+              <article key={assignment.id} className="module-card">
                 <div className="section-header">
                   <div>
                     <p className="eyebrow">Assigned class</p>
@@ -89,31 +89,23 @@ export function MyClassesPage() {
                     {assignment.is_active ? 'Open' : 'Inactive'}
                   </span>
                 </div>
-                <div className="class-metrics-grid">
-                  <div>
-                    <p className="stat-label">Enrolled students</p>
-                    <p className="stat-value">{assignment.studentCount ?? 0}</p>
+                <div className="summary-card">
+                  <p className="eyebrow">Current view</p>
+                  <p>{assignment.studentCount > 0 ? `Monitor ${assignment.studentCount} learners with a balanced support plan.` : 'Set up attendance and academic tracking for this section.'}</p>
+                </div>
+                <div className="kpi-grid">
+                  <div className="kpi-card">
+                    <p className="kpi-label">Students</p>
+                    <p className="kpi-value">{assignment.studentCount ?? 0}</p>
                   </div>
-                  <div>
-                    <p className="stat-label">Predictions</p>
-                    <p className="stat-value">{assignment.reportSummary?.summary?.prediction_count ?? '—'}</p>
-                  </div>
-                  <div>
-                    <p className="stat-label">At-risk students</p>
-                    <p className="stat-value">{assignment.reportSummary?.summary ? `${assignment.reportSummary?.ai_reports?.summary?.high_risk_count ?? 0} high, ${assignment.reportSummary?.ai_reports?.summary?.moderate_risk_count ?? 0} mod` : '—'}</p>
-                  </div>
-                  <div>
-                    <p className="stat-label">Attendance</p>
-                    <p className="stat-value">{assignment.reportSummary?.summary?.attendance_percentage != null ? `${assignment.reportSummary.summary.attendance_percentage}%` : '—'}</p>
+                  <div className="kpi-card">
+                    <p className="kpi-label">Attendance</p>
+                    <p className="kpi-value">{assignment.reportSummary?.summary?.attendance_percentage != null ? `${assignment.reportSummary.summary.attendance_percentage}%` : '—'}</p>
                   </div>
                 </div>
-                <div className="class-card-actions">
-                  <button type="button" className="action-button action-button--secondary" onClick={() => handleViewClass(assignment)}>
-                    View class
-                  </button>
-                  <button type="button" className="action-button action-button--outline" onClick={() => handleViewClass(assignment)}>
-                    Open insights
-                  </button>
+                <div className="module-card-actions">
+                  <button type="button" className="action-button action-button--secondary" onClick={() => handleViewClass(assignment)}>Open class</button>
+                  <button type="button" className="action-button action-button--outline" onClick={() => handleViewClass(assignment)}>Open insights</button>
                 </div>
               </article>
             ))}

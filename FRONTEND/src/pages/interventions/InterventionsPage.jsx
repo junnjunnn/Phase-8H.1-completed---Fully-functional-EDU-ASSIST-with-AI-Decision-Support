@@ -126,9 +126,9 @@ export function InterventionsPage() {
   return (
     <div className="page-stack interventions-page">
       <PageHeader
-        eyebrow="Interventions"
-        title="Intervention monitoring"
-        description="Track backend intervention assignments, statuses, and follow-up notes."
+        eyebrow="Support workflow"
+        title="Interventions"
+        description="Select a student, review the risk context, create an intervention, and follow the status through completion."
         actions={(
           <button type="button" className="action-button action-button--primary" onClick={() => { setSelectedCurrentValue(null); setShowModal(true) }}>
             Create Intervention

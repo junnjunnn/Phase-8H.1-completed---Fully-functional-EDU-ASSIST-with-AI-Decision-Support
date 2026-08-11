@@ -70,8 +70,27 @@ export function AttendancePage() {
       <PageHeader
         eyebrow="Attendance"
         title="Attendance monitoring"
-        description="Review backend attendance records and absence summaries."
+        description="Review attendance patterns, compare absence trends, and move from review to follow-up in a single workspace."
       />
+
+      <section className="detail-card workflow-guide-card">
+        <div className="section-header">
+          <div>
+            <p className="eyebrow">Workflow guidance</p>
+            <h3>Bring attendance follow-up into focus</h3>
+          </div>
+        </div>
+        <ul className="workflow-guide-list">
+          <li>Use the overview cards to spot high-impact attendance concerns quickly.</li>
+          <li>Search by student or month to review a narrower set of records.</li>
+          <li>Open the attendance encoding flow whenever a class needs immediate updates.</li>
+        </ul>
+        <div className="workflow-guide-actions">
+          <a className="action-button" href="/attendance/encode">Encode attendance</a>
+          <span className="action-chip">Attendance review</span>
+          <span className="action-chip">Support follow-up</span>
+        </div>
+      </section>
 
       <div className="record-summary-grid">
         <article className="detail-card stat-card-accent">

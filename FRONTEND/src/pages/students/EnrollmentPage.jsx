@@ -136,8 +136,27 @@ export function EnrollmentPage() {
 
   return (
     <div className="page-stack">
-      <PageHeader eyebrow="Enrollment management" title="Manage student enrollments" description="Create, update, and review current enrollments." />
+      <PageHeader eyebrow="Enrollment management" title="Manage student enrollments" description="Follow a guided enrollment workflow to assign students, validate sections, and keep the roster current." />
       {error ? <ErrorBanner message={error} /> : null}
+
+      <section className="detail-card workflow-guide-card">
+        <div className="section-header">
+          <div>
+            <p className="eyebrow">Workflow guidance</p>
+            <h3>Keep section placement consistent</h3>
+          </div>
+        </div>
+        <ul className="workflow-guide-list">
+          <li>Select the student, year, grade level, and section in sequence to keep placement accurate.</li>
+          <li>Use the roster filters to isolate a section or enrollment status before making updates.</li>
+          <li>Review the status changes as part of the same workflow so the records stay aligned.</li>
+        </ul>
+        <div className="workflow-guide-actions">
+          <span className="action-chip">Enrollment workflow</span>
+          <span className="action-chip">Section assignment</span>
+        </div>
+      </section>
+
       <div className="record-summary-grid">
         <article className="detail-card stat-card-accent">
           <p className="stat-label">Enrollments</p>

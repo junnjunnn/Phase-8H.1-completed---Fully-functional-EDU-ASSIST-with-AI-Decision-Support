@@ -11,6 +11,7 @@ import {
   getSubjects,
 } from '../../services/academicsService'
 import { getUsers as getUserProfiles } from '../../services/userService'
+import { subscribeSubjectsUpdated, unsubscribeSubjectsUpdated } from '../../services/referenceService'
 import apiClient from '../../services/api'
 
 function normalizeListResponse(data) {
@@ -60,11 +61,8 @@ export function TeacherAssignmentsPage() {
 
         setAssignments(normalizeListResponse(assignmentData.data).items)
         const teacherPayload = teacherData?.data ?? teacherData
-        console.log('TeacherAssignmentsPage: API users payload', teacherData)
         const teacherItems = normalizeListResponse(teacherPayload).items || []
-        console.log('TeacherAssignmentsPage: normalized teacher items', teacherItems)
         setTeachers(teacherItems)
-        if (teacherItems.length === 0) console.warn('TeacherAssignmentsPage: no teachers returned', teacherData)
         setAcademicYears(normalizeListResponse(yearData).items)
         setGradeLevels(normalizeListResponse(gradeData).items)
         setSections(normalizeListResponse(sectionData).items)
@@ -82,8 +80,30 @@ export function TeacherAssignmentsPage() {
   }, [])
 
   useEffect(() => {
-    console.log('TeacherAssignmentsPage: teachers state updated', teachers)
-  }, [teachers])
+    let active = true
+
+    async function reloadSubjects() {
+      try {
+        const subjectData = await getSubjects()
+        if (!active) {
+          return
+        }
+        setSubjects(normalizeListResponse(subjectData).items)
+      } catch {
+        // Keep the existing subject list if the refresh fails.
+      }
+    }
+
+    function handleSubjectsUpdated() {
+      reloadSubjects()
+    }
+
+    subscribeSubjectsUpdated(handleSubjectsUpdated)
+    return () => {
+      active = false
+      unsubscribeSubjectsUpdated(handleSubjectsUpdated)
+    }
+  }, [])
 
   useEffect(() => {
     // Defer resetting page to avoid synchronous setState in effect
@@ -273,6 +293,11 @@ export function TeacherAssignmentsPage() {
           <div className="search-input-group">
             <input aria-label="Search assignments" placeholder="Search teacher or section" value={search} onChange={(event) => setSearch(event.target.value)} />
           </div>
+        </div>
+
+        <div className="detail-card subtle-card" style={{ marginBottom: '1rem' }}>
+          <p className="eyebrow">Assignment focus</p>
+          <p>Use the filters to review active teaching coverage and quickly spot open or inactive teaching roles.</p>
         </div>
 
         <div className="form-grid" style={{ marginBottom: '1rem' }}>
