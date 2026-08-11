@@ -9,7 +9,7 @@ from .models import Intervention
 from .serializers import InterventionSerializer
 
 
-class InterventionViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins.CreateModelMixin, mixins.UpdateModelMixin, viewsets.GenericViewSet):
+class InterventionViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins.CreateModelMixin, mixins.UpdateModelMixin, mixins.DestroyModelMixin, viewsets.GenericViewSet):
     queryset = Intervention.objects.select_related('enrollment', 'assigned_personnel').all()
     serializer_class = InterventionSerializer
     permission_classes = [permissions.IsAuthenticated, IsAuthorizedStaff]
@@ -41,3 +41,13 @@ class InterventionViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixi
             object_type=self.serializer_class.Meta.model.__name__,
             object_id=str(instance.pk),
         )
+
+    def perform_destroy(self, instance):
+        AuditLog.objects.create(
+            user=self.request.user if self.request.user.is_authenticated else None,
+            action='DELETE',
+            module=self.serializer_class.Meta.model._meta.app_label,
+            object_type=self.serializer_class.Meta.model.__name__,
+            object_id=str(instance.pk),
+        )
+        instance.delete()

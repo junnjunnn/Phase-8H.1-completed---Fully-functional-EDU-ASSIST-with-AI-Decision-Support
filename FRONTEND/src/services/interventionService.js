@@ -14,3 +14,8 @@ export async function updateIntervention(id, payload) {
   const response = await apiClient.patch(`/interventions/${id}/`, payload)
   return response.data
 }
+
+export async function deleteIntervention(id) {
+  const response = await apiClient.delete(`/interventions/${id}/`)
+  return response.data
+}

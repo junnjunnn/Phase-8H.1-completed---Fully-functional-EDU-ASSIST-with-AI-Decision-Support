@@ -251,10 +251,46 @@ class AcademicRecordViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mi
             return [permissions.IsAuthenticated(), IsTeacherOrSchoolAdmin()]
         return [permissions.IsAuthenticated(), IsAuthorizedStaff()]
 
+    def _teacher_assignment_matches(self, payload=None, instance=None):
+        user = self.request.user
+        if get_user_scope(user) != 'teacher':
+            return True
+
+        target_enrollment = payload.get('enrollment') if payload else getattr(instance, 'enrollment', None)
+        target_subject = payload.get('subject') if payload else getattr(instance, 'subject', None)
+
+        if not target_enrollment or not target_subject:
+            return False
+
+        return TeacherAssignment.objects.filter(
+            teacher=user,
+            academic_year=target_enrollment.academic_year,
+            grade_level=target_enrollment.grade_level,
+            section=target_enrollment.section,
+            subject=target_subject,
+            is_active=True,
+        ).exists()
+
     def get_queryset(self):
-        return get_authorized_enrollment_queryset(self.request.user, super().get_queryset(), enrollment_field='enrollment')
+        qs = get_authorized_enrollment_queryset(self.request.user, super().get_queryset(), enrollment_field='enrollment')
+        scope = get_user_scope(self.request.user)
+        if scope == 'teacher':
+            assigned_sections = self.request.user.profile.assigned_sections.values_list('pk', flat=True)
+            qs = qs.filter(enrollment__section__in=assigned_sections)
+
+            assigned_subjects = TeacherAssignment.objects.filter(
+                teacher=self.request.user,
+                is_active=True,
+            ).values_list('subject_id', flat=True)
+            if assigned_subjects:
+                qs = qs.filter(subject__in=assigned_subjects)
+        return qs
 
     def perform_create(self, serializer):
+        if not self._teacher_assignment_matches(payload=serializer.validated_data):
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied('You can only encode grades for your assigned subject and section.')
+
         instance = serializer.save(encoded_by=self.request.user)
         AuditLog.objects.create(
             user=self.request.user if self.request.user.is_authenticated else None,
@@ -265,6 +301,10 @@ class AcademicRecordViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mi
         )
 
     def perform_update(self, serializer):
+        if not self._teacher_assignment_matches(payload=serializer.validated_data, instance=serializer.instance):
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied('You can only edit grades for your assigned subject and section.')
+
         instance = serializer.save()
         AuditLog.objects.create(
             user=self.request.user if self.request.user.is_authenticated else None,

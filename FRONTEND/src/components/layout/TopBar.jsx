@@ -10,6 +10,21 @@ import { useMemo, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 
+function SearchBox({ onOpenSearch }) {
+  return (
+    <div className="topbar-search">
+      <MagnifyingGlassIcon className="icon icon--search" aria-hidden="true" />
+      <input
+        aria-label="Search the platform"
+        placeholder="Search students, reports, records..."
+        className="topbar-search-input"
+        onFocus={onOpenSearch}
+        onClick={onOpenSearch}
+      />
+    </div>
+  )
+}
+
 const sectionMap = {
   dashboard: 'Dashboard',
   students: 'Students',
@@ -94,13 +109,11 @@ export function TopBar({ pageTitle, onOpenProfile, onOpenNotifications, onOpenSe
       </div>
 
       <div className="topbar-actions">
+        <SearchBox onOpenSearch={onOpenSearch} />
         <div className="topbar-clock" aria-label="Current date and time">
           <p>{currentDate}</p>
           <strong>{currentTime}</strong>
         </div>
-        <button type="button" className="icon-button icon-button--search" aria-label="Search" onClick={onOpenSearch}>
-          <MagnifyingGlassIcon className="icon" />
-        </button>
         <button type="button" className="icon-button icon-button--notification" aria-label="Notifications" onClick={onOpenNotifications}>
           <BellIcon className="icon" />
           <span className="notification-badge">0</span>

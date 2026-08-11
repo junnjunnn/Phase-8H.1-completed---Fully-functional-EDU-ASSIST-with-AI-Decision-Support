@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react'
 import { EmptyState } from '../../components/common/EmptyState'
 import { ErrorBanner } from '../../components/feedback/ErrorBanner'
 import { PageHeader } from '../../components/common/PageHeader'
-import { getInterventions } from '../../services/interventionService'
+import { InterventionFormModal } from '../../components/interventions/InterventionFormModal'
+import { getInterventions, deleteIntervention } from '../../services/interventionService'
 import { getApiErrorMessage } from '../../services/api'
 
 function normalizeListResponse(data) {
@@ -22,9 +23,12 @@ export function InterventionsPage() {
   const [interventions, setInterventions] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [successMessage, setSuccessMessage] = useState('')
   const [search, setSearch] = useState('')
   const [pagination, setPagination] = useState({ count: 0, next: null, previous: null })
   const [summary, setSummary] = useState({ interventions: 0, inProgress: 0, completed: 0 })
+  const [showModal, setShowModal] = useState(false)
+  const [selectedCurrentValue, setSelectedCurrentValue] = useState(null)
 
   useEffect(() => {
     let active = true
@@ -73,12 +77,63 @@ export function InterventionsPage() {
     }
   }, [search])
 
+  async function refreshInterventions() {
+    setLoading(true)
+    setError('')
+
+    try {
+      const data = await getInterventions({ search, ordering: '-created_at' })
+      const normalized = normalizeListResponse(data)
+      const items = normalized.items
+      const statusTotals = items.reduce(
+        (acc, item) => {
+          const status = (item.status || '').toLowerCase()
+          return {
+            inProgress: acc.inProgress + (status === 'in_progress' || status === 'in progress' ? 1 : 0),
+            completed: acc.completed + (status === 'completed' ? 1 : 0),
+          }
+        },
+        { inProgress: 0, completed: 0 },
+      )
+
+      setInterventions(items.slice(0, 12))
+      setSummary({ interventions: normalized.count, inProgress: statusTotals.inProgress, completed: statusTotals.completed })
+      setPagination({ count: normalized.count, next: normalized.next, previous: normalized.previous })
+      setSuccessMessage('Intervention records refreshed.')
+    } catch (err) {
+      setError(getApiErrorMessage(err))
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function handleDelete(intervention) {
+    if (!intervention?.id) {
+      return
+    }
+
+    if (window.confirm(`Delete this intervention for ${intervention.enrollment || 'the selected enrollment'}?`)) {
+      try {
+        await deleteIntervention(intervention.id)
+        await refreshInterventions()
+        setSuccessMessage('Intervention deleted successfully.')
+      } catch (err) {
+        setError(getApiErrorMessage(err))
+      }
+    }
+  }
+
   return (
     <div className="page-stack interventions-page">
       <PageHeader
         eyebrow="Interventions"
         title="Intervention monitoring"
         description="Track backend intervention assignments, statuses, and follow-up notes."
+        actions={(
+          <button type="button" className="action-button action-button--primary" onClick={() => { setSelectedCurrentValue(null); setShowModal(true) }}>
+            Create Intervention
+          </button>
+        )}
       />
 
       <div className="record-summary-grid">
@@ -114,6 +169,7 @@ export function InterventionsPage() {
         </div>
 
         {error ? <ErrorBanner message={error} /> : null}
+        {successMessage ? <div className="status-banner status-banner--success">{successMessage}</div> : null}
 
         {loading ? (
           <div className="table-skeleton-grid">
@@ -158,6 +214,12 @@ export function InterventionsPage() {
                       <td data-label="Priority">{item.priority || '—'}</td>
                       <td data-label="Start">{item.start_date || '—'}</td>
                       <td data-label="End">{item.end_date || '—'}</td>
+                      <td data-label="Actions">
+                        <div className="section-actions">
+                          <button type="button" className="action-button action-button--neutral" onClick={() => { setSelectedCurrentValue(item); setShowModal(true) }}>Edit</button>
+                          <button type="button" className="action-button action-button--danger" onClick={() => handleDelete(item)}>Delete</button>
+                        </div>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -166,6 +228,22 @@ export function InterventionsPage() {
           </>
         ) : null}
       </div>
+
+      <InterventionFormModal
+        isOpen={showModal}
+        onClose={() => { setShowModal(false); setSelectedCurrentValue(null) }}
+        currentValue={selectedCurrentValue}
+        studentName="Student"
+        latestPrediction={null}
+        latestPredictionFactors={[]}
+        enrollmentId={selectedCurrentValue?.enrollment ?? null}
+        onSaved={async () => {
+          setShowModal(false)
+          setSelectedCurrentValue(null)
+          await refreshInterventions()
+          setSuccessMessage('Intervention saved successfully.')
+        }}
+      />
     </div>
   )
 }

@@ -200,31 +200,53 @@ class ReportsViewSet(viewsets.ViewSet):
 
     @action(detail=False, methods=['get'])
     def export(self, request):
+        if not request.user or not getattr(request.user, 'is_authenticated', False):
+            return Response({'detail': 'Authentication required for report export.'}, status=401)
+
         payload = self.center(request).data
-        export_format = request.query_params.get('format', 'csv')
+        export_format = (request.query_params.get('format') or 'csv').lower()
         if export_format == 'pdf':
             AuditLog.objects.create(
-                user=self.request.user if self.request.user.is_authenticated else None,
-                action='REPORT_PRINTED',
+                user=request.user,
+                action='EXPORT_REPORT',
                 module='reports',
                 object_type='ReportCenter',
                 object_id='report-center',
+                ip_address=request.META.get('REMOTE_ADDR'),
             )
-            return Response({'format': 'pdf', 'data': payload, 'message': 'Use the print dialog to save this report as a PDF.'})
-        if export_format == 'xlsx':
+            return Response({
+                'format': 'pdf',
+                'data': payload,
+                'message': 'PDF export preview is available. The browser can download a printable payload.',
+                'download_file': 'report-center.pdf',
+            })
+        if export_format in {'xlsx', 'excel'}:
             AuditLog.objects.create(
-                user=self.request.user if self.request.user.is_authenticated else None,
-                action='REPORT_EXPORTED',
+                user=request.user,
+                action='EXPORT_REPORT',
                 module='reports',
                 object_type='ReportCenter',
                 object_id='report-center',
+                ip_address=request.META.get('REMOTE_ADDR'),
             )
-            return Response({'format': 'xlsx', 'data': payload, 'message': 'Excel export is prepared as a workbook-ready payload.'})
+            return Response({
+                'format': 'xlsx',
+                'data': payload,
+                'message': 'Excel export is prepared as a workbook-ready payload.',
+                'download_file': 'report-center.xlsx',
+            })
+
         AuditLog.objects.create(
-            user=self.request.user if self.request.user.is_authenticated else None,
-            action='REPORT_EXPORTED',
+            user=request.user,
+            action='EXPORT_REPORT',
             module='reports',
             object_type='ReportCenter',
             object_id='report-center',
+            ip_address=request.META.get('REMOTE_ADDR'),
         )
-        return Response({'format': export_format, 'data': payload})
+        return Response({
+            'format': export_format,
+            'data': payload,
+            'message': 'CSV export is prepared.',
+            'download_file': 'report-center.csv',
+        })

@@ -125,21 +125,36 @@ export function ReportsPage() {
   const handleExport = async (format) => {
     try {
       const result = await exportReport({ ...filters, format })
-      const payload = result.data?.data || result.data || {}
+      const payload = result?.data || result || {}
+      const responseFormat = String(result?.format || format || 'csv').toLowerCase()
+      const fileName = result?.download_file || `report-export-${responseFormat || 'data'}-${new Date().toISOString().slice(0, 10)}.${responseFormat === 'pdf' ? 'pdf' : responseFormat === 'xlsx' ? 'xlsx' : 'csv'}`
 
-      if (format === 'pdf') {
+      if (responseFormat === 'pdf') {
         window.alert(result.message || 'Use print preview to save as PDF.')
         window.print()
         return
       }
 
-      const fileName = `report-export-${format || 'data'}-${new Date().toISOString().slice(0, 10)}.json`
-      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json;charset=utf-8' })
+      const downloadData = payload?.data || payload
+      const exportContent = responseFormat === 'csv'
+        ? Object.entries(downloadData || {}).map(([key, value]) => `${key},${String(value ?? '')}`).join('\n')
+        : JSON.stringify(downloadData, null, 2)
+
+      const contentType = responseFormat === 'csv'
+        ? 'text/csv;charset=utf-8'
+        : responseFormat === 'xlsx'
+          ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;charset=utf-8'
+          : 'application/json;charset=utf-8'
+
+      const blob = new Blob([exportContent], { type: contentType })
       const link = document.createElement('a')
-      link.href = URL.createObjectURL(blob)
+      const url = URL.createObjectURL(blob)
+      link.href = url
       link.download = fileName
+      document.body.appendChild(link)
       link.click()
-      URL.revokeObjectURL(link.href)
+      document.body.removeChild(link)
+      URL.revokeObjectURL(url)
       window.alert(result.message || `Report exported as ${fileName}`)
     } catch (err) {
       setError(getApiErrorMessage(err))

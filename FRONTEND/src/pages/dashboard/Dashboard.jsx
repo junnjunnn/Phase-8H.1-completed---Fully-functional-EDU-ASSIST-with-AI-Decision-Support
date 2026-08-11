@@ -211,6 +211,68 @@ export function Dashboard() {
             </div>
           </section>
 
+          <section className="dashboard-content-grid dashboard-insights-row">
+            <article className="dashboard-panel dashboard-panel--compact">
+              <div className="panel-heading">
+                <div>
+                  <p className="eyebrow">AI insights</p>
+                  <h2>Decision support summary</h2>
+                </div>
+              </div>
+              <div className="ai-insights-list">
+                <article className="ai-insight-card">
+                  <span className="ai-insight-kicker">Risk profile</span>
+                  <strong>{highestRiskLevel}</strong>
+                  <p className="support-copy">Most of the current monitoring population is concentrated in this signal band.</p>
+                </article>
+                <article className="ai-insight-card">
+                  <span className="ai-insight-kicker">Priority watch</span>
+                  <strong>{dashboardData?.at_risk_students ?? '0'} learners</strong>
+                  <p className="support-copy">These students should be followed up with interventions and teacher coordination.</p>
+                </article>
+              </div>
+            </article>
+
+            <article className="dashboard-panel dashboard-panel--compact">
+              <div className="panel-heading">
+                <div>
+                  <p className="eyebrow">Recent attendance</p>
+                  <h2>Daily classroom health</h2>
+                </div>
+                <span className="badge badge--success">Synced</span>
+              </div>
+              <div className="chart-card compact-chart">
+                <div className="chart-row">
+                  <div className="chart-row-labels">
+                    <span>Present</span>
+                    <span>{dashboardData?.total_students ?? '0'}</span>
+                  </div>
+                  <div className="chart-bar-track">
+                    <div className="chart-bar-fill bar-present" style={{ width: '88%' }}></div>
+                  </div>
+                </div>
+                <div className="chart-row">
+                  <div className="chart-row-labels">
+                    <span>Late</span>
+                    <span>4</span>
+                  </div>
+                  <div className="chart-bar-track">
+                    <div className="chart-bar-fill bar-late" style={{ width: '20%' }}></div>
+                  </div>
+                </div>
+                <div className="chart-row">
+                  <div className="chart-row-labels">
+                    <span>Absent</span>
+                    <span>2</span>
+                  </div>
+                  <div className="chart-bar-track">
+                    <div className="chart-bar-fill bar-absent" style={{ width: '12%' }}></div>
+                  </div>
+                </div>
+              </div>
+            </article>
+          </section>
+
           <section className="dashboard-content-grid">
             <div className="dashboard-panel">
               <div className="panel-heading">
@@ -280,6 +342,53 @@ export function Dashboard() {
                 </div>
               )}
             </div>
+          </section>
+
+          <section className="dashboard-content-grid dashboard-lower-row">
+            <article className="dashboard-panel">
+              <div className="panel-heading">
+                <div>
+                  <p className="eyebrow">Recent activities</p>
+                  <h2>Latest monitoring activity</h2>
+                </div>
+              </div>
+              <div className="activity-list">
+                {attentionStudents.slice(0, 4).map((item) => (
+                  <article key={`activity-${item.id}`} className="activity-row">
+                    <span className="activity-icon"><SparklesIcon className="icon" /></span>
+                    <div>
+                      <strong>{`${item.enrollment__student__first_name} ${item.enrollment__student__last_name}`}</strong>
+                      <p className="support-copy">{item.risk_level} risk observation · {item.prediction_date}</p>
+                    </div>
+                    <span className={riskBadgeClass(item.risk_level)}>{item.risk_level}</span>
+                  </article>
+                ))}
+              </div>
+            </article>
+            <article className="dashboard-panel">
+              <div className="panel-heading">
+                <div>
+                  <p className="eyebrow">AI recommendations</p>
+                  <h2>Suggested next actions</h2>
+                </div>
+              </div>
+              <div className="recommended-list">
+                <div className="recommendation-row">
+                  <span className="recommendation-icon"><ChartBarIcon className="icon" /></span>
+                  <div>
+                    <strong>Review at-risk benchmarks</strong>
+                    <p className="support-copy">Prioritize learners with repeated risk signals.</p>
+                  </div>
+                </div>
+                <div className="recommendation-row">
+                  <span className="recommendation-icon"><UserGroupIcon className="icon" /></span>
+                  <div>
+                    <strong>Plan teacher follow-up</strong>
+                    <p className="support-copy">Coordinate the next academic support cycle.</p>
+                  </div>
+                </div>
+              </div>
+            </article>
           </section>
 
           <section className="dashboard-panel">

@@ -9,6 +9,10 @@ import { StudentDetailPage } from '../pages/students/StudentDetailPage'
 import { EnrollmentPage } from '../pages/students/EnrollmentPage'
 import { AcademicsPage } from '../pages/academics/AcademicsPage'
 import { AcademicStructurePage } from '../pages/academics/AcademicStructurePage'
+import { AcademicYearsPage } from '../pages/academics/AcademicYearsPage'
+import { GradeLevelsPage } from '../pages/academics/GradeLevelsPage'
+import { SectionsPage } from '../pages/academics/SectionsPage'
+import { SubjectsPage } from '../pages/academics/SubjectsPage'
 import { GradeEncodingPage } from '../pages/academics/GradeEncodingPage'
 import { MyClassesPage } from '../pages/academics/MyClassesPage'
 import { TeacherAssignmentsPage } from '../pages/academics/TeacherAssignmentsPage'
@@ -41,6 +45,10 @@ export function AppRoutes() {
           </Route>
           <Route element={<RoleRoute allowedRoles={['SUPER_ADMIN', 'SCHOOL_ADMIN']} />}>
             <Route path="/academic-structure" element={<AcademicStructurePage />} />
+            <Route path="/academic-years" element={<AcademicYearsPage />} />
+            <Route path="/grade-levels" element={<GradeLevelsPage />} />
+            <Route path="/sections" element={<SectionsPage />} />
+            <Route path="/subjects" element={<SubjectsPage />} />
             <Route path="/teacher-assignments" element={<TeacherAssignmentsPage />} />
             <Route path="/enrollment" element={<EnrollmentPage />} />
           </Route>
