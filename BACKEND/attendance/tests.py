@@ -49,3 +49,22 @@ class AttendanceRecordAPITests(TestCase):
         record_ids = {item['id'] for item in response.data['results']}
         self.assertIn(self.attendance_a.id, record_ids)
         self.assertIn(self.attendance_b.id, record_ids)
+
+    def test_teacher_cannot_create_attendance_for_unauthorized_enrollment(self):
+        """Critical: Teacher should NOT be able to create attendance for unauthorized enrollment."""
+        self.client.force_authenticate(user=self.teacher)
+        
+        # Teacher attempts to create attendance for student_b (unauthorized, not in teacher's section)
+        response = self.client.post('/api/attendance-records/', {
+            'enrollment': self.enrollment_b.id,
+            'month': 'July',
+            'school_days': 20,
+            'days_present': 18,
+            'absences': 2,
+            'times_tardy': 0,
+        })
+        
+        # Expected: 400 Bad Request with authorization error (or 403 Forbidden)
+        # Either is acceptable - the important thing is that access is denied
+        self.assertIn(response.status_code, [400, 403], 
+            f"Teacher should not create attendance for unauthorized enrollment. Got {response.status_code}: {response.data}")

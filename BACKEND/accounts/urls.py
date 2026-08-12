@@ -11,6 +11,7 @@ from .views import (
     activate_user,
     deactivate_user,
     reset_password,
+    advisers_list,
 )
 
 urlpatterns = [
@@ -24,4 +25,5 @@ urlpatterns = [
     path('users/<int:pk>/activate/', activate_user, name='auth-user-activate'),
     path('users/<int:pk>/deactivate/', deactivate_user, name='auth-user-deactivate'),
     path('users/<int:pk>/reset-password/', reset_password, name='auth-user-reset-password'),
+    path('advisers/', advisers_list, name='auth-adviser-list'),
 ]

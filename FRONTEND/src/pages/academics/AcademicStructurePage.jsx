@@ -20,6 +20,7 @@ import {
 } from '../../services/academicsService'
 import { getUsers as getUserProfiles } from '../../services/userService'
 import { notifySubjectsUpdated, subscribeSubjectsUpdated, unsubscribeSubjectsUpdated } from '../../services/referenceService'
+import AdviserSelect from '../../components/AdviserSelect'
 
 function normalizeListResponse(data) {
   const items = data?.results || data || []
@@ -42,7 +43,7 @@ export function AcademicStructurePage() {
   const [error, setError] = useState('')
   const [yearForm, setYearForm] = useState({ id: '', name: '', start_date: '', end_date: '', is_active: false })
   const [gradeForm, setGradeForm] = useState({ id: '', name: '', code: '', school_level: 'Elementary', order: 1, is_active: true })
-  const [sectionForm, setSectionForm] = useState({ id: '', academic_year: '', grade_level: '', name: '', capacity: 40, description: '', adviser: '', is_active: true })
+  const [sectionForm, setSectionForm] = useState({ id: '', academic_year: '', grade_level: '', name: '', capacity: 40, description: '', adviser: '', adviser_name: '', is_active: true })
   const [subjectForm, setSubjectForm] = useState({ id: '', code: '', name: '', category: 'Learning Area', grade_level: '', strand: '', is_active: true })
   const [saving, setSaving] = useState(false)
   const [yearSearch, setYearSearch] = useState('')
@@ -236,7 +237,7 @@ export function AcademicStructurePage() {
       }
       const refreshed = await getSections()
       setSections(normalizeListResponse(refreshed).items)
-      setSectionForm({ id: '', academic_year: '', grade_level: '', name: '', capacity: 40, description: '', adviser: '', is_active: true })
+      setSectionForm({ id: '', academic_year: '', grade_level: '', name: '', capacity: 40, description: '', adviser: '', adviser_name: '', is_active: true })
     } catch (err) {
       setError(getApiErrorMessage(err))
     } finally {
@@ -287,6 +288,7 @@ export function AcademicStructurePage() {
       capacity: Number(section.capacity || 0),
       description: section.description || '',
       adviser: section.adviser || '',
+      adviser_name: section.adviser_name || '',
       is_active: section.is_active !== false,
     })
   }
@@ -586,12 +588,12 @@ export function AcademicStructurePage() {
           </label>
           <label>
             <span>Adviser</span>
-            <select value={sectionForm.adviser} onChange={(event) => setSectionForm({ ...sectionForm, adviser: event.target.value })}>
-              <option value="">Unassigned</option>
-              {teachers.filter((teacher) => teacher.profile?.role_name === 'TEACHER' || teacher.role_name === 'TEACHER').map((teacher) => (
-                <option key={teacher.id} value={teacher.id}>{teacher.first_name} {teacher.last_name}</option>
-              ))}
-            </select>
+            <AdviserSelect
+              value={sectionForm.adviser || ''}
+              initialLabel={sectionForm.adviser_name || ''}
+              onChange={(id) => setSectionForm({ ...sectionForm, adviser: id })}
+            />
+            <div style={{ marginTop: '0.25rem' }} className="small-muted">Leave empty to keep unassigned</div>
           </label>
           <label>
             <span>Status</span>
@@ -606,7 +608,7 @@ export function AcademicStructurePage() {
           </label>
           <div className="section-actions form-grid-full">
             <button type="submit" className="action-button" disabled={saving}>{saving ? 'Saving...' : sectionForm.id ? 'Update section' : 'Create section'}</button>
-            {sectionForm.id ? <button type="button" className="action-button action-button--neutral" onClick={() => setSectionForm({ id: '', academic_year: '', grade_level: '', name: '', capacity: 40, description: '', adviser: '', is_active: true })}>Cancel</button> : null}
+            {sectionForm.id ? <button type="button" className="action-button action-button--neutral" onClick={() => setSectionForm({ id: '', academic_year: '', grade_level: '', name: '', capacity: 40, description: '', adviser: '', adviser_name: '', is_active: true })}>Cancel</button> : null}
           </div>
         </form>
 

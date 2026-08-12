@@ -1,5 +1,16 @@
 import apiClient from './api'
 
+export async function searchAdvisers(q = '') {
+  const resp = await apiClient.get('/auth/advisers/', { params: { q } })
+  return resp.data
+}
+
+export async function getUserById(id) {
+  const resp = await apiClient.get(`/auth/users/${id}/`)
+  return resp.data
+}
+
+
 export async function getUsers() {
   const response = await apiClient.get('/auth/users/')
   const data = response.data

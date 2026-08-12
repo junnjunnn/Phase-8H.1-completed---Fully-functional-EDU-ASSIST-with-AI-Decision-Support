@@ -139,6 +139,11 @@ class StrandViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins.Cre
     serializer_class = StrandSerializer
     permission_classes = [permissions.IsAuthenticated, IsAuthorizedStaff]
 
+    def get_permissions(self):
+        if self.request.method in ['POST', 'PUT', 'PATCH']:
+            return [permissions.IsAuthenticated(), IsSchoolAdmin()]
+        return [permissions.IsAuthenticated(), IsAuthorizedStaff()]
+
 
 class SubjectViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins.CreateModelMixin, mixins.UpdateModelMixin, viewsets.GenericViewSet):
     queryset = Subject.objects.select_related('grade_level', 'strand').all()
@@ -211,6 +216,11 @@ class EnrollmentViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins
     search_fields = ['student__first_name', 'student__last_name', 'student__lrn']
     ordering_fields = ['enrollment_date', 'created_at']
     ordering = ['-enrollment_date']
+
+    def get_permissions(self):
+        if self.request.method in ['POST', 'PUT', 'PATCH']:
+            return [permissions.IsAuthenticated(), IsSchoolAdmin()]
+        return [permissions.IsAuthenticated(), IsAuthorizedStaff()]
 
     def get_queryset(self):
         return get_authorized_enrollment_queryset(self.request.user, super().get_queryset())

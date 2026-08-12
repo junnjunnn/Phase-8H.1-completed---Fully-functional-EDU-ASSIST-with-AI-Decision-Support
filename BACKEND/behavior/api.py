@@ -3,7 +3,7 @@ from rest_framework.filters import OrderingFilter, SearchFilter
 from django_filters.rest_framework import DjangoFilterBackend
 
 from audit.models import AuditLog
-from accounts.permissions import IsAuthorizedStaff
+from accounts.permissions import IsAuthorizedStaff, IsSchoolAdmin
 from accounts.utils import get_authorized_enrollment_queryset
 from .models import CoreValue, BehaviorIndicator, BehavioralRating, BehavioralAssessment
 from .serializers import (
@@ -19,17 +19,32 @@ class CoreValueViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins.
     serializer_class = CoreValueSerializer
     permission_classes = [permissions.IsAuthenticated, IsAuthorizedStaff]
 
+    def get_permissions(self):
+        if self.request.method in ['POST', 'PUT', 'PATCH']:
+            return [permissions.IsAuthenticated(), IsSchoolAdmin()]
+        return [permissions.IsAuthenticated(), IsAuthorizedStaff()]
+
 
 class BehaviorIndicatorViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins.CreateModelMixin, mixins.UpdateModelMixin, viewsets.GenericViewSet):
     queryset = BehaviorIndicator.objects.select_related('core_value').all()
     serializer_class = BehaviorIndicatorSerializer
     permission_classes = [permissions.IsAuthenticated, IsAuthorizedStaff]
 
+    def get_permissions(self):
+        if self.request.method in ['POST', 'PUT', 'PATCH']:
+            return [permissions.IsAuthenticated(), IsSchoolAdmin()]
+        return [permissions.IsAuthenticated(), IsAuthorizedStaff()]
+
 
 class BehavioralRatingViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins.CreateModelMixin, mixins.UpdateModelMixin, viewsets.GenericViewSet):
     queryset = BehavioralRating.objects.all()
     serializer_class = BehavioralRatingSerializer
     permission_classes = [permissions.IsAuthenticated, IsAuthorizedStaff]
+
+    def get_permissions(self):
+        if self.request.method in ['POST', 'PUT', 'PATCH']:
+            return [permissions.IsAuthenticated(), IsSchoolAdmin()]
+        return [permissions.IsAuthenticated(), IsAuthorizedStaff()]
 
 
 class BehavioralAssessmentViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins.CreateModelMixin, mixins.UpdateModelMixin, viewsets.GenericViewSet):

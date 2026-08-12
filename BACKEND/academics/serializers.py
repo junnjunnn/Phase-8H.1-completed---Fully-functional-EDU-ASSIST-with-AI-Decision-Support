@@ -1,6 +1,8 @@
 from rest_framework import serializers
 from rest_framework.validators import UniqueTogetherValidator
+from django.contrib.auth import get_user_model
 
+from common.authorization import authorized_enrollment_queryset, get_user_scope
 from .models import AcademicRecord, AcademicYear, Enrollment, GradeLevel, Section, Strand, Subject, TeacherAssignment
 
 
@@ -79,6 +81,19 @@ class SectionSerializer(serializers.ModelSerializer):
         if not obj.adviser:
             return None
         return f"{obj.adviser.first_name} {obj.adviser.last_name}".strip() or obj.adviser.username
+
+    def validate_adviser(self, value):
+        # ensure adviser (user) has an appropriate role
+        if value is None:
+            return None
+        user = get_user_model().objects.filter(pk=value.pk).first()
+        if not user:
+            raise serializers.ValidationError('Selected adviser does not exist.')
+        profile = getattr(user, 'profile', None)
+        allowed = {'SUPER_ADMIN', 'SCHOOL_ADMIN', 'TEACHER'}
+        if not profile or getattr(profile, 'role_name', None) not in allowed:
+            raise serializers.ValidationError('Adviser must be a teacher or school administrator.')
+        return value
 
     def validate_name(self, value):
         normalized_value = (value or '').strip()
@@ -255,6 +270,36 @@ class AcademicRecordSerializer(serializers.ModelSerializer):
     class Meta:
         model = AcademicRecord
         fields = ['id', 'enrollment', 'subject', 'academic_year', 'grading_period_type', 'quarter', 'semester', 'grade', 'final_grade', 'remarks', 'encoded_by']
+
+    def validate_enrollment(self, value):
+        """Verify that the user has authorization to access this enrollment."""
+        request = self.context.get('request')
+        if not request or not request.user:
+            raise serializers.ValidationError('Authentication required.')
+        
+        # Admins can create grades for any enrollment
+        scope = get_user_scope(request.user)
+        if scope == 'schoolwide':
+            return value
+        
+        # Teachers can only create grades for their assigned sections
+        if scope == 'teacher':
+            authorized_qs = authorized_enrollment_queryset(
+                request.user,
+                AcademicRecord.objects.all(),
+                enrollment_field='enrollment'
+            )
+            
+            allowed_enrollment_ids = authorized_qs.filter(
+                enrollment=value
+            ).values_list('enrollment_id', flat=True).distinct()
+            
+            if not allowed_enrollment_ids.exists():
+                raise serializers.ValidationError(
+                    'You do not have permission to create grades for this enrollment.'
+                )
+        
+        return value
 
     def validate_grade(self, value):
         if value is None:

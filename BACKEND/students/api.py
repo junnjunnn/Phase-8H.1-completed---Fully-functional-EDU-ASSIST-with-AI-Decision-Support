@@ -3,9 +3,9 @@ from rest_framework import mixins, permissions, viewsets
 from rest_framework.filters import SearchFilter, OrderingFilter
 from django_filters.rest_framework import DjangoFilterBackend
 
-from audit.models import AuditLog
-from accounts.permissions import IsAuthorizedStaff
-from accounts.utils import get_authorized_student_queryset
+from accounts.permissions import IsAuthorizedStaff, IsSchoolAdmin
+from common.audit import AuditMixin
+from common.authorization import authorized_students_queryset
 from academics.models import AcademicYear, GradeLevel, Section
 from .models import Student
 from .serializers import StudentSerializer
@@ -21,7 +21,7 @@ class StudentFilter(django_filters.FilterSet):
         fields = ['student_status', 'grade_level', 'section', 'academic_year']
 
 
-class StudentViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins.CreateModelMixin, mixins.UpdateModelMixin, viewsets.GenericViewSet):
+class StudentViewSet(AuditMixin, mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins.CreateModelMixin, mixins.UpdateModelMixin, viewsets.GenericViewSet):
     queryset = Student.objects.prefetch_related('enrollments__grade_level', 'enrollments__section', 'enrollments__academic_year').order_by('last_name', 'first_name')
     serializer_class = StudentSerializer
     permission_classes = [permissions.IsAuthenticated, IsAuthorizedStaff]
@@ -31,26 +31,11 @@ class StudentViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins.Cr
     ordering_fields = ['last_name', 'first_name', 'created_at']
     ordering = ['last_name', 'first_name']
 
+    def get_permissions(self):
+        if self.request.method in ['POST', 'PUT', 'PATCH']:
+            return [permissions.IsAuthenticated(), IsSchoolAdmin()]
+        return [permissions.IsAuthenticated(), IsAuthorizedStaff()]
+
     def get_queryset(self):
         qs = super().get_queryset()
-        return get_authorized_student_queryset(self.request.user, qs)
-
-    def perform_create(self, serializer):
-        instance = serializer.save()
-        AuditLog.objects.create(
-            user=self.request.user if self.request.user.is_authenticated else None,
-            action='CREATE',
-            module=self.serializer_class.Meta.model._meta.app_label,
-            object_type=self.serializer_class.Meta.model.__name__,
-            object_id=str(instance.pk),
-        )
-
-    def perform_update(self, serializer):
-        instance = serializer.save()
-        AuditLog.objects.create(
-            user=self.request.user if self.request.user.is_authenticated else None,
-            action='UPDATE',
-            module=self.serializer_class.Meta.model._meta.app_label,
-            object_type=self.serializer_class.Meta.model.__name__,
-            object_id=str(instance.pk),
-        )
+        return authorized_students_queryset(self.request.user, qs)

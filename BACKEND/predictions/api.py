@@ -4,9 +4,10 @@ from rest_framework.filters import OrderingFilter, SearchFilter
 from rest_framework.response import Response
 from django_filters.rest_framework import DjangoFilterBackend
 
-from audit.models import AuditLog
 from accounts.permissions import IsAuthorizedStaff
-from accounts.utils import get_authorized_enrollment_queryset, get_authorized_student_queryset
+from common.audit import AuditMixin
+from common.drf_filters import RoleScopedViewsetMixin
+from common.authorization import authorized_students_queryset, authorized_enrollment_queryset
 from academics.models import AcademicRecord
 from behavior.models import BehavioralAssessment
 from interventions.models import Intervention
@@ -15,7 +16,8 @@ from .models import PredictionFactor, RiskPrediction
 from .serializers import PredictionFactorSerializer, RiskPredictionSerializer
 
 
-class RiskPredictionViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins.CreateModelMixin, mixins.UpdateModelMixin, viewsets.GenericViewSet):
+class RiskPredictionViewSet(RoleScopedViewsetMixin, AuditMixin, mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins.CreateModelMixin, mixins.UpdateModelMixin, viewsets.GenericViewSet):
+    scope_field = 'enrollment'
     queryset = RiskPrediction.objects.select_related('enrollment', 'reviewed_by').all()
     serializer_class = RiskPredictionSerializer
     permission_classes = [permissions.IsAuthenticated, IsAuthorizedStaff]
@@ -25,31 +27,9 @@ class RiskPredictionViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mi
     ordering_fields = ['prediction_date', 'probability']
     ordering = ['-prediction_date']
 
-    def get_queryset(self):
-        return get_authorized_enrollment_queryset(self.request.user, super().get_queryset(), enrollment_field='enrollment')
 
-    def perform_create(self, serializer):
-        instance = serializer.save()
-        AuditLog.objects.create(
-            user=self.request.user if self.request.user.is_authenticated else None,
-            action='CREATE',
-            module=self.serializer_class.Meta.model._meta.app_label,
-            object_type=self.serializer_class.Meta.model.__name__,
-            object_id=str(instance.pk),
-        )
-
-    def perform_update(self, serializer):
-        instance = serializer.save()
-        AuditLog.objects.create(
-            user=self.request.user if self.request.user.is_authenticated else None,
-            action='UPDATE',
-            module=self.serializer_class.Meta.model._meta.app_label,
-            object_type=self.serializer_class.Meta.model.__name__,
-            object_id=str(instance.pk),
-        )
-
-
-class PredictionFactorViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins.CreateModelMixin, mixins.UpdateModelMixin, viewsets.GenericViewSet):
+class PredictionFactorViewSet(RoleScopedViewsetMixin, AuditMixin, mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins.CreateModelMixin, mixins.UpdateModelMixin, viewsets.GenericViewSet):
+    scope_field = 'prediction__enrollment'
     queryset = PredictionFactor.objects.select_related('prediction').all()
     serializer_class = PredictionFactorSerializer
     permission_classes = [permissions.IsAuthenticated, IsAuthorizedStaff]
@@ -59,38 +39,15 @@ class PredictionFactorViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, 
     ordering_fields = ['feature_name']
     ordering = ['feature_name']
 
-    def get_queryset(self):
-        return get_authorized_enrollment_queryset(self.request.user, super().get_queryset(), enrollment_field='prediction__enrollment')
-
-    def perform_create(self, serializer):
-        instance = serializer.save()
-        AuditLog.objects.create(
-            user=self.request.user if self.request.user.is_authenticated else None,
-            action='CREATE',
-            module=self.serializer_class.Meta.model._meta.app_label,
-            object_type=self.serializer_class.Meta.model.__name__,
-            object_id=str(instance.pk),
-        )
-
-    def perform_update(self, serializer):
-        instance = serializer.save()
-        AuditLog.objects.create(
-            user=self.request.user if self.request.user.is_authenticated else None,
-            action='UPDATE',
-            module=self.serializer_class.Meta.model._meta.app_label,
-            object_type=self.serializer_class.Meta.model.__name__,
-            object_id=str(instance.pk),
-        )
-
 
 class DashboardViewSet(viewsets.ViewSet):
     permission_classes = [permissions.IsAuthenticated, IsAuthorizedStaff]
 
     def list(self, request):
-        student_qs = get_authorized_student_queryset(request.user, Student.objects.all())
-        prediction_qs = get_authorized_enrollment_queryset(request.user, RiskPrediction.objects.select_related('enrollment__student', 'enrollment__grade_level').all(), enrollment_field='enrollment')
-        intervention_qs = get_authorized_enrollment_queryset(request.user, Intervention.objects.select_related('enrollment__student', 'enrollment__grade_level').all(), enrollment_field='enrollment')
-        behavior_qs = get_authorized_enrollment_queryset(request.user, BehavioralAssessment.objects.select_related('enrollment__student', 'rating').all(), enrollment_field='enrollment')
+        student_qs = authorized_students_queryset(request.user, Student.objects.all())
+        prediction_qs = authorized_enrollment_queryset(request.user, RiskPrediction.objects.select_related('enrollment__student', 'enrollment__grade_level').all(), enrollment_field='enrollment')
+        intervention_qs = authorized_enrollment_queryset(request.user, Intervention.objects.select_related('enrollment__student', 'enrollment__grade_level').all(), enrollment_field='enrollment')
+        behavior_qs = authorized_enrollment_queryset(request.user, BehavioralAssessment.objects.select_related('enrollment__student', 'rating').all(), enrollment_field='enrollment')
 
         total_students = student_qs.count()
         total_predictions = prediction_qs.count()

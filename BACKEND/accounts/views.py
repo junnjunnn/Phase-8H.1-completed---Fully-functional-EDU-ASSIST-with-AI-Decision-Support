@@ -1,6 +1,7 @@
 import logging
 
 from django.contrib.auth import authenticate, get_user_model, login, logout
+from django.db.models import Q
 from django.contrib.auth.password_validation import validate_password
 from rest_framework import generics, permissions, status
 from rest_framework.decorators import api_view, permission_classes
@@ -226,3 +227,34 @@ def reset_password(request, pk):
     user.save(update_fields=['password'])
     AuditLog.objects.create(action='PASSWORD_CHANGED', module='auth', object_type='user', object_id=str(user.pk))
     return Response({'detail': 'Password updated.'}, status=status.HTTP_200_OK)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthorizedStaff])
+def advisers_list(request):
+    """Return a small list of potential advisers filtered by role and search query.
+
+    Query params:
+      - q: search text matched against first_name, last_name, username, email
+    Returns list of { id, username, first_name, last_name, full_name }
+    """
+    q = request.query_params.get('q', '').strip()
+    allowed_roles = {'SUPER_ADMIN', 'SCHOOL_ADMIN', 'TEACHER'}
+    qs = User.objects.filter(is_active=True)
+    qs = qs.filter(profile__role_name__in=allowed_roles)
+    if q:
+        qs = qs.filter(
+            Q(first_name__icontains=q) | Q(last_name__icontains=q) | Q(username__icontains=q) | Q(email__icontains=q)
+        )
+    qs = qs.order_by('first_name', 'last_name')[:50]
+    results = []
+    for u in qs:
+        full_name = f"{u.first_name or ''} {u.last_name or ''}".strip() or u.username
+        results.append({
+            'id': u.pk,
+            'username': u.username,
+            'first_name': u.first_name,
+            'last_name': u.last_name,
+            'full_name': full_name,
+        })
+    return Response(results)

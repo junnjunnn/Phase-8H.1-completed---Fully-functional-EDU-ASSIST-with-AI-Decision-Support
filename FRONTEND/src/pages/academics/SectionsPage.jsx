@@ -24,7 +24,7 @@ export function SectionsPage() {
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
   const [page, setPage] = useState(1)
-  const [form, setForm] = useState({ id: '', academic_year: '', grade_level: '', name: '', capacity: 40, description: '', adviser: '', is_active: true })
+  const [form, setForm] = useState({ id: '', academic_year: '', grade_level: '', name: '', capacity: 40, description: '', adviser: '', adviser_name: '', is_active: true })
   const [saving, setSaving] = useState(false)
 
   const pageSize = 8
@@ -90,7 +90,7 @@ export function SectionsPage() {
       }
       const refreshed = await getSections()
       setSections(normalizeListResponse(refreshed).items)
-      setForm({ id: '', academic_year: '', grade_level: '', name: '', capacity: 40, description: '', adviser: '', is_active: true })
+      setForm({ id: '', academic_year: '', grade_level: '', name: '', capacity: 40, description: '', adviser: '', adviser_name: '', is_active: true })
     } catch (err) {
       setError(getApiErrorMessage(err))
     } finally {
@@ -107,6 +107,7 @@ export function SectionsPage() {
       capacity: section.capacity ?? 40,
       description: section.description || '',
       adviser: section.adviser || '',
+      adviser_name: section.adviser_name || '',
       is_active: section.is_active !== false,
     })
     window.scrollTo({ top: 0, behavior: 'smooth' })
@@ -173,7 +174,7 @@ export function SectionsPage() {
           </label>
           <label>
             <span>Adviser</span>
-            <input value={form.adviser} onChange={(event) => setForm({ ...form, adviser: event.target.value })} />
+            <AdviserSelect value={form.adviser || ''} initialLabel={form.adviser_name || ''} onChange={(id) => setForm({ ...form, adviser: id })} />
           </label>
           <label>
             <span>Description</span>
@@ -188,7 +189,7 @@ export function SectionsPage() {
           </label>
           <div className="section-actions form-grid-full">
             <button type="submit" className="action-button action-button--primary" disabled={saving}>{saving ? 'Saving...' : form.id ? 'Update section' : 'Create section'}</button>
-            {form.id ? <button type="button" className="action-button action-button--secondary" onClick={() => setForm({ id: '', academic_year: '', grade_level: '', name: '', capacity: 40, description: '', adviser: '', is_active: true })}>Cancel</button> : null}
+            {form.id ? <button type="button" className="action-button action-button--secondary" onClick={() => setForm({ id: '', academic_year: '', grade_level: '', name: '', capacity: 40, description: '', adviser: '', adviser_name: '', is_active: true })}>Cancel</button> : null}
           </div>
         </form>
       </div>
@@ -240,7 +241,7 @@ export function SectionsPage() {
                       <td>{getNameById(academicYears, section.academic_year)}</td>
                       <td>{getNameById(gradeLevels, section.grade_level)}</td>
                       <td>{section.capacity ?? '—'}</td>
-                      <td>{section.adviser || '—'}</td>
+                      <td>{section.adviser_name || section.adviser || '—'}</td>
                       <td><span className={section.is_active ? 'status-pill status-pill--success' : 'status-pill status-pill--neutral'}>{section.is_active ? 'Active' : 'Archived'}</span></td>
                       <td>
                         <div className="section-actions" style={{ justifyContent: 'flex-end', gap: '0.5rem' }}>

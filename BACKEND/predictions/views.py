@@ -5,6 +5,8 @@ from rest_framework.response import Response
 
 from accounts.permissions import IsAuthorizedStaff
 from audit.models import AuditLog
+from common.authorization import authorized_students_queryset
+from students.models import Student
 from .services.prediction_service import PredictionService
 
 
@@ -12,6 +14,14 @@ from .services.prediction_service import PredictionService
 @permission_classes([IsAuthenticated, IsAuthorizedStaff])
 def predict_student_view(request, student_id):
     try:
+        # Check if the user is authorized to access this student
+        authorized_qs = authorized_students_queryset(request.user, Student.objects.all())
+        if not authorized_qs.filter(id=student_id).exists():
+            return Response(
+                {'detail': 'You do not have permission to generate a prediction for this student.'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
         service = PredictionService()
         result = service.predict_for_student(student_id)
         prediction = service.save_prediction(student_id, result=result)

@@ -37,23 +37,38 @@ class PredictionService:
     def _load_model(self):
         global _MODEL
         if _MODEL is None:
-            with MODEL_PATH.open('rb') as fh:
-                _MODEL = pickle.load(fh)
+            if not MODEL_PATH.exists():
+                raise FileNotFoundError(f'Risk prediction model not found at {MODEL_PATH}')
+            try:
+                with MODEL_PATH.open('rb') as fh:
+                    _MODEL = pickle.load(fh)
+            except Exception as e:
+                raise RuntimeError(f'Failed to load risk prediction model: {str(e)}')
         return _MODEL
 
     def _load_label_map(self) -> Dict[int, str]:
         global _LABELS
         if _LABELS is None:
-            with LABEL_MAP_PATH.open('rb') as fh:
-                raw = pickle.load(fh)
-                _LABELS = raw.get('target_map', {1: 'At Risk', 0: 'Not At Risk'})
+            if not LABEL_MAP_PATH.exists():
+                raise FileNotFoundError(f'Label encoder model not found at {LABEL_MAP_PATH}')
+            try:
+                with LABEL_MAP_PATH.open('rb') as fh:
+                    raw = pickle.load(fh)
+                    _LABELS = raw.get('target_map', {1: 'At Risk', 0: 'Not At Risk'})
+            except Exception as e:
+                raise RuntimeError(f'Failed to load label encoder: {str(e)}')
         return _LABELS
 
     def _load_feature_mapping(self) -> Dict[str, Any]:
         global _FEATURE_MAPPING
         if _FEATURE_MAPPING is None:
-            with FEATURE_MAPPING_PATH.open('r', encoding='utf-8') as fh:
-                _FEATURE_MAPPING = json.load(fh)
+            if not FEATURE_MAPPING_PATH.exists():
+                raise FileNotFoundError(f'Feature mapping configuration not found at {FEATURE_MAPPING_PATH}')
+            try:
+                with FEATURE_MAPPING_PATH.open('r', encoding='utf-8') as fh:
+                    _FEATURE_MAPPING = json.load(fh)
+            except Exception as e:
+                raise RuntimeError(f'Failed to load feature mapping: {str(e)}')
         return _FEATURE_MAPPING
 
     def build_feature_vector(self, student_id: int) -> Tuple[pd.DataFrame, Dict[str, Any]]:
