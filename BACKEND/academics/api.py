@@ -5,7 +5,7 @@ from django_filters.rest_framework import DjangoFilterBackend
 from django.contrib.auth import get_user_model
 
 from audit.models import AuditLog
-from accounts.permissions import IsAuthorizedStaff, IsSchoolAdmin, IsTeacherOrSchoolAdmin
+from accounts.permissions import IsAuthorizedStaff, IsEnrollmentAccessAllowed, IsRegistrarOrSchoolAdmin, IsSchoolAdmin, IsTeacherOrSchoolAdmin
 from accounts.utils import get_authorized_enrollment_queryset, get_user_scope
 from .models import AcademicRecord, AcademicYear, Enrollment, GradeLevel, Section, Strand, Subject, TeacherAssignment
 from .serializers import AcademicRecordSerializer, AcademicYearSerializer, EnrollmentSerializer, GradeLevelSerializer, SectionSerializer, StrandSerializer, SubjectSerializer, TeacherAssignmentSerializer
@@ -210,7 +210,7 @@ class TeacherAssignmentViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin,
 class EnrollmentViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins.CreateModelMixin, mixins.UpdateModelMixin, viewsets.GenericViewSet):
     queryset = Enrollment.objects.select_related('student', 'academic_year', 'grade_level', 'section', 'strand').all()
     serializer_class = EnrollmentSerializer
-    permission_classes = [permissions.IsAuthenticated, IsAuthorizedStaff]
+    permission_classes = [permissions.IsAuthenticated, IsEnrollmentAccessAllowed]
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
     filterset_fields = ['student', 'academic_year', 'grade_level', 'section', 'strand', 'enrollment_status']
     search_fields = ['student__first_name', 'student__last_name', 'student__lrn']
@@ -219,8 +219,8 @@ class EnrollmentViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins
 
     def get_permissions(self):
         if self.request.method in ['POST', 'PUT', 'PATCH']:
-            return [permissions.IsAuthenticated(), IsSchoolAdmin()]
-        return [permissions.IsAuthenticated(), IsAuthorizedStaff()]
+            return [permissions.IsAuthenticated(), IsRegistrarOrSchoolAdmin()]
+        return [permissions.IsAuthenticated(), IsEnrollmentAccessAllowed()]
 
     def get_queryset(self):
         return get_authorized_enrollment_queryset(self.request.user, super().get_queryset())

@@ -14,6 +14,7 @@ def get_user_scope(user: object) -> str:
 
     Scopes:
       - 'schoolwide' : SUPER_ADMIN or SCHOOL_ADMIN
+      - 'registrar' : REGISTRAR
       - 'teacher' : TEACHER
       - 'guidance' : GUIDANCE
       - 'none' : unauthenticated or unknown
@@ -24,6 +25,8 @@ def get_user_scope(user: object) -> str:
     role_name = getattr(profile, 'role_name', None)
     if role_name in {'SUPER_ADMIN', 'SCHOOL_ADMIN'}:
         return 'schoolwide'
+    if role_name == 'REGISTRAR':
+        return 'registrar'
     if role_name == 'TEACHER':
         return 'teacher'
     if role_name == 'GUIDANCE':
@@ -34,7 +37,7 @@ def get_user_scope(user: object) -> str:
 def authorized_students_queryset(user: object, queryset: QuerySet) -> QuerySet:
     """Return a queryset of Student objects authorized for the given user."""
     scope = get_user_scope(user)
-    if scope == 'schoolwide':
+    if scope in {'schoolwide', 'registrar'}:
         return queryset
     if scope == 'teacher':
         profile = _get_profile(user)
@@ -55,7 +58,7 @@ def authorized_enrollment_queryset(user: object, queryset: QuerySet, enrollment_
     parameter controls the lookup prefix (e.g. 'enrollment' or 'prediction__enrollment').
     """
     scope = get_user_scope(user)
-    if scope == 'schoolwide':
+    if scope in {'schoolwide', 'registrar'}:
         return queryset
     if scope == 'teacher':
         profile = _get_profile(user)

@@ -23,52 +23,38 @@ class Command(BaseCommand):
             self.stdout.write('Seeding demo development data...')
 
             User = get_user_model()
-            teacher_username = 'demo_teacher'
-            admin_username = 'demo_admin'
+            demo_accounts = [
+                {'username': 'demo_teacher', 'password': 'DemoTeacher123!', 'role_name': 'TEACHER', 'email': 'demo_teacher@example.com'},
+                {'username': 'demo_admin', 'password': 'DemoAdmin123!', 'role_name': 'SUPER_ADMIN', 'email': 'demo_admin@example.com'},
+                {'username': 'demo_guidance', 'password': 'DemoGuidance123!', 'role_name': 'GUIDANCE', 'email': 'demo_guidance@example.com'},
+            ]
 
-            demo_teacher, created = User.objects.get_or_create(
-                username=teacher_username,
-                defaults={
-                    'email': 'demo_teacher@example.com',
-                    'is_active': True,
-                },
-            )
-            if created:
-                self.stdout.write(f'  Created user: {teacher_username}')
-            else:
-                self.stdout.write(f'  Reusing existing user: {teacher_username}')
-            demo_teacher.set_password('DemoTeacher123!')
-            demo_teacher.save(update_fields=['password'])
+            for account in demo_accounts:
+                username = account['username']
+                user, created = User.objects.get_or_create(
+                    username=username,
+                    defaults={
+                        'email': account['email'],
+                        'is_active': True,
+                    },
+                )
+                if created:
+                    self.stdout.write(f'  Created user: {username}')
+                else:
+                    self.stdout.write(f'  Reusing existing user: {username}')
 
-            demo_admin, admin_created = User.objects.get_or_create(
-                username=admin_username,
-                defaults={
-                    'email': 'demo_admin@example.com',
-                    'is_active': True,
-                },
-            )
-            if admin_created:
-                self.stdout.write(f'  Created user: {admin_username}')
-            else:
-                self.stdout.write(f'  Reusing existing user: {admin_username}')
-            demo_admin.set_password('DemoAdmin123!')
-            demo_admin.save(update_fields=['password'])
+                user.email = account['email']
+                user.is_active = True
+                user.set_password(account['password'])
+                user.save(update_fields=['email', 'is_active', 'password'])
 
-            teacher_profile, _ = UserProfile.objects.get_or_create(
-                user=demo_teacher,
-                defaults={'role_name': 'TEACHER'},
-            )
-            if teacher_profile.role_name != 'TEACHER':
-                teacher_profile.role_name = 'TEACHER'
-                teacher_profile.save(update_fields=['role_name'])
-
-            admin_profile, _ = UserProfile.objects.get_or_create(
-                user=demo_admin,
-                defaults={'role_name': 'SUPER_ADMIN'},
-            )
-            if admin_profile.role_name != 'SUPER_ADMIN':
-                admin_profile.role_name = 'SUPER_ADMIN'
-                admin_profile.save(update_fields=['role_name'])
+                profile, _ = UserProfile.objects.get_or_create(
+                    user=user,
+                    defaults={'role_name': account['role_name']},
+                )
+                if profile.role_name != account['role_name']:
+                    profile.role_name = account['role_name']
+                    profile.save(update_fields=['role_name'])
 
             current_year, _ = AcademicYear.objects.get_or_create(
                 name='2025-2026',

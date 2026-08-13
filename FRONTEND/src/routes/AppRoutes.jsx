@@ -43,7 +43,7 @@ export function AppRoutes() {
           <Route element={<RoleRoute allowedRoles={['TEACHER']} />}>
             <Route path="/my-classes" element={<MyClassesPage />} />
           </Route>
-          <Route element={<RoleRoute allowedRoles={['SUPER_ADMIN', 'SCHOOL_ADMIN']} />}>
+          <Route element={<RoleRoute allowedRoles={['SUPER_ADMIN', 'SCHOOL_ADMIN', 'REGISTRAR']} />}>
             <Route path="/academic-structure" element={<AcademicStructurePage />} />
             <Route path="/academic-years" element={<AcademicYearsPage />} />
             <Route path="/grade-levels" element={<GradeLevelsPage />} />

@@ -30,11 +30,31 @@ class IsGuidancePersonnel(BasePermission):
         return _get_role_name(request.user) == 'GUIDANCE'
 
 
+class IsRegistrar(BasePermission):
+    def has_permission(self, request, view):
+        return _get_role_name(request.user) == 'REGISTRAR'
+
+
 class IsTeacherOrSchoolAdmin(BasePermission):
     def has_permission(self, request, view):
         return _get_role_name(request.user) in {'SUPER_ADMIN', 'SCHOOL_ADMIN', 'TEACHER'}
 
 
+class IsRegistrarOrSchoolAdmin(BasePermission):
+    def has_permission(self, request, view):
+        return _get_role_name(request.user) in {'SUPER_ADMIN', 'SCHOOL_ADMIN', 'REGISTRAR'}
+
+
 class IsAuthorizedStaff(BasePermission):
     def has_permission(self, request, view):
         return _get_role_name(request.user) in {'SUPER_ADMIN', 'SCHOOL_ADMIN', 'TEACHER', 'GUIDANCE'}
+
+
+class IsStudentAccessAllowed(BasePermission):
+    def has_permission(self, request, view):
+        return _get_role_name(request.user) in {'SUPER_ADMIN', 'SCHOOL_ADMIN', 'TEACHER', 'GUIDANCE', 'REGISTRAR'}
+
+
+class IsEnrollmentAccessAllowed(BasePermission):
+    def has_permission(self, request, view):
+        return _get_role_name(request.user) in {'SUPER_ADMIN', 'SCHOOL_ADMIN', 'TEACHER', 'GUIDANCE', 'REGISTRAR'}

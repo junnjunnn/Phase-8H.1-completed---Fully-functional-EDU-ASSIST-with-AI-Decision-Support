@@ -51,6 +51,8 @@ function getRoleLabel(role) {
     case 'SUPER_ADMIN':
     case 'SCHOOL_ADMIN':
       return 'Administrator'
+    case 'REGISTRAR':
+      return 'Registrar'
     case 'GUIDANCE':
       return 'Guidance'
     case 'TEACHER':

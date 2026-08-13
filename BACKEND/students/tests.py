@@ -62,3 +62,29 @@ class StudentAPITests(TestCase):
         response = self.client.get(f'/api/students/?section={self.section_b.id}')
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data['count'], 0)
+
+    def test_registration_creates_student_profile_without_enrollment(self):
+        self.client.force_authenticate(user=self.superadmin)
+        payload = {
+            'lrn': '2025001',
+            'first_name': 'Maria',
+            'middle_name': 'Delos',
+            'last_name': 'Cruz',
+            'suffix': 'Jr.',
+            'gender': 'Female',
+            'birth_date': '2014-05-12',
+            'address': '123 Sample Street, Davao City',
+            'guardian_name': 'Anna Cruz',
+            'parent_contact': '09171234567',
+            'email': 'maria.cruz@example.com',
+            'student_status': 'active',
+        }
+
+        response = self.client.post('/api/students/', payload, format='json')
+
+        self.assertEqual(response.status_code, 201)
+        student = Student.objects.get(lrn='2025001')
+        self.assertEqual(student.first_name, 'Maria')
+        self.assertEqual(student.guardian_name, 'Anna Cruz')
+        self.assertEqual(student.parent_contact, '09171234567')
+        self.assertFalse(student.enrollments.exists())

@@ -1,12 +1,12 @@
 export const navigationItems = [
-  { label: 'Dashboard', path: '/dashboard', roles: ['SUPER_ADMIN', 'SCHOOL_ADMIN', 'TEACHER', 'GUIDANCE'] },
-  { label: 'Students', path: '/students', roles: ['SUPER_ADMIN', 'SCHOOL_ADMIN', 'TEACHER', 'GUIDANCE'] },
+  { label: 'Dashboard', path: '/dashboard', roles: ['SUPER_ADMIN', 'SCHOOL_ADMIN', 'REGISTRAR', 'TEACHER', 'GUIDANCE'] },
+  { label: 'Students', path: '/students', roles: ['SUPER_ADMIN', 'SCHOOL_ADMIN', 'REGISTRAR', 'TEACHER', 'GUIDANCE'] },
   { label: 'Academic Years', path: '/academic-years', roles: ['SUPER_ADMIN', 'SCHOOL_ADMIN'] },
   { label: 'Grade Levels', path: '/grade-levels', roles: ['SUPER_ADMIN', 'SCHOOL_ADMIN'] },
   { label: 'Sections', path: '/sections', roles: ['SUPER_ADMIN', 'SCHOOL_ADMIN'] },
   { label: 'Subjects', path: '/subjects', roles: ['SUPER_ADMIN', 'SCHOOL_ADMIN'] },
   { label: 'Teacher Assignments', path: '/teacher-assignments', roles: ['SUPER_ADMIN', 'SCHOOL_ADMIN'] },
-  { label: 'Enrollment', path: '/enrollment', roles: ['SUPER_ADMIN', 'SCHOOL_ADMIN'] },
+  { label: 'Enrollment', path: '/enrollment', roles: ['SUPER_ADMIN', 'SCHOOL_ADMIN', 'REGISTRAR'] },
   { label: 'My Classes', path: '/my-classes', roles: ['TEACHER'] },
   { label: 'Grade Encoding', path: '/academics/encode', roles: ['SUPER_ADMIN', 'SCHOOL_ADMIN', 'TEACHER'] },
   { label: 'Attendance', path: '/attendance', roles: ['SUPER_ADMIN', 'SCHOOL_ADMIN', 'TEACHER', 'GUIDANCE'] },
@@ -17,5 +17,5 @@ export const navigationItems = [
   { label: 'User Management', path: '/users', roles: ['SUPER_ADMIN', 'SCHOOL_ADMIN'] },
   { label: 'Audit Logs', path: '/admin', roles: ['SUPER_ADMIN', 'SCHOOL_ADMIN'] },
   { label: 'Settings', path: '/settings', roles: ['SUPER_ADMIN', 'SCHOOL_ADMIN', 'TEACHER', 'GUIDANCE'] },
-  { label: 'Profile', path: '/profile', roles: ['SUPER_ADMIN', 'SCHOOL_ADMIN', 'TEACHER', 'GUIDANCE'] },
+  { label: 'Profile', path: '/profile', roles: ['SUPER_ADMIN', 'SCHOOL_ADMIN', 'REGISTRAR', 'TEACHER', 'GUIDANCE'] },
 ]

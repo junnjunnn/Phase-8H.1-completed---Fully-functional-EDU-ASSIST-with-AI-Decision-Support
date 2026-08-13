@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { EmptyState } from '../../components/common/EmptyState'
 import { ErrorBanner } from '../../components/feedback/ErrorBanner'
 import { PageHeader } from '../../components/common/PageHeader'
+import AdviserSelect from '../../components/AdviserSelect'
 import { getApiErrorMessage } from '../../services/api'
 import { createSection, getAcademicYears, getGradeLevels, getSections, updateSection } from '../../services/academicsService'
 

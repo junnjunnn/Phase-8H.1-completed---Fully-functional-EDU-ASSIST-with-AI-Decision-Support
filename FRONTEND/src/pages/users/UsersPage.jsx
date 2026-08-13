@@ -17,6 +17,7 @@ import { activateUser, createUser, deactivateUser, getUsers, resetUserPassword, 
 const roleOptions = [
   { value: 'SUPER_ADMIN', label: 'Administrator' },
   { value: 'SCHOOL_ADMIN', label: 'Administrator' },
+  { value: 'REGISTRAR', label: 'Registrar' },
   { value: 'TEACHER', label: 'Teacher' },
   { value: 'GUIDANCE', label: 'Guidance' },
 ]
@@ -25,6 +26,9 @@ function getRoleBadgeClass(role) {
   const value = String(role || '').toUpperCase()
   if (value === 'SUPER_ADMIN' || value === 'SCHOOL_ADMIN') {
     return 'badge badge--info'
+  }
+  if (value === 'REGISTRAR') {
+    return 'badge badge--primary'
   }
   if (value === 'TEACHER') {
     return 'badge badge--success'

@@ -6,6 +6,7 @@ class UserProfile(models.Model):
     ROLE_CHOICES = [
         ('SUPER_ADMIN', 'Super Administrator'),
         ('SCHOOL_ADMIN', 'School Administrator'),
+        ('REGISTRAR', 'Registrar'),
         ('TEACHER', 'Teacher'),
         ('GUIDANCE', 'Guidance Personnel'),
     ]

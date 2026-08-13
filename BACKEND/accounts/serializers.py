@@ -64,7 +64,7 @@ class UserCreateSerializer(serializers.ModelSerializer):
         return value
 
     def validate_role_name(self, value):
-        allowed = {'SUPER_ADMIN', 'SCHOOL_ADMIN', 'TEACHER', 'GUIDANCE'}
+        allowed = {'SUPER_ADMIN', 'SCHOOL_ADMIN', 'REGISTRAR', 'TEACHER', 'GUIDANCE'}
         if value not in allowed:
             raise serializers.ValidationError('Unsupported role.')
         return value
@@ -115,7 +115,7 @@ class UserUpdateSerializer(serializers.ModelSerializer):
         return value
 
     def validate_role_name(self, value):
-        allowed = {'SUPER_ADMIN', 'SCHOOL_ADMIN', 'TEACHER', 'GUIDANCE'}
+        allowed = {'SUPER_ADMIN', 'SCHOOL_ADMIN', 'REGISTRAR', 'TEACHER', 'GUIDANCE'}
         if value not in allowed:
             raise serializers.ValidationError('Unsupported role.')
         return value

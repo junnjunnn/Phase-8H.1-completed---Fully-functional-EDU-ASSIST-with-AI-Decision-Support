@@ -21,6 +21,10 @@ class UserListPermissionTests(APITestCase):
         self.guidance = self.user_model.objects.create_user(username='guidance_user', password='Guide1!')
         UserProfile.objects.create(user=self.guidance, role_name='GUIDANCE')
 
+        # registrar
+        self.registrar = self.user_model.objects.create_user(username='registrar_user', password='Registrar1!')
+        UserProfile.objects.create(user=self.registrar, role_name='REGISTRAR')
+
     def test_school_admin_get_users(self):
         self.client.force_authenticate(user=self.school_admin)
         resp = self.client.get('/api/auth/users/')
@@ -39,6 +43,16 @@ class UserListPermissionTests(APITestCase):
     def test_anonymous_cannot_get_users(self):
         resp = self.client.get('/api/auth/users/')
         self.assertIn(resp.status_code, (401, 403))
+
+    def test_registrar_cannot_get_users(self):
+        self.client.force_authenticate(user=self.registrar)
+        resp = self.client.get('/api/auth/users/')
+        self.assertIn(resp.status_code, (403, 401))
+
+    def test_registrar_can_access_students(self):
+        self.client.force_authenticate(user=self.registrar)
+        resp = self.client.get('/api/students/')
+        self.assertEqual(resp.status_code, 200)
 
     def test_teacher_cannot_post_create_user(self):
         self.client.force_authenticate(user=self.teacher)

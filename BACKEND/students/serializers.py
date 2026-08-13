@@ -5,13 +5,21 @@ from .models import Student
 
 class StudentSerializer(serializers.ModelSerializer):
     middle_name = serializers.CharField(required=False, allow_blank=True)
+    suffix = serializers.CharField(required=False, allow_blank=True)
     gender = serializers.CharField(required=False, allow_blank=True)
     birth_date = serializers.DateField(required=False, allow_null=True)
+    address = serializers.CharField(required=False, allow_blank=True)
+    guardian_name = serializers.CharField(required=False, allow_blank=True)
+    parent_contact = serializers.CharField(required=False, allow_blank=True)
+    email = serializers.EmailField(required=False, allow_blank=True)
     current_enrollment = serializers.SerializerMethodField()
 
     class Meta:
         model = Student
-        fields = ['id', 'lrn', 'first_name', 'middle_name', 'last_name', 'gender', 'birth_date', 'student_status', 'current_enrollment']
+        fields = [
+            'id', 'lrn', 'first_name', 'middle_name', 'last_name', 'suffix', 'gender', 'birth_date',
+            'address', 'guardian_name', 'parent_contact', 'email', 'student_status', 'current_enrollment'
+        ]
         extra_kwargs = {
             'lrn': {'required': True, 'allow_blank': False},
             'first_name': {'required': True, 'allow_blank': False},
