@@ -21,7 +21,8 @@ class PredictionsAPITests(TestCase):
         teacher_profile = UserProfile.objects.create(user=self.teacher, role_name='TEACHER')
 
         self.academic_year = AcademicYear.objects.create(name='2025-2026', start_date='2025-06-01', end_date='2026-03-31', is_active=True)
-        self.grade_level = GradeLevel.objects.create(name='Grade 11', code='G11', school_level='Senior High School', order=11)
+        # Use the grade level from Phase 1 migration (0004)
+        self.grade_level = GradeLevel.objects.get(code='G11')
         section_a = Section.objects.create(name='A', grade_level=self.grade_level, academic_year=self.academic_year)
         self.section_b = Section.objects.create(name='B', grade_level=self.grade_level, academic_year=self.academic_year)
         teacher_profile.assigned_sections.add(section_a)

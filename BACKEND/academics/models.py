@@ -57,6 +57,7 @@ class Section(models.Model):
     capacity = models.PositiveIntegerField(default=0)
     description = models.TextField(blank=True, default='')
     adviser = models.ForeignKey(get_user_model(), null=True, blank=True, on_delete=models.SET_NULL, related_name='advised_sections')
+    strand = models.ForeignKey('Strand', on_delete=models.SET_NULL, related_name='sections', null=True, blank=True)
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -64,10 +65,36 @@ class Section(models.Model):
     class Meta:
         unique_together = ('grade_level', 'academic_year', 'name')
         ordering = ['grade_level__order', 'name']
-        indexes = [models.Index(fields=['academic_year', 'grade_level', 'is_active'])]
+        indexes = [models.Index(fields=['academic_year', 'grade_level', 'is_active']), models.Index(fields=['strand', 'is_active'])]
+
+    def clean(self):
+        from django.core.exceptions import ValidationError
+
+        # Validate strand/grade level compatibility
+        if not self.grade_level:
+            return
+
+        school_level = self.grade_level.school_level
+
+        # Rule: Elementary sections cannot have a strand
+        if school_level == 'Elementary' and self.strand:
+            raise ValidationError({'strand': 'Elementary sections cannot have a strand.'})
+
+        # Rule: Junior High School sections cannot have a strand
+        if school_level == 'Junior High School' and self.strand:
+            raise ValidationError({'strand': 'Junior High School sections cannot have a strand.'})
+
+        # Rule: Senior High School sections require a strand
+        if school_level == 'Senior High School' and not self.strand:
+            raise ValidationError({'strand': 'Senior High School sections must have a strand.'})
+
+        # Rule: Strand must be active
+        if self.strand and not self.strand.is_active:
+            raise ValidationError({'strand': 'The selected strand is not active.'})
 
     def __str__(self):
-        return f"{self.grade_level} - {self.name}"
+        strand_info = f" - {self.strand.code}" if self.strand else ""
+        return f"{self.grade_level}{strand_info} - {self.name}"
 
 
 class Strand(models.Model):
@@ -102,6 +129,43 @@ class Subject(models.Model):
     class Meta:
         ordering = ['name']
         indexes = [models.Index(fields=['grade_level', 'is_active']), models.Index(fields=['strand', 'is_active'])]
+
+    @property
+    def educational_level(self):
+        """Derive educational level from grade_level."""
+        if not self.grade_level:
+            return None
+        return self.grade_level.school_level
+
+    def clean(self):
+        from django.core.exceptions import ValidationError
+
+        if not self.grade_level:
+            return
+
+        school_level = self.grade_level.school_level
+
+        # Rule: Elementary subjects cannot have a strand
+        if school_level == 'Elementary' and self.strand:
+            raise ValidationError({'strand': 'Elementary subjects cannot have a strand.'})
+
+        # Rule: Junior High School subjects cannot have a strand
+        if school_level == 'Junior High School' and self.strand:
+            raise ValidationError({'strand': 'Junior High School subjects cannot have a strand.'})
+
+        # Rule: Senior High School subjects can have optional strand
+        # Rule: SHS subjects with inactive strand should be rejected
+        if school_level == 'Senior High School' and self.strand and not self.strand.is_active:
+            raise ValidationError({'strand': 'The selected strand is not active.'})
+
+        # Rule: Category validation - SHS categories should only be used for SHS
+        shs_categories = {'Core', 'Applied', 'Specialized'}
+        if school_level != 'Senior High School' and self.category in shs_categories:
+            raise ValidationError({'category': f'Category "{self.category}" is only available for Senior High School subjects.'})
+
+        # Rule: Elementary and JHS should use "Learning Area" category
+        if school_level in ['Elementary', 'Junior High School'] and self.category != 'Learning Area':
+            raise ValidationError({'category': f'Elementary and Junior High School subjects must use "Learning Area" category.'})
 
     def __str__(self):
         return f"{self.code} - {self.name}"
@@ -156,6 +220,10 @@ class Enrollment(models.Model):
         from django.core.exceptions import ValidationError
         if self.section and self.section.grade_level_id != self.grade_level_id:
             raise ValidationError({'section': 'The selected section does not belong to the selected grade level.'})
+
+        # Validate strand consistency with section
+        if self.section and self.section.strand and self.strand and self.section.strand.id != self.strand.id:
+            raise ValidationError({'strand': 'The selected strand does not match the section\'s strand.'})
 
     def __str__(self):
         return f"{self.student} - {self.academic_year}"

@@ -12,7 +12,8 @@ class AuthorizationTests(TestCase):
     def setUp(self):
         # Academic fixtures
         self.year = AcademicYear.objects.create(name='2025-2026', start_date='2025-06-01', end_date='2026-03-31', is_active=True)
-        self.grade = GradeLevel.objects.create(name='Grade 7', code='G7', school_level='Junior High School', order=7)
+        # Use the grade level from Phase 1 migration (0004)
+        self.grade = GradeLevel.objects.get(code='G7')
         self.section_a = Section.objects.create(grade_level=self.grade, academic_year=self.year, name='A')
         self.section_b = Section.objects.create(grade_level=self.grade, academic_year=self.year, name='B')
 

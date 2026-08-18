@@ -24,6 +24,7 @@ export function SubjectsPage() {
   const [error, setError] = useState('')
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
+  const [educationLevelFilter, setEducationLevelFilter] = useState('all')
   const [page, setPage] = useState(1)
   const [form, setForm] = useState({ id: '', code: '', name: '', category: 'Learning Area', grade_level: '', strand: '', is_active: true })
   const [saving, setSaving] = useState(false)
@@ -58,14 +59,31 @@ export function SubjectsPage() {
     return () => { active = false }
   }, [])
 
+  // Determine educational level from selected grade
+  const selectedGrade = gradeLevels.find(g => String(g.id) === String(form.grade_level))
+  const selectedEducationLevel = selectedGrade?.school_level
+
+  // Get available strands for SHS
+  const availableStrands = strands.filter(s => s.is_active)
+
+  // Get category options based on educational level
+  const categoryOptions = selectedEducationLevel === 'Senior High School'
+    ? [
+        { value: 'Core', label: 'Core' },
+        { value: 'Applied', label: 'Applied' },
+        { value: 'Specialized', label: 'Specialized' },
+      ]
+    : [{ value: 'Learning Area', label: 'Learning Area' }]
+
   const filteredSubjects = useMemo(() => {
     const term = search.trim().toLowerCase()
     return subjects.filter((subject) => {
       const matchesSearch = !term || subject.name.toLowerCase().includes(term) || subject.code.toLowerCase().includes(term) || subject.category.toLowerCase().includes(term) || getNameById(gradeLevels, subject.grade_level).toLowerCase().includes(term) || getNameById(strands, subject.strand).toLowerCase().includes(term)
       const matchesStatus = statusFilter === 'all' || String(subject.is_active) === statusFilter
-      return matchesSearch && matchesStatus
+      const matchesEducationLevel = educationLevelFilter === 'all' || subject.grade_level_school_level === educationLevelFilter
+      return matchesSearch && matchesStatus && matchesEducationLevel
     })
-  }, [subjects, search, statusFilter, gradeLevels, strands])
+  }, [subjects, search, statusFilter, educationLevelFilter, gradeLevels, strands])
 
   const pagedSubjects = useMemo(() => {
     const start = (page - 1) * pageSize
@@ -113,6 +131,10 @@ export function SubjectsPage() {
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
+  function resetForm() {
+    setForm({ id: '', code: '', name: '', category: 'Learning Area', grade_level: '', strand: '', is_active: true })
+  }
+
   async function toggleStatus(subject) {
     setError('')
     try {
@@ -156,15 +178,8 @@ export function SubjectsPage() {
             <input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} required />
           </label>
           <label>
-            <span>Category</span>
-            <select value={form.category} onChange={(event) => setForm({ ...form, category: event.target.value })}>
-              <option value="Learning Area">Learning Area</option>
-              <option value="Core Subject">Core Subject</option>
-            </select>
-          </label>
-          <label>
             <span>Grade level</span>
-            <select value={form.grade_level} onChange={(event) => setForm({ ...form, grade_level: event.target.value })}>
+            <select value={form.grade_level} onChange={(event) => setForm({ ...form, grade_level: event.target.value, category: 'Learning Area', strand: '' })} required>
               <option value="">Select grade level</option>
               {gradeLevels.map((grade) => (
                 <option key={grade.id} value={grade.id}>{grade.name}</option>
@@ -172,14 +187,24 @@ export function SubjectsPage() {
             </select>
           </label>
           <label>
-            <span>Strand</span>
-            <select value={form.strand} onChange={(event) => setForm({ ...form, strand: event.target.value })}>
-              <option value="">Select strand</option>
-              {strands.map((strand) => (
-                <option key={strand.id} value={strand.id}>{strand.name}</option>
+            <span>Category</span>
+            <select value={form.category} onChange={(event) => setForm({ ...form, category: event.target.value })}>
+              {categoryOptions.map((cat) => (
+                <option key={cat.value} value={cat.value}>{cat.label}</option>
               ))}
             </select>
           </label>
+          {selectedEducationLevel === 'Senior High School' ? (
+            <label>
+              <span>Strand</span>
+              <select value={form.strand} onChange={(event) => setForm({ ...form, strand: event.target.value })}>
+                <option value="">Select strand (optional)</option>
+                {availableStrands.map((strand) => (
+                  <option key={strand.id} value={strand.id}>{strand.name}</option>
+                ))}
+              </select>
+            </label>
+          ) : null}
           <label>
             <span>Status</span>
             <select value={form.is_active ? 'true' : 'false'} onChange={(event) => setForm({ ...form, is_active: event.target.value === 'true' })}>
@@ -189,7 +214,7 @@ export function SubjectsPage() {
           </label>
           <div className="section-actions form-grid-full">
             <button type="submit" className="action-button action-button--primary" disabled={saving}>{saving ? 'Saving...' : form.id ? 'Update subject' : 'Create subject'}</button>
-            {form.id ? <button type="button" className="action-button action-button--secondary" onClick={() => setForm({ id: '', code: '', name: '', category: 'Learning Area', grade_level: '', strand: '', is_active: true })}>Cancel</button> : null}
+            {form.id ? <button type="button" className="action-button action-button--secondary" onClick={() => resetForm()}>Cancel</button> : null}
           </div>
         </form>
       </div>
@@ -202,6 +227,12 @@ export function SubjectsPage() {
           </div>
           <div className="search-input-group">
             <input aria-label="Search subjects" placeholder="Search subjects" value={search} onChange={(event) => { setSearch(event.target.value); setPage(1) }} />
+            <select value={educationLevelFilter} onChange={(event) => { setEducationLevelFilter(event.target.value); setPage(1) }}>
+              <option value="all">All levels</option>
+              <option value="Elementary">Elementary</option>
+              <option value="Junior High School">Junior High School</option>
+              <option value="Senior High School">Senior High School</option>
+            </select>
             <select value={statusFilter} onChange={(event) => { setStatusFilter(event.target.value); setPage(1) }}>
               <option value="all">All statuses</option>
               <option value="true">Active</option>
@@ -227,8 +258,8 @@ export function SubjectsPage() {
                   <tr>
                     <th scope="col">Code</th>
                     <th scope="col">Name</th>
+                    <th scope="col">Educational Level</th>
                     <th scope="col">Category</th>
-                    <th scope="col">Grade level</th>
                     <th scope="col">Strand</th>
                     <th scope="col">Status</th>
                     <th scope="col">Actions</th>
@@ -239,9 +270,9 @@ export function SubjectsPage() {
                     <tr key={subject.id}>
                       <td>{subject.code || '—'}</td>
                       <td>{subject.name || '—'}</td>
+                      <td>{subject.grade_level_school_level || '—'}</td>
                       <td>{subject.category || '—'}</td>
-                      <td>{getNameById(gradeLevels, subject.grade_level)}</td>
-                      <td>{getNameById(strands, subject.strand)}</td>
+                      <td>{subject.grade_level_school_level === 'Senior High School' ? (getNameById(strands, subject.strand) || '—') : 'Not applicable'}</td>
                       <td><span className={subject.is_active ? 'status-pill status-pill--success' : 'status-pill status-pill--neutral'}>{subject.is_active ? 'Active' : 'Archived'}</span></td>
                       <td>
                         <div className="section-actions" style={{ justifyContent: 'flex-end', gap: '0.5rem' }}>

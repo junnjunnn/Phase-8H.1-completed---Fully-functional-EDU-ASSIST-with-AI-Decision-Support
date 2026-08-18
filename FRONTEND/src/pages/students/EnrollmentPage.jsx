@@ -140,10 +140,11 @@ export function EnrollmentPage() {
     return sections.filter((section) => {
       const matchesYear = String(section.academic_year) === String(selectedYearId)
       const matchesGrade = String(section.grade_level) === String(selectedGradeId)
+      const matchesStrand = !requiresStrand || String(section.strand) === String(selectedStrandId)
       const matchesQuery = !query || `${section.name || ''} ${section.adviser_name || ''} ${section.description || ''}`.toLowerCase().includes(query)
-      return matchesYear && matchesGrade && matchesQuery
+      return matchesYear && matchesGrade && matchesStrand && matchesQuery
     })
-  }, [sections, selectedYearId, selectedGradeId, sectionSearch, enrollments])
+  }, [sections, selectedYearId, selectedGradeId, selectedStrandId, sectionSearch, requiresStrand, enrollments])
 
   const availableStudents = useMemo(() => {
     const query = studentSearch.trim().toLowerCase()

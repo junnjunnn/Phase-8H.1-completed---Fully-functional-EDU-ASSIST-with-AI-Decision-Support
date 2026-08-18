@@ -55,11 +55,13 @@ class SectionSerializer(serializers.ModelSerializer):
     student_count = serializers.SerializerMethodField()
     academic_year_name = serializers.SerializerMethodField()
     grade_level_name = serializers.SerializerMethodField()
+    grade_level_school_level = serializers.SerializerMethodField()
     adviser_name = serializers.SerializerMethodField()
+    strand_name = serializers.SerializerMethodField()
 
     class Meta:
         model = Section
-        fields = ['id', 'grade_level', 'academic_year', 'name', 'capacity', 'description', 'adviser', 'is_active', 'student_count', 'academic_year_name', 'grade_level_name', 'adviser_name']
+        fields = ['id', 'grade_level', 'academic_year', 'name', 'capacity', 'description', 'adviser', 'strand', 'is_active', 'student_count', 'academic_year_name', 'grade_level_name', 'grade_level_school_level', 'adviser_name', 'strand_name']
         validators = [
             UniqueTogetherValidator(
                 queryset=Section.objects.all(),
@@ -77,10 +79,16 @@ class SectionSerializer(serializers.ModelSerializer):
     def get_grade_level_name(self, obj):
         return obj.grade_level.name if obj.grade_level else None
 
+    def get_grade_level_school_level(self, obj):
+        return obj.grade_level.school_level if obj.grade_level else None
+
     def get_adviser_name(self, obj):
         if not obj.adviser:
             return None
         return f"{obj.adviser.first_name} {obj.adviser.last_name}".strip() or obj.adviser.username
+
+    def get_strand_name(self, obj):
+        return obj.strand.name if obj.strand else None
 
     def validate_adviser(self, value):
         # ensure adviser (user) has an appropriate role
@@ -95,6 +103,13 @@ class SectionSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError('Adviser must be a teacher or school administrator.')
         return value
 
+    def validate_strand(self, value):
+        if value is None:
+            return None
+        if not value.is_active:
+            raise serializers.ValidationError('The selected strand is not active.')
+        return value
+
     def validate_name(self, value):
         normalized_value = (value or '').strip()
         if not normalized_value:
@@ -106,6 +121,7 @@ class SectionSerializer(serializers.ModelSerializer):
         academic_year = attrs.get('academic_year') or getattr(self.instance, 'academic_year', None)
         name = attrs.get('name') or getattr(self.instance, 'name', None)
         capacity = attrs.get('capacity', getattr(self.instance, 'capacity', 0))
+        strand = attrs.get('strand') or getattr(self.instance, 'strand', None)
 
         if grade_level and academic_year and name:
             queryset = Section.objects.filter(grade_level=grade_level, academic_year=academic_year, name=name)
@@ -113,8 +129,26 @@ class SectionSerializer(serializers.ModelSerializer):
                 queryset = queryset.exclude(pk=self.instance.pk)
             if queryset.exists():
                 raise serializers.ValidationError('A section with this name already exists in the selected grade level and academic year.')
+
         if capacity is not None and capacity < 0:
             raise serializers.ValidationError({'capacity': 'Capacity cannot be negative.'})
+
+        # Validate strand/grade level compatibility
+        if grade_level:
+            school_level = grade_level.school_level
+
+            # Rule: Elementary sections cannot have a strand
+            if school_level == 'Elementary' and strand:
+                raise serializers.ValidationError({'strand': 'Elementary sections cannot have a strand.'})
+
+            # Rule: Junior High School sections cannot have a strand
+            if school_level == 'Junior High School' and strand:
+                raise serializers.ValidationError({'strand': 'Junior High School sections cannot have a strand.'})
+
+            # Rule: Senior High School sections require a strand
+            if school_level == 'Senior High School' and not strand:
+                raise serializers.ValidationError({'strand': 'Senior High School sections must have a strand.'})
+
         return attrs
 
 
@@ -125,9 +159,27 @@ class StrandSerializer(serializers.ModelSerializer):
 
 
 class SubjectSerializer(serializers.ModelSerializer):
+    educational_level = serializers.SerializerMethodField()
+    grade_level_name = serializers.SerializerMethodField()
+    grade_level_school_level = serializers.SerializerMethodField()
+    strand_name = serializers.SerializerMethodField()
+
     class Meta:
         model = Subject
-        fields = ['id', 'code', 'name', 'description', 'category', 'grade_level', 'strand', 'is_active']
+        fields = ['id', 'code', 'name', 'description', 'category', 'grade_level', 'strand', 'is_active', 'educational_level', 'grade_level_name', 'grade_level_school_level', 'strand_name']
+
+    def get_educational_level(self, obj):
+        """Return the educational level derived from grade_level."""
+        return obj.educational_level
+
+    def get_grade_level_name(self, obj):
+        return obj.grade_level.name if obj.grade_level else None
+
+    def get_grade_level_school_level(self, obj):
+        return obj.grade_level.school_level if obj.grade_level else None
+
+    def get_strand_name(self, obj):
+        return obj.strand.name if obj.strand else None
 
     def validate_code(self, value):
         normalized_value = (value or '').strip().upper()
@@ -145,6 +197,46 @@ class SubjectSerializer(serializers.ModelSerializer):
         if not normalized_value:
             raise serializers.ValidationError('Subject name is required.')
         return normalized_value
+
+    def validate_strand(self, value):
+        if value is None:
+            return None
+        if not value.is_active:
+            raise serializers.ValidationError('The selected strand is not active.')
+        return value
+
+    def validate(self, attrs):
+        grade_level = attrs.get('grade_level') or getattr(self.instance, 'grade_level', None)
+        strand = attrs.get('strand') or getattr(self.instance, 'strand', None)
+        category = attrs.get('category') or getattr(self.instance, 'category', None)
+
+        if not grade_level:
+            return attrs
+
+        school_level = grade_level.school_level
+
+        # Rule: Elementary subjects cannot have a strand
+        if school_level == 'Elementary' and strand:
+            raise serializers.ValidationError({'strand': 'Elementary subjects cannot have a strand.'})
+
+        # Rule: Junior High School subjects cannot have a strand
+        if school_level == 'Junior High School' and strand:
+            raise serializers.ValidationError({'strand': 'Junior High School subjects cannot have a strand.'})
+
+        # Rule: SHS subjects with inactive strand should be rejected
+        if school_level == 'Senior High School' and strand and not strand.is_active:
+            raise serializers.ValidationError({'strand': 'The selected strand is not active.'})
+
+        # Rule: Category validation - SHS categories should only be used for SHS
+        shs_categories = {'Core', 'Applied', 'Specialized'}
+        if school_level != 'Senior High School' and category in shs_categories:
+            raise serializers.ValidationError({'category': f'Category "{category}" is only available for Senior High School subjects.'})
+
+        # Rule: Elementary and JHS should use "Learning Area" category
+        if school_level in ['Elementary', 'Junior High School'] and category != 'Learning Area':
+            raise serializers.ValidationError({'category': f'Elementary and Junior High School subjects must use "Learning Area" category.'})
+
+        return attrs
 
 
 class TeacherAssignmentSerializer(serializers.ModelSerializer):
@@ -242,6 +334,7 @@ class EnrollmentSerializer(serializers.ModelSerializer):
         academic_year = attrs.get('academic_year') or getattr(self.instance, 'academic_year', None)
         grade_level = attrs.get('grade_level') or getattr(self.instance, 'grade_level', None)
         section = attrs.get('section') or getattr(self.instance, 'section', None)
+        strand = attrs.get('strand') or getattr(self.instance, 'strand', None)
 
         if student and academic_year:
             queryset = Enrollment.objects.filter(student=student, academic_year=academic_year)
@@ -263,6 +356,18 @@ class EnrollmentSerializer(serializers.ModelSerializer):
             if duplicate_enrollment.exists():
                 raise serializers.ValidationError('This student is already enrolled in the selected section for the academic year.')
 
+        # Validate strand consistency with section
+        if section and section.strand and strand and section.strand.id != strand.id:
+            raise serializers.ValidationError({'strand': 'The selected strand does not match the section\'s strand.'})
+
+        # Validate strand requirement for SHS
+        if grade_level and section:
+            school_level = grade_level.school_level
+            if school_level == 'Senior High School' and not strand:
+                raise serializers.ValidationError({'strand': 'A strand is required for Senior High School enrollment.'})
+            if school_level != 'Senior High School' and strand:
+                raise serializers.ValidationError({'strand': 'A strand cannot be selected for Elementary or Junior High School enrollment.'})
+
         return attrs
 
 
@@ -276,12 +381,12 @@ class AcademicRecordSerializer(serializers.ModelSerializer):
         request = self.context.get('request')
         if not request or not request.user:
             raise serializers.ValidationError('Authentication required.')
-        
+
         # Admins can create grades for any enrollment
         scope = get_user_scope(request.user)
         if scope == 'schoolwide':
             return value
-        
+
         # Teachers can only create grades for their assigned sections
         if scope == 'teacher':
             authorized_qs = authorized_enrollment_queryset(
@@ -289,16 +394,16 @@ class AcademicRecordSerializer(serializers.ModelSerializer):
                 AcademicRecord.objects.all(),
                 enrollment_field='enrollment'
             )
-            
+
             allowed_enrollment_ids = authorized_qs.filter(
                 enrollment=value
             ).values_list('enrollment_id', flat=True).distinct()
-            
+
             if not allowed_enrollment_ids.exists():
                 raise serializers.ValidationError(
                     'You do not have permission to create grades for this enrollment.'
                 )
-        
+
         return value
 
     def validate_grade(self, value):

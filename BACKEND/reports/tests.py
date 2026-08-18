@@ -18,7 +18,8 @@ class ReportCenterViewTests(TestCase):
         self.profile = UserProfile.objects.create(user=self.user, role_name='SCHOOL_ADMIN')
 
         self.academic_year = AcademicYear.objects.create(name='2024-2025', start_date='2024-01-01', end_date='2025-12-31', is_active=True)
-        self.grade_level = GradeLevel.objects.create(name='Grade 10', code='G10', school_level='Junior High School', order=10)
+        # Use the grade level from Phase 1 migration (0004)
+        self.grade_level = GradeLevel.objects.get(code='G10')
         self.section = Section.objects.create(grade_level=self.grade_level, academic_year=self.academic_year, name='A', capacity=30, adviser=self.user)
 
         self.student = Student.objects.create(first_name='Ana', last_name='Cruz', lrn='123456789012')

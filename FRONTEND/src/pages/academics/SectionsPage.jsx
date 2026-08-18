@@ -4,7 +4,7 @@ import { ErrorBanner } from '../../components/feedback/ErrorBanner'
 import { PageHeader } from '../../components/common/PageHeader'
 import AdviserSelect from '../../components/AdviserSelect'
 import { getApiErrorMessage } from '../../services/api'
-import { createSection, getAcademicYears, getGradeLevels, getSections, updateSection } from '../../services/academicsService'
+import { createSection, getAcademicYears, getGradeLevels, getSections, getStrands, updateSection } from '../../services/academicsService'
 
 function normalizeListResponse(data) {
   const items = data?.results || data || []
@@ -19,13 +19,14 @@ function getNameById(items, id) {
 export function SectionsPage() {
   const [academicYears, setAcademicYears] = useState([])
   const [gradeLevels, setGradeLevels] = useState([])
+  const [strands, setStrands] = useState([])
   const [sections, setSections] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
   const [page, setPage] = useState(1)
-  const [form, setForm] = useState({ id: '', academic_year: '', grade_level: '', name: '', capacity: 40, description: '', adviser: '', adviser_name: '', is_active: true })
+  const [form, setForm] = useState({ id: '', academic_year: '', grade_level: '', strand: '', name: '', capacity: 40, description: '', adviser: '', adviser_name: '', is_active: true })
   const [saving, setSaving] = useState(false)
 
   const pageSize = 8
@@ -37,14 +38,16 @@ export function SectionsPage() {
       setLoading(true)
       setError('')
       try {
-        const [yearsData, gradeData, sectionsData] = await Promise.all([
+        const [yearsData, gradeData, strandsData, sectionsData] = await Promise.all([
           getAcademicYears(),
           getGradeLevels(),
+          getStrands(),
           getSections(),
         ])
         if (!active) return
         setAcademicYears(normalizeListResponse(yearsData).items)
         setGradeLevels(normalizeListResponse(gradeData).items)
+        setStrands(normalizeListResponse(strandsData).items)
         setSections(normalizeListResponse(sectionsData).items)
       } catch (err) {
         if (!active) return
@@ -83,6 +86,7 @@ export function SectionsPage() {
         ...form,
         capacity: Number(form.capacity || 0),
         adviser: form.adviser || null,
+        strand: form.strand || null,
       }
       if (form.id) {
         await updateSection(form.id, payload)
@@ -91,7 +95,7 @@ export function SectionsPage() {
       }
       const refreshed = await getSections()
       setSections(normalizeListResponse(refreshed).items)
-      setForm({ id: '', academic_year: '', grade_level: '', name: '', capacity: 40, description: '', adviser: '', adviser_name: '', is_active: true })
+      setForm({ id: '', academic_year: '', grade_level: '', strand: '', name: '', capacity: 40, description: '', adviser: '', adviser_name: '', is_active: true })
     } catch (err) {
       setError(getApiErrorMessage(err))
     } finally {
@@ -104,6 +108,7 @@ export function SectionsPage() {
       id: section.id,
       academic_year: section.academic_year || '',
       grade_level: section.grade_level || '',
+      strand: section.strand || '',
       name: section.name || '',
       capacity: section.capacity ?? 40,
       description: section.description || '',
@@ -169,6 +174,20 @@ export function SectionsPage() {
             <span>Section name</span>
             <input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} required />
           </label>
+          {form.grade_level && (() => {
+            const selectedGrade = gradeLevels.find(g => String(g.id) === String(form.grade_level))
+            return selectedGrade?.school_level === 'Senior High School' ? (
+              <label>
+                <span>Strand *</span>
+                <select value={form.strand} onChange={(event) => setForm({ ...form, strand: event.target.value })} required>
+                  <option value="">Select strand</option>
+                  {strands.filter(s => s.is_active).map((strand) => (
+                    <option key={strand.id} value={strand.id}>{strand.name}</option>
+                  ))}
+                </select>
+              </label>
+            ) : null
+          })()}
           <label>
             <span>Capacity</span>
             <input type="number" min="1" value={form.capacity} onChange={(event) => setForm({ ...form, capacity: Number(event.target.value) })} required />
@@ -229,6 +248,7 @@ export function SectionsPage() {
                     <th scope="col">Section</th>
                     <th scope="col">Academic year</th>
                     <th scope="col">Grade level</th>
+                    <th scope="col">Strand</th>
                     <th scope="col">Capacity</th>
                     <th scope="col">Adviser</th>
                     <th scope="col">Status</th>
@@ -241,6 +261,7 @@ export function SectionsPage() {
                       <td>{section.name || '—'}</td>
                       <td>{getNameById(academicYears, section.academic_year)}</td>
                       <td>{getNameById(gradeLevels, section.grade_level)}</td>
+                      <td>{section.strand ? getNameById(strands, section.strand) : 'Not applicable'}</td>
                       <td>{section.capacity ?? '—'}</td>
                       <td>{section.adviser_name || section.adviser || '—'}</td>
                       <td><span className={section.is_active ? 'status-pill status-pill--success' : 'status-pill status-pill--neutral'}>{section.is_active ? 'Active' : 'Archived'}</span></td>

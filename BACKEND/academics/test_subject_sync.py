@@ -12,7 +12,8 @@ class SubjectSyncTests(APITestCase):
         self.admin = self.user_model.objects.create_user(username='admin_subjects', password='AdminPass1!')
         UserProfile.objects.create(user=self.admin, role_name='SCHOOL_ADMIN')
 
-        self.grade = GradeLevel.objects.create(name='Grade X', code='GX', school_level='High', order=10)
+        # Use the grade level from Phase 1 migration (0004)
+        self.grade = GradeLevel.objects.get(code='G1')
 
     def test_create_subject_and_list(self):
         self.client.force_authenticate(user=self.admin)

@@ -74,7 +74,7 @@ class GradeLevelViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins
 
 
 class SectionViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins.CreateModelMixin, mixins.UpdateModelMixin, viewsets.GenericViewSet):
-    queryset = Section.objects.select_related('grade_level', 'academic_year', 'adviser').all()
+    queryset = Section.objects.select_related('grade_level', 'academic_year', 'adviser', 'strand').all()
     serializer_class = SectionSerializer
     permission_classes = [permissions.IsAuthenticated, IsAcademicReferenceAccessAllowed]
 
