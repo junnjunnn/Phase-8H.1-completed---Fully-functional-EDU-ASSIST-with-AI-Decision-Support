@@ -5,7 +5,7 @@ from django_filters.rest_framework import DjangoFilterBackend
 from django.contrib.auth import get_user_model
 
 from audit.models import AuditLog
-from accounts.permissions import IsAuthorizedStaff, IsEnrollmentAccessAllowed, IsRegistrarOrSchoolAdmin, IsSchoolAdmin, IsTeacherOrSchoolAdmin
+from accounts.permissions import IsAuthorizedStaff, IsAcademicReferenceAccessAllowed, IsEnrollmentAccessAllowed, IsRegistrarOrSchoolAdmin, IsSchoolAdmin, IsTeacherOrSchoolAdmin
 from accounts.utils import get_authorized_enrollment_queryset, get_user_scope
 from .models import AcademicRecord, AcademicYear, Enrollment, GradeLevel, Section, Strand, Subject, TeacherAssignment
 from .serializers import AcademicRecordSerializer, AcademicYearSerializer, EnrollmentSerializer, GradeLevelSerializer, SectionSerializer, StrandSerializer, SubjectSerializer, TeacherAssignmentSerializer
@@ -14,12 +14,12 @@ from .serializers import AcademicRecordSerializer, AcademicYearSerializer, Enrol
 class AcademicYearViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins.CreateModelMixin, mixins.UpdateModelMixin, viewsets.GenericViewSet):
     queryset = AcademicYear.objects.all()
     serializer_class = AcademicYearSerializer
-    permission_classes = [permissions.IsAuthenticated, IsAuthorizedStaff]
+    permission_classes = [permissions.IsAuthenticated, IsAcademicReferenceAccessAllowed]
 
     def get_permissions(self):
         if self.request.method in ['POST', 'PUT', 'PATCH']:
             return [permissions.IsAuthenticated(), IsSchoolAdmin()]
-        return [permissions.IsAuthenticated(), IsAuthorizedStaff()]
+        return [permissions.IsAuthenticated(), IsAcademicReferenceAccessAllowed()]
 
     def perform_create(self, serializer):
         instance = serializer.save()
@@ -45,12 +45,12 @@ class AcademicYearViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixi
 class GradeLevelViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins.CreateModelMixin, mixins.UpdateModelMixin, viewsets.GenericViewSet):
     queryset = GradeLevel.objects.all()
     serializer_class = GradeLevelSerializer
-    permission_classes = [permissions.IsAuthenticated, IsAuthorizedStaff]
+    permission_classes = [permissions.IsAuthenticated, IsAcademicReferenceAccessAllowed]
 
     def get_permissions(self):
         if self.request.method in ['POST', 'PUT', 'PATCH']:
             return [permissions.IsAuthenticated(), IsSchoolAdmin()]
-        return [permissions.IsAuthenticated(), IsAuthorizedStaff()]
+        return [permissions.IsAuthenticated(), IsAcademicReferenceAccessAllowed()]
 
     def perform_create(self, serializer):
         instance = serializer.save()
@@ -76,12 +76,12 @@ class GradeLevelViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins
 class SectionViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins.CreateModelMixin, mixins.UpdateModelMixin, viewsets.GenericViewSet):
     queryset = Section.objects.select_related('grade_level', 'academic_year', 'adviser').all()
     serializer_class = SectionSerializer
-    permission_classes = [permissions.IsAuthenticated, IsAuthorizedStaff]
+    permission_classes = [permissions.IsAuthenticated, IsAcademicReferenceAccessAllowed]
 
     def get_permissions(self):
         if self.request.method in ['POST', 'PUT', 'PATCH']:
             return [permissions.IsAuthenticated(), IsSchoolAdmin()]
-        return [permissions.IsAuthenticated(), IsAuthorizedStaff()]
+        return [permissions.IsAuthenticated(), IsAcademicReferenceAccessAllowed()]
 
     def get_queryset(self):
         queryset = super().get_queryset()
@@ -137,23 +137,23 @@ class SectionViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins.Cr
 class StrandViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins.CreateModelMixin, mixins.UpdateModelMixin, viewsets.GenericViewSet):
     queryset = Strand.objects.all()
     serializer_class = StrandSerializer
-    permission_classes = [permissions.IsAuthenticated, IsAuthorizedStaff]
+    permission_classes = [permissions.IsAuthenticated, IsAcademicReferenceAccessAllowed]
 
     def get_permissions(self):
         if self.request.method in ['POST', 'PUT', 'PATCH']:
             return [permissions.IsAuthenticated(), IsSchoolAdmin()]
-        return [permissions.IsAuthenticated(), IsAuthorizedStaff()]
+        return [permissions.IsAuthenticated(), IsAcademicReferenceAccessAllowed()]
 
 
 class SubjectViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins.CreateModelMixin, mixins.UpdateModelMixin, viewsets.GenericViewSet):
     queryset = Subject.objects.select_related('grade_level', 'strand').all()
     serializer_class = SubjectSerializer
-    permission_classes = [permissions.IsAuthenticated, IsAuthorizedStaff]
+    permission_classes = [permissions.IsAuthenticated, IsAcademicReferenceAccessAllowed]
 
     def get_permissions(self):
         if self.request.method in ['POST', 'PUT', 'PATCH']:
             return [permissions.IsAuthenticated(), IsSchoolAdmin()]
-        return [permissions.IsAuthenticated(), IsAuthorizedStaff()]
+        return [permissions.IsAuthenticated(), IsAcademicReferenceAccessAllowed()]
 
     def perform_create(self, serializer):
         instance = serializer.save()
@@ -179,12 +179,12 @@ class SubjectViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins.Cr
 class TeacherAssignmentViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins.CreateModelMixin, mixins.UpdateModelMixin, viewsets.GenericViewSet):
     queryset = TeacherAssignment.objects.select_related('teacher', 'academic_year', 'grade_level', 'section', 'subject').all()
     serializer_class = TeacherAssignmentSerializer
-    permission_classes = [permissions.IsAuthenticated, IsAuthorizedStaff]
+    permission_classes = [permissions.IsAuthenticated, IsAcademicReferenceAccessAllowed]
 
     def get_permissions(self):
         if self.request.method in ['POST', 'PUT', 'PATCH']:
             return [permissions.IsAuthenticated(), IsSchoolAdmin()]
-        return [permissions.IsAuthenticated(), IsAuthorizedStaff()]
+        return [permissions.IsAuthenticated(), IsAcademicReferenceAccessAllowed()]
 
     def perform_create(self, serializer):
         instance = serializer.save()

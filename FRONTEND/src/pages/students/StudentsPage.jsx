@@ -70,7 +70,8 @@ export function StudentsPage() {
   const [editSaving, setEditSaving] = useState(false)
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [pendingAction, setPendingAction] = useState(null)
-  const canManageStudents = ['SUPER_ADMIN', 'SCHOOL_ADMIN', 'REGISTRAR'].includes(user?.role_name)
+  const currentRole = (user?.role_name || user?.role || user?.profile?.role_name || 'NONE').toUpperCase()
+  const canManageStudents = ['SUPER_ADMIN', 'SCHOOL_ADMIN', 'REGISTRAR'].includes(currentRole)
 
   const canCreateStudent = canManageStudents
 

@@ -36,7 +36,9 @@ export function AppRoutes() {
       <Route element={<ProtectedRoute />}>
         <Route element={<AppLayout />}>
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
-          <Route path="/dashboard" element={<Dashboard />} />
+          <Route element={<RoleRoute allowedRoles={['SUPER_ADMIN', 'SCHOOL_ADMIN', 'TEACHER', 'GUIDANCE']} />}>
+            <Route path="/dashboard" element={<Dashboard />} />
+          </Route>
           <Route path="/students" element={<StudentsPage />} />
           <Route path="/students/:id" element={<StudentDetailPage />} />
           <Route path="/academics" element={<AcademicsPage />} />
@@ -60,7 +62,9 @@ export function AppRoutes() {
           <Route path="/interventions" element={<InterventionsPage />} />
           <Route path="/predictions" element={<PredictionsPage />} />
           <Route path="/profile" element={<ProfilePage />} />
-          <Route path="/settings" element={<SettingsPage />} />
+          <Route element={<RoleRoute allowedRoles={['SUPER_ADMIN', 'SCHOOL_ADMIN', 'TEACHER', 'GUIDANCE']} />}>
+            <Route path="/settings" element={<SettingsPage />} />
+          </Route>
           <Route element={<RoleRoute allowedRoles={['SUPER_ADMIN', 'SCHOOL_ADMIN']} />}>
             <Route path="/admin" element={<AuditLogsPage />} />
             <Route path="/users" element={<UsersPage />} />

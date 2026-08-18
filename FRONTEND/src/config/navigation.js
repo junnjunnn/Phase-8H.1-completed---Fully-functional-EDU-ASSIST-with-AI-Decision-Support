@@ -1,5 +1,4 @@
 export const navigationItems = [
-  { label: 'Dashboard', path: '/dashboard', roles: ['SUPER_ADMIN', 'SCHOOL_ADMIN', 'REGISTRAR', 'TEACHER', 'GUIDANCE'] },
   { label: 'Students', path: '/students', roles: ['SUPER_ADMIN', 'SCHOOL_ADMIN', 'REGISTRAR', 'TEACHER', 'GUIDANCE'] },
   { label: 'Academic Years', path: '/academic-years', roles: ['SUPER_ADMIN', 'SCHOOL_ADMIN'] },
   { label: 'Grade Levels', path: '/grade-levels', roles: ['SUPER_ADMIN', 'SCHOOL_ADMIN'] },

@@ -50,6 +50,19 @@ class IsAuthorizedStaff(BasePermission):
         return _get_role_name(request.user) in {'SUPER_ADMIN', 'SCHOOL_ADMIN', 'TEACHER', 'GUIDANCE'}
 
 
+class IsAcademicReferenceAccessAllowed(BasePermission):
+    """Permission for reading academic reference data (years, grades, strands, sections, subjects).
+    
+    Allows registrar to READ reference data for enrollment wizard, but not CREATE/UPDATE/DELETE.
+    """
+    def has_permission(self, request, view):
+        role = _get_role_name(request.user)
+        # All staff can read reference data
+        if role in {'SUPER_ADMIN', 'SCHOOL_ADMIN', 'TEACHER', 'GUIDANCE', 'REGISTRAR'}:
+            return True
+        return False
+
+
 class IsStudentAccessAllowed(BasePermission):
     def has_permission(self, request, view):
         return _get_role_name(request.user) in {'SUPER_ADMIN', 'SCHOOL_ADMIN', 'TEACHER', 'GUIDANCE', 'REGISTRAR'}
