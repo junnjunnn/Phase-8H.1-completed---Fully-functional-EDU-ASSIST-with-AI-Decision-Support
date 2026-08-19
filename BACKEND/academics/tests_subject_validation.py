@@ -379,6 +379,71 @@ class SubjectValidationTests(TestCase):
         self.assertIn('educational_level', data)
         self.assertEqual(data['educational_level'], 'Senior High School')
 
+    def test_grade_level_api_exposes_active_status(self):
+        """Grade-level API should expose active and archived status accurately."""
+        client = APIClient()
+        user = get_user_model().objects.create_user(username='grade_status_admin', password='AdminPass1!')
+        UserProfile.objects.create(user=user, role_name='SCHOOL_ADMIN')
+        client.force_authenticate(user=user)
+
+        self.grade_6.is_active = False
+        self.grade_6.save(update_fields=['is_active'])
+        response = client.get('/api/grade-levels/')
+
+        self.assertEqual(response.status_code, 200)
+        grade_data = {item['id']: item for item in response.data['results']}
+        self.assertTrue(grade_data[self.grade_1.id]['is_active'])
+        self.assertFalse(grade_data[self.grade_6.id]['is_active'])
+
+    def test_active_grade_accepts_new_subject(self):
+        """An active grade level remains usable for new subject creation."""
+        serializer = SubjectSerializer(data={
+            'code': 'ACTIVE_GRADE_SUBJECT',
+            'name': 'Active Grade Subject',
+            'category': 'Learning Area',
+            'grade_level': self.grade_1.id,
+            'is_active': True,
+        })
+
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+
+    def test_archived_grade_rejects_new_subject(self):
+        """An archived grade level cannot be used for a new subject."""
+        self.grade_6.is_active = False
+        self.grade_6.save(update_fields=['is_active'])
+        serializer = SubjectSerializer(data={
+            'code': 'ARCHIVED_GRADE_SUBJECT',
+            'name': 'Archived Grade Subject',
+            'category': 'Learning Area',
+            'grade_level': self.grade_6.id,
+            'is_active': True,
+        })
+
+        self.assertFalse(serializer.is_valid())
+        self.assertIn('grade_level', serializer.errors)
+
+    def test_existing_subject_with_archived_grade_remains_readable(self):
+        """Historical subjects keep their archived grade association when read."""
+        client = APIClient()
+        user = get_user_model().objects.create_user(username='subject_read_admin', password='AdminPass1!')
+        UserProfile.objects.create(user=user, role_name='SCHOOL_ADMIN')
+        client.force_authenticate(user=user)
+
+        self.grade_6.is_active = False
+        self.grade_6.save(update_fields=['is_active'])
+        subject = Subject.objects.create(
+            code='HISTORICAL_ARCHIVED_GRADE',
+            name='Historical Archived Grade Subject',
+            category='Learning Area',
+            grade_level=self.grade_6,
+        )
+
+        response = client.get(f'/api/subjects/{subject.id}/')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['grade_level'], self.grade_6.id)
+        self.assertEqual(response.data['grade_level_name'], self.grade_6.name)
+
     def test_subject_serializer_validates_elementary_strand_rejection(self):
         """Subject serializer should reject strand for Elementary."""
         data = {

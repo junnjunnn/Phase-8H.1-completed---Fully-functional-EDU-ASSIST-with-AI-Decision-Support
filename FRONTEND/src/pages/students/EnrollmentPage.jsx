@@ -129,7 +129,7 @@ export function EnrollmentPage() {
   )
 
   const filteredLevels = useMemo(
-    () => gradeLevels.filter((grade) => !selectedLevel || grade.school_level === selectedLevel),
+    () => gradeLevels.filter((grade) => grade.is_active !== false && (!selectedLevel || grade.school_level === selectedLevel)),
     [gradeLevels, selectedLevel],
   )
 
@@ -138,7 +138,7 @@ export function EnrollmentPage() {
   const sectionOptions = useMemo(() => {
     const query = sectionSearch.trim().toLowerCase()
     return sections.filter((section) => {
-      const matchesYear = String(section.academic_year) === String(selectedYearId)
+      const matchesYear = section.is_active !== false && String(section.academic_year) === String(selectedYearId)
       const matchesGrade = String(section.grade_level) === String(selectedGradeId)
       const matchesStrand = !requiresStrand || String(section.strand) === String(selectedStrandId)
       const matchesQuery = !query || `${section.name || ''} ${section.adviser_name || ''} ${section.description || ''}`.toLowerCase().includes(query)
@@ -508,7 +508,7 @@ export function EnrollmentPage() {
             {selectedGrade && requiresStrand ? (
               <div className="form-grid" style={{ marginTop: '1rem' }}>
                 {supportedStrands.map((name) => {
-                  const match = strands.find((strand) => strand.name === name)
+                  const match = strands.find((strand) => strand.name === name && strand.is_active !== false)
                   const strandValue = match ? String(match.id) : ''
                   const selected = String(selectedStrandId) === strandValue
                   return (

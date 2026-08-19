@@ -975,3 +975,746 @@ class SubjectValidationTests(TestCase):
     def tearDown(self):
         """Clean up inactive strand created in setUp."""
         self.inactive_strand.delete()
+
+
+class Sprint3Phase1ArchivedDataProtectionTests(TestCase):
+    """
+    Comprehensive tests for Sprint 3 Phase 1: System Integrity, Academic Year Validation,
+    and Archived Data Protection.
+
+    Tests cover:
+    1. Academic year date validation (start < end, start == end, start > end)
+    2. Archived academic year blocking enrollments and grade encoding
+    3. Archived grade level blocking sections, enrollments, and subjects
+    4. Archived section blocking enrollments
+    5. Archived strand blocking enrollments
+    6. Historical data preservation and queryability
+    """
+
+    def setUp(self):
+        """Set up test fixtures: users, academic years, grade levels, sections, strands, students."""
+        self.client = APIClient()
+        self.user_model = get_user_model()
+
+        # Create admin user
+        self.admin = self.user_model.objects.create_user(username='admin_sprint3', password='AdminPass1!')
+        UserProfile.objects.create(user=self.admin, role_name='SUPER_ADMIN')
+
+        # Create registrar user
+        self.registrar = self.user_model.objects.create_user(username='registrar_sprint3', password='RegistrarPass1!')
+        UserProfile.objects.create(user=self.registrar, role_name='REGISTRAR')
+
+        # Create teacher user
+        self.teacher = self.user_model.objects.create_user(username='teacher_sprint3', password='TeacherPass1!')
+        teacher_profile = UserProfile.objects.create(user=self.teacher, role_name='TEACHER')
+
+        # Get grade levels
+        self.grade_11 = GradeLevel.objects.get(code='G11')
+        self.grade_7 = GradeLevel.objects.get(code='G7')
+
+        # Get strand
+        self.stem_strand = Strand.objects.get(code='STEM')
+
+        # Create active academic year
+        self.active_year = AcademicYear.objects.create(
+            name='2025-2026',
+            start_date='2025-06-01',
+            end_date='2026-03-31',
+            is_active=True
+        )
+
+        # Create inactive (archived) academic year
+        self.archived_year = AcademicYear.objects.create(
+            name='2024-2025',
+            start_date='2024-06-01',
+            end_date='2025-03-31',
+            is_active=False
+        )
+
+        # Create section in active year
+        self.active_section = Section.objects.create(
+            name='A',
+            grade_level=self.grade_11,
+            academic_year=self.active_year,
+            is_active=True,
+            strand=self.stem_strand
+        )
+
+        # Create section in archived year
+        self.archived_section = Section.objects.create(
+            name='A',
+            grade_level=self.grade_11,
+            academic_year=self.archived_year,
+            is_active=True,
+            strand=self.stem_strand
+        )
+
+        # Assign teacher to active section
+        teacher_profile.assigned_sections.add(self.active_section)
+
+        # Create students
+        self.student_1 = Student.objects.create(
+            first_name='John',
+            last_name='Doe',
+            gender='Male',
+            student_status='active'
+        )
+
+        self.student_2 = Student.objects.create(
+            first_name='Jane',
+            last_name='Smith',
+            gender='Female',
+            student_status='active'
+        )
+
+        # Create subject in active year
+        self.active_subject = Subject.objects.create(
+            code='MATH11',
+            name='Mathematics 11',
+            category='Core',
+            grade_level=self.grade_11,
+            strand=self.stem_strand,
+            is_active=True
+        )
+
+        TeacherAssignment.objects.create(
+            teacher=self.teacher,
+            academic_year=self.active_year,
+            grade_level=self.grade_11,
+            section=self.active_section,
+            subject=self.active_subject,
+            is_active=True,
+        )
+
+        # Create enrollment in active year
+        self.active_enrollment = Enrollment.objects.create(
+            student=self.student_1,
+            academic_year=self.active_year,
+            grade_level=self.grade_11,
+            section=self.active_section,
+            strand=self.stem_strand,
+            enrollment_status='active'
+        )
+
+        # Create enrollment in archived year
+        self.archived_enrollment = Enrollment.objects.create(
+            student=self.student_2,
+            academic_year=self.archived_year,
+            grade_level=self.grade_11,
+            section=self.archived_section,
+            strand=self.stem_strand,
+            enrollment_status='active'
+        )
+
+        # Create academic record in active year
+        self.active_record = AcademicRecord.objects.create(
+            enrollment=self.active_enrollment,
+            subject=self.active_subject,
+            academic_year=self.active_year,
+            grading_period_type='Quarter',
+            quarter=1,
+            grade=85.00
+        )
+
+        # Create academic record in archived year
+        self.archived_record = AcademicRecord.objects.create(
+            enrollment=self.archived_enrollment,
+            subject=self.active_subject,
+            academic_year=self.archived_year,
+            grading_period_type='Quarter',
+            quarter=1,
+            grade=90.00
+        )
+
+    # ============ ACADEMIC YEAR DATE VALIDATION TESTS ============
+
+    def test_academic_year_with_start_before_end_is_valid(self):
+        """Academic year with start_date < end_date should be valid."""
+        self.client.force_authenticate(user=self.admin)
+        response = self.client.post('/api/academic-years/', {
+            'name': '2026-2027',
+            'start_date': '2026-06-01',
+            'end_date': '2027-03-31',
+            'is_active': False,
+        })
+        self.assertEqual(response.status_code, 201)
+
+    def test_academic_year_with_equal_dates_is_invalid_via_api(self):
+        """Academic year with start_date == end_date should be rejected by API."""
+        self.client.force_authenticate(user=self.admin)
+        response = self.client.post('/api/academic-years/', {
+            'name': '2026-2027',
+            'start_date': '2026-06-01',
+            'end_date': '2026-06-01',
+            'is_active': False,
+        })
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('end_date', response.data)
+
+    def test_academic_year_with_equal_dates_is_invalid_via_model(self):
+        """Academic year with start_date == end_date should be rejected by model."""
+        year = AcademicYear(
+            name='Invalid Year',
+            start_date='2026-06-01',
+            end_date='2026-06-01',
+            is_active=False
+        )
+        with self.assertRaises(ValidationError):
+            year.full_clean()
+
+    def test_academic_year_with_start_after_end_is_invalid_via_api(self):
+        """Academic year with start_date > end_date should be rejected by API."""
+        self.client.force_authenticate(user=self.admin)
+        response = self.client.post('/api/academic-years/', {
+            'name': '2026-2027',
+            'start_date': '2027-03-31',
+            'end_date': '2026-06-01',
+            'is_active': False,
+        })
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('end_date', response.data)
+
+    def test_academic_year_with_start_after_end_is_invalid_via_model(self):
+        """Academic year with start_date > end_date should be rejected by model."""
+        year = AcademicYear(
+            name='Invalid Year',
+            start_date='2027-03-31',
+            end_date='2026-06-01',
+            is_active=False
+        )
+        with self.assertRaises(ValidationError):
+            year.full_clean()
+
+    # ============ ARCHIVED ACADEMIC YEAR TESTS ============
+
+    def test_enrollment_in_active_year_is_valid(self):
+        """Creating enrollment in active academic year should succeed."""
+        self.client.force_authenticate(user=self.registrar)
+        response = self.client.post('/api/enrollments/', {
+            'student': self.student_2.id,
+            'academic_year': self.active_year.id,
+            'grade_level': self.grade_11.id,
+            'section': self.active_section.id,
+            'strand': self.stem_strand.id,
+            'enrollment_status': 'active',
+        })
+        self.assertEqual(response.status_code, 201)
+
+    def test_enrollment_in_archived_year_is_rejected_via_api(self):
+        """Creating enrollment in archived academic year should be rejected by API."""
+        self.client.force_authenticate(user=self.registrar)
+        new_student = Student.objects.create(
+            first_name='Alice',
+            last_name='Brown',
+            gender='Female',
+            student_status='active'
+        )
+        response = self.client.post('/api/enrollments/', {
+            'student': new_student.id,
+            'academic_year': self.archived_year.id,
+            'grade_level': self.grade_11.id,
+            'section': self.archived_section.id,
+            'strand': self.stem_strand.id,
+            'enrollment_status': 'active',
+        })
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('academic_year', response.data)
+
+    def test_enrollment_in_archived_year_is_rejected_via_model(self):
+        """Creating enrollment in archived academic year should be rejected by model."""
+        new_student = Student.objects.create(
+            first_name='Bob',
+            last_name='Green',
+            gender='Male',
+            student_status='active'
+        )
+        enrollment = Enrollment(
+            student=new_student,
+            academic_year=self.archived_year,
+            grade_level=self.grade_11,
+            section=self.archived_section,
+            strand=self.stem_strand
+        )
+        with self.assertRaises(ValidationError):
+            enrollment.full_clean()
+
+    def test_grade_encoding_in_active_year_is_valid(self):
+        """Encoding grades in active academic year should succeed."""
+        self.client.force_authenticate(user=self.admin)
+        response = self.client.post('/api/academic-records/', {
+            'enrollment': self.active_enrollment.id,
+            'subject': self.active_subject.id,
+            'academic_year': self.active_year.id,
+            'grading_period_type': 'Quarter',
+            'quarter': 2,
+            'grade': 88.00,
+        })
+        self.assertEqual(response.status_code, 201)
+
+    def test_grade_encoding_in_archived_year_is_rejected_via_api(self):
+        """Encoding grades in archived academic year should be rejected by API."""
+        self.client.force_authenticate(user=self.admin)
+        response = self.client.post('/api/academic-records/', {
+            'enrollment': self.archived_enrollment.id,
+            'subject': self.active_subject.id,
+            'academic_year': self.archived_year.id,
+            'grading_period_type': 'Quarter',
+            'quarter': 2,
+            'grade': 88.00,
+        })
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('academic_year', response.data)
+
+    def test_grade_encoding_in_archived_year_is_rejected_via_model(self):
+        """Encoding grades in archived academic year should be rejected by model."""
+        record = AcademicRecord(
+            enrollment=self.archived_enrollment,
+            subject=self.active_subject,
+            academic_year=self.archived_year,
+            grading_period_type='Quarter',
+            quarter=2,
+            grade=88.00
+        )
+        with self.assertRaises(ValidationError):
+            record.full_clean()
+
+    def test_archived_year_enrollments_still_queryable(self):
+        """Existing enrollments in archived year should still be queryable."""
+        self.client.force_authenticate(user=self.admin)
+        response = self.client.get('/api/enrollments/')
+        self.assertEqual(response.status_code, 200)
+        enrollment_ids = {item['id'] for item in response.data['results']}
+        self.assertIn(self.archived_enrollment.id, enrollment_ids)
+
+    def test_archived_year_academic_records_still_queryable(self):
+        """Existing academic records in archived year should still be queryable."""
+        self.client.force_authenticate(user=self.admin)
+        response = self.client.get('/api/academic-records/')
+        self.assertEqual(response.status_code, 200)
+        record_ids = {item['id'] for item in response.data['results']}
+        self.assertIn(self.archived_record.id, record_ids)
+
+    # ============ ARCHIVED GRADE LEVEL TESTS ============
+
+    def test_section_with_active_grade_level_is_valid(self):
+        """Creating section with active grade level should succeed."""
+        self.client.force_authenticate(user=self.admin)
+        response = self.client.post('/api/sections/', {
+            'academic_year': self.active_year.id,
+            'grade_level': self.grade_11.id,
+            'name': 'C',
+            'capacity': 40,
+            'is_active': True,
+            'strand': self.stem_strand.id,
+        })
+        self.assertEqual(response.status_code, 201)
+
+    def test_section_with_inactive_grade_level_is_rejected_via_api(self):
+        """Creating section with inactive grade level should be rejected by API."""
+        # Archive the grade level
+        self.grade_11.is_active = False
+        self.grade_11.save()
+
+        self.client.force_authenticate(user=self.admin)
+        response = self.client.post('/api/sections/', {
+            'academic_year': self.active_year.id,
+            'grade_level': self.grade_11.id,
+            'name': 'D',
+            'capacity': 40,
+            'is_active': True,
+            'strand': self.stem_strand.id,
+        })
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('grade_level', response.data)
+
+        # Restore the grade level for other tests
+        self.grade_11.is_active = True
+        self.grade_11.save()
+
+    def test_section_with_inactive_grade_level_is_rejected_via_model(self):
+        """Creating section with inactive grade level should be rejected by model."""
+        # Archive the grade level
+        self.grade_11.is_active = False
+        self.grade_11.save()
+
+        section = Section(
+            name='E',
+            grade_level=self.grade_11,
+            academic_year=self.active_year,
+            is_active=True,
+            strand=self.stem_strand
+        )
+        with self.assertRaises(ValidationError):
+            section.full_clean()
+
+        # Restore the grade level for other tests
+        self.grade_11.is_active = True
+        self.grade_11.save()
+
+    def test_enrollment_with_active_grade_level_is_valid(self):
+        """Creating enrollment with active grade level should succeed."""
+        self.client.force_authenticate(user=self.registrar)
+        new_student = Student.objects.create(
+            first_name='Carol',
+            last_name='White',
+            gender='Female',
+            student_status='active'
+        )
+        response = self.client.post('/api/enrollments/', {
+            'student': new_student.id,
+            'academic_year': self.active_year.id,
+            'grade_level': self.grade_11.id,
+            'section': self.active_section.id,
+            'strand': self.stem_strand.id,
+            'enrollment_status': 'active',
+        })
+        self.assertEqual(response.status_code, 201)
+
+    def test_enrollment_with_inactive_grade_level_is_rejected_via_api(self):
+        """Creating enrollment with inactive grade level should be rejected by API."""
+        # Archive the grade level
+        self.grade_11.is_active = False
+        self.grade_11.save()
+
+        self.client.force_authenticate(user=self.registrar)
+        new_student = Student.objects.create(
+            first_name='David',
+            last_name='Black',
+            gender='Male',
+            student_status='active'
+        )
+        response = self.client.post('/api/enrollments/', {
+            'student': new_student.id,
+            'academic_year': self.active_year.id,
+            'grade_level': self.grade_11.id,
+            'section': self.active_section.id,
+            'strand': self.stem_strand.id,
+            'enrollment_status': 'active',
+        })
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('grade_level', response.data)
+
+        # Restore the grade level for other tests
+        self.grade_11.is_active = True
+        self.grade_11.save()
+
+    def test_enrollment_with_inactive_grade_level_is_rejected_via_model(self):
+        """Creating enrollment with inactive grade level should be rejected by model."""
+        # Archive the grade level
+        self.grade_11.is_active = False
+        self.grade_11.save()
+
+        new_student = Student.objects.create(
+            first_name='Eva',
+            last_name='Gray',
+            gender='Female',
+            student_status='active'
+        )
+        enrollment = Enrollment(
+            student=new_student,
+            academic_year=self.active_year,
+            grade_level=self.grade_11,
+            section=self.active_section,
+            strand=self.stem_strand
+        )
+        with self.assertRaises(ValidationError):
+            enrollment.full_clean()
+
+        # Restore the grade level for other tests
+        self.grade_11.is_active = True
+        self.grade_11.save()
+
+    def test_subject_with_active_grade_level_is_valid(self):
+        """Creating subject with active grade level should succeed."""
+        self.client.force_authenticate(user=self.admin)
+        response = self.client.post('/api/subjects/', {
+            'code': 'PHY11',
+            'name': 'Physics 11',
+            'category': 'Core',
+            'grade_level': self.grade_11.id,
+            'strand': self.stem_strand.id,
+            'is_active': True,
+        })
+        self.assertEqual(response.status_code, 201)
+
+    def test_subject_with_inactive_grade_level_is_rejected_via_api(self):
+        """Creating subject with inactive grade level should be rejected by API."""
+        # Archive the grade level
+        self.grade_11.is_active = False
+        self.grade_11.save()
+
+        self.client.force_authenticate(user=self.admin)
+        response = self.client.post('/api/subjects/', {
+            'code': 'CHE11',
+            'name': 'Chemistry 11',
+            'category': 'Core',
+            'grade_level': self.grade_11.id,
+            'strand': self.stem_strand.id,
+            'is_active': True,
+        })
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('grade_level', response.data)
+
+        # Restore the grade level for other tests
+        self.grade_11.is_active = True
+        self.grade_11.save()
+
+    def test_subject_with_inactive_grade_level_is_rejected_via_model(self):
+        """Creating subject with inactive grade level should be rejected by model."""
+        # Archive the grade level
+        self.grade_11.is_active = False
+        self.grade_11.save()
+
+        subject = Subject(
+            code='BIO11',
+            name='Biology 11',
+            category='Core',
+            grade_level=self.grade_11,
+            strand=self.stem_strand
+        )
+        with self.assertRaises(ValidationError):
+            subject.full_clean()
+
+        # Restore the grade level for other tests
+        self.grade_11.is_active = True
+        self.grade_11.save()
+
+    # ============ ARCHIVED SECTION TESTS ============
+
+    def test_enrollment_with_active_section_is_valid(self):
+        """Creating enrollment with active section should succeed."""
+        self.client.force_authenticate(user=self.registrar)
+        new_student = Student.objects.create(
+            first_name='Frank',
+            last_name='Silver',
+            gender='Male',
+            student_status='active'
+        )
+        response = self.client.post('/api/enrollments/', {
+            'student': new_student.id,
+            'academic_year': self.active_year.id,
+            'grade_level': self.grade_11.id,
+            'section': self.active_section.id,
+            'strand': self.stem_strand.id,
+            'enrollment_status': 'active',
+        })
+        self.assertEqual(response.status_code, 201)
+
+    def test_enrollment_with_inactive_section_is_rejected_via_api(self):
+        """Creating enrollment with inactive section should be rejected by API."""
+        # Archive the section
+        self.active_section.is_active = False
+        self.active_section.save()
+
+        self.client.force_authenticate(user=self.registrar)
+        new_student = Student.objects.create(
+            first_name='Grace',
+            last_name='Gold',
+            gender='Female',
+            student_status='active'
+        )
+        response = self.client.post('/api/enrollments/', {
+            'student': new_student.id,
+            'academic_year': self.active_year.id,
+            'grade_level': self.grade_11.id,
+            'section': self.active_section.id,
+            'strand': self.stem_strand.id,
+            'enrollment_status': 'active',
+        })
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('section', response.data)
+
+        # Restore the section for other tests
+        self.active_section.is_active = True
+        self.active_section.save()
+
+    def test_enrollment_with_inactive_section_is_rejected_via_model(self):
+        """Creating enrollment with inactive section should be rejected by model."""
+        # Archive the section
+        self.active_section.is_active = False
+        self.active_section.save()
+
+        new_student = Student.objects.create(
+            first_name='Henry',
+            last_name='Copper',
+            gender='Male',
+            student_status='active'
+        )
+        enrollment = Enrollment(
+            student=new_student,
+            academic_year=self.active_year,
+            grade_level=self.grade_11,
+            section=self.active_section,
+            strand=self.stem_strand
+        )
+        with self.assertRaises(ValidationError):
+            enrollment.full_clean()
+
+        # Restore the section for other tests
+        self.active_section.is_active = True
+        self.active_section.save()
+
+    # ============ ARCHIVED STRAND TESTS ============
+
+    def test_enrollment_with_active_strand_is_valid(self):
+        """Creating enrollment with active strand should succeed."""
+        self.client.force_authenticate(user=self.registrar)
+        new_student = Student.objects.create(
+            first_name='Iris',
+            last_name='Bronze',
+            gender='Female',
+            student_status='active'
+        )
+        response = self.client.post('/api/enrollments/', {
+            'student': new_student.id,
+            'academic_year': self.active_year.id,
+            'grade_level': self.grade_11.id,
+            'section': self.active_section.id,
+            'strand': self.stem_strand.id,
+            'enrollment_status': 'active',
+        })
+        self.assertEqual(response.status_code, 201)
+
+    def test_enrollment_with_inactive_strand_is_rejected_via_api(self):
+        """Creating enrollment with inactive strand should be rejected by API."""
+        # Archive the strand
+        self.stem_strand.is_active = False
+        self.stem_strand.save()
+
+        self.client.force_authenticate(user=self.registrar)
+        new_student = Student.objects.create(
+            first_name='Jack',
+            last_name='Silver',
+            gender='Male',
+            student_status='active'
+        )
+        response = self.client.post('/api/enrollments/', {
+            'student': new_student.id,
+            'academic_year': self.active_year.id,
+            'grade_level': self.grade_11.id,
+            'section': self.active_section.id,
+            'strand': self.stem_strand.id,
+            'enrollment_status': 'active',
+        })
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('strand', response.data)
+
+        # Restore the strand for other tests
+        self.stem_strand.is_active = True
+        self.stem_strand.save()
+
+    def test_enrollment_with_inactive_strand_is_rejected_via_model(self):
+        """Creating enrollment with inactive strand should be rejected by model."""
+        # Archive the strand
+        self.stem_strand.is_active = False
+        self.stem_strand.save()
+
+        new_student = Student.objects.create(
+            first_name='Kelly',
+            last_name='Gold',
+            gender='Female',
+            student_status='active'
+        )
+        enrollment = Enrollment(
+            student=new_student,
+            academic_year=self.active_year,
+            grade_level=self.grade_11,
+            section=self.active_section,
+            strand=self.stem_strand
+        )
+        with self.assertRaises(ValidationError):
+            enrollment.full_clean()
+
+        # Restore the strand for other tests
+        self.stem_strand.is_active = True
+        self.stem_strand.save()
+
+    # ============ SECTION AND ARCHIVED ACADEMIC YEAR TESTS ============
+
+    def test_section_with_active_academic_year_is_valid(self):
+        """Creating section with active academic year should succeed."""
+        self.client.force_authenticate(user=self.admin)
+        response = self.client.post('/api/sections/', {
+            'academic_year': self.active_year.id,
+            'grade_level': self.grade_11.id,
+            'name': 'F',
+            'capacity': 40,
+            'is_active': True,
+            'strand': self.stem_strand.id,
+        })
+        self.assertEqual(response.status_code, 201)
+
+    def test_section_with_inactive_academic_year_is_rejected_via_api(self):
+        """Creating section with inactive academic year should be rejected by API."""
+        self.client.force_authenticate(user=self.admin)
+        response = self.client.post('/api/sections/', {
+            'academic_year': self.archived_year.id,
+            'grade_level': self.grade_11.id,
+            'name': 'B',
+            'capacity': 40,
+            'is_active': True,
+            'strand': self.stem_strand.id,
+        })
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('academic_year', response.data)
+
+    def test_section_with_inactive_academic_year_is_rejected_via_model(self):
+        """Creating section with inactive academic year should be rejected by model."""
+        section = Section(
+            name='G',
+            grade_level=self.grade_11,
+            academic_year=self.archived_year,
+            is_active=True,
+            strand=self.stem_strand
+        )
+        with self.assertRaises(ValidationError):
+            section.full_clean()
+
+    # ============ REGRESSION TESTS (Sprint 1 & 2 Functionality) ============
+
+    def test_sprint2_section_strand_validation_still_works(self):
+        """Section-strand validation from Sprint 2 should still work."""
+        self.client.force_authenticate(user=self.admin)
+
+        # SHS section requires strand
+        response = self.client.post('/api/sections/', {
+            'academic_year': self.active_year.id,
+            'grade_level': self.grade_11.id,
+            'name': 'H',
+            'capacity': 40,
+            'is_active': True,
+        })
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('strand', response.data)
+
+    def test_sprint1_registrar_enrollment_permission_still_works(self):
+        """Registrar permission from Sprint 1 should still work."""
+        self.client.force_authenticate(user=self.registrar)
+        new_student = Student.objects.create(
+            first_name='Linda',
+            last_name='Orange',
+            gender='Female',
+            student_status='active'
+        )
+        response = self.client.post('/api/enrollments/', {
+            'student': new_student.id,
+            'academic_year': self.active_year.id,
+            'grade_level': self.grade_11.id,
+            'section': self.active_section.id,
+            'strand': self.stem_strand.id,
+            'enrollment_status': 'active',
+        })
+        self.assertEqual(response.status_code, 201)
+
+    def test_sprint1_teacher_cannot_modify_sections(self):
+        """Teacher permission from Sprint 1 should still work."""
+        self.client.force_authenticate(user=self.teacher)
+        response = self.client.post('/api/sections/', {
+            'academic_year': self.active_year.id,
+            'grade_level': self.grade_11.id,
+            'name': 'I',
+            'capacity': 40,
+            'is_active': True,
+            'strand': self.stem_strand.id,
+        })
+        self.assertEqual(response.status_code, 403)

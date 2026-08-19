@@ -19,8 +19,11 @@ class AcademicYear(models.Model):
 
     def clean(self):
         from django.core.exceptions import ValidationError
-        if self.start_date and self.end_date and self.start_date > self.end_date:
-            raise ValidationError({'end_date': 'End date cannot be earlier than start date.'})
+        if self.start_date and self.end_date:
+            if self.start_date == self.end_date:
+                raise ValidationError({'end_date': 'End date must be different from start date.'})
+            if self.start_date > self.end_date:
+                raise ValidationError({'end_date': 'End date cannot be earlier than start date.'})
         if self.is_active:
             active_years = AcademicYear.objects.filter(is_active=True).exclude(pk=self.pk)
             if active_years.exists():
@@ -69,6 +72,13 @@ class Section(models.Model):
 
     def clean(self):
         from django.core.exceptions import ValidationError
+
+        # Validate that grade level and academic year are active (not archived)
+        if self.grade_level and not self.grade_level.is_active:
+            raise ValidationError({'grade_level': 'Cannot create section with an archived grade level.'})
+
+        if self.academic_year and not self.academic_year.is_active:
+            raise ValidationError({'academic_year': 'Cannot create section in an archived academic year.'})
 
         # Validate strand/grade level compatibility
         if not self.grade_level:
@@ -140,6 +150,10 @@ class Subject(models.Model):
     def clean(self):
         from django.core.exceptions import ValidationError
 
+        # Validate that grade level is active (not archived)
+        if self.grade_level and not self.grade_level.is_active:
+            raise ValidationError({'grade_level': 'Cannot create subject with an archived grade level.'})
+
         if not self.grade_level:
             return
 
@@ -204,7 +218,7 @@ class Enrollment(models.Model):
     section = models.ForeignKey(Section, on_delete=models.CASCADE, related_name='enrollments', null=True, blank=True)
     strand = models.ForeignKey(Strand, on_delete=models.SET_NULL, related_name='enrollments', null=True, blank=True)
     enrollment_status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='active')
-    enrollment_date = models.DateField(default=timezone.now)
+    enrollment_date = models.DateField(default=timezone.localdate)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -218,6 +232,22 @@ class Enrollment(models.Model):
 
     def clean(self):
         from django.core.exceptions import ValidationError
+
+        # Validate that academic year and grade level are active (not archived)
+        if self.academic_year and not self.academic_year.is_active:
+            raise ValidationError({'academic_year': 'Cannot create enrollment in an archived academic year.'})
+
+        if self.grade_level and not self.grade_level.is_active:
+            raise ValidationError({'grade_level': 'Cannot enroll student in an archived grade level.'})
+
+        # Validate that section and strand are active
+        if self.section and not self.section.is_active:
+            raise ValidationError({'section': 'Cannot enroll student in an archived section.'})
+
+        if self.strand and not self.strand.is_active:
+            raise ValidationError({'strand': 'Cannot use an archived strand for enrollment.'})
+
+        # Existing validations
         if self.section and self.section.grade_level_id != self.grade_level_id:
             raise ValidationError({'section': 'The selected section does not belong to the selected grade level.'})
 
@@ -256,6 +286,11 @@ class AcademicRecord(models.Model):
 
     def clean(self):
         from django.core.exceptions import ValidationError
+
+        # Validate that academic year is active (not archived)
+        if self.academic_year and not self.academic_year.is_active:
+            raise ValidationError({'academic_year': 'Cannot encode grades for an archived academic year.'})
+
         if self.grading_period_type == 'Quarter':
             if not self.quarter:
                 raise ValidationError({'quarter': 'Quarter is required when using quarter-based grading.'})

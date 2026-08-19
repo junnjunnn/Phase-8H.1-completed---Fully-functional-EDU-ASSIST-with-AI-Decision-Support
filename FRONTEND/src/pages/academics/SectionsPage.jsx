@@ -156,7 +156,7 @@ export function SectionsPage() {
             <span>Academic year</span>
             <select value={form.academic_year} onChange={(event) => setForm({ ...form, academic_year: event.target.value })} required>
               <option value="">Select year</option>
-              {academicYears.map((year) => (
+              {academicYears.filter((year) => year.is_active !== false).map((year) => (
                 <option key={year.id} value={year.id}>{year.name}</option>
               ))}
             </select>
@@ -165,7 +165,7 @@ export function SectionsPage() {
             <span>Grade level</span>
             <select value={form.grade_level} onChange={(event) => setForm({ ...form, grade_level: event.target.value })} required>
               <option value="">Select grade level</option>
-              {gradeLevels.map((grade) => (
+              {gradeLevels.filter((grade) => grade.is_active !== false).map((grade) => (
                 <option key={grade.id} value={grade.id}>{grade.name}</option>
               ))}
             </select>

@@ -63,6 +63,11 @@ export function SubjectsPage() {
   const selectedGrade = gradeLevels.find(g => String(g.id) === String(form.grade_level))
   const selectedEducationLevel = selectedGrade?.school_level
 
+  // Keep an archived grade visible while editing a historical subject, but never offer it for new subjects.
+  const selectableGradeLevels = form.id
+    ? gradeLevels
+    : gradeLevels.filter((grade) => grade.is_active !== false)
+
   // Get available strands for SHS
   const availableStrands = strands.filter(s => s.is_active)
 
@@ -181,7 +186,7 @@ export function SubjectsPage() {
             <span>Grade level</span>
             <select value={form.grade_level} onChange={(event) => setForm({ ...form, grade_level: event.target.value, category: 'Learning Area', strand: '' })} required>
               <option value="">Select grade level</option>
-              {gradeLevels.map((grade) => (
+              {selectableGradeLevels.map((grade) => (
                 <option key={grade.id} value={grade.id}>{grade.name}</option>
               ))}
             </select>

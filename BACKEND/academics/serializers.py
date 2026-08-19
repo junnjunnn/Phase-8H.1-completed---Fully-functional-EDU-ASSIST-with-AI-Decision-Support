@@ -18,7 +18,16 @@ class AcademicYearSerializer(serializers.ModelSerializer):
         return normalized_value
 
     def validate(self, attrs):
+        start_date = attrs.get('start_date', getattr(self.instance, 'start_date', None))
+        end_date = attrs.get('end_date', getattr(self.instance, 'end_date', None))
         is_active = attrs.get('is_active', getattr(self.instance, 'is_active', False))
+
+        if start_date and end_date:
+            if start_date == end_date:
+                raise serializers.ValidationError({'end_date': 'End date must be different from start date.'})
+            if start_date > end_date:
+                raise serializers.ValidationError({'end_date': 'End date cannot be earlier than start date.'})
+
         if is_active:
             queryset = AcademicYear.objects.filter(is_active=True)
             if self.instance:
@@ -123,6 +132,13 @@ class SectionSerializer(serializers.ModelSerializer):
         capacity = attrs.get('capacity', getattr(self.instance, 'capacity', 0))
         strand = attrs.get('strand') or getattr(self.instance, 'strand', None)
 
+        # Validate that grade level and academic year are active (not archived)
+        if grade_level and not grade_level.is_active:
+            raise serializers.ValidationError({'grade_level': 'Cannot create section with an archived grade level.'})
+
+        if academic_year and not academic_year.is_active:
+            raise serializers.ValidationError({'academic_year': 'Cannot create section in an archived academic year.'})
+
         if grade_level and academic_year and name:
             queryset = Section.objects.filter(grade_level=grade_level, academic_year=academic_year, name=name)
             if self.instance:
@@ -209,6 +225,10 @@ class SubjectSerializer(serializers.ModelSerializer):
         grade_level = attrs.get('grade_level') or getattr(self.instance, 'grade_level', None)
         strand = attrs.get('strand') or getattr(self.instance, 'strand', None)
         category = attrs.get('category') or getattr(self.instance, 'category', None)
+
+        # Validate that grade level is active (not archived)
+        if grade_level and not grade_level.is_active:
+            raise serializers.ValidationError({'grade_level': 'Cannot create subject with an archived grade level.'})
 
         if not grade_level:
             return attrs
@@ -336,6 +356,20 @@ class EnrollmentSerializer(serializers.ModelSerializer):
         section = attrs.get('section') or getattr(self.instance, 'section', None)
         strand = attrs.get('strand') or getattr(self.instance, 'strand', None)
 
+        # Validate that academic year and grade level are active (not archived)
+        if academic_year and not academic_year.is_active:
+            raise serializers.ValidationError({'academic_year': 'Cannot create enrollment in an archived academic year.'})
+
+        if grade_level and not grade_level.is_active:
+            raise serializers.ValidationError({'grade_level': 'Cannot enroll student in an archived grade level.'})
+
+        # Validate that section and strand are active
+        if section and not section.is_active:
+            raise serializers.ValidationError({'section': 'Cannot enroll student in an archived section.'})
+
+        if strand and not strand.is_active:
+            raise serializers.ValidationError({'strand': 'Cannot use an archived strand for enrollment.'})
+
         if student and academic_year:
             queryset = Enrollment.objects.filter(student=student, academic_year=academic_year)
             if self.instance:
@@ -422,6 +456,10 @@ class AcademicRecordSerializer(serializers.ModelSerializer):
         grading_period_type = attrs.get('grading_period_type') or getattr(self.instance, 'grading_period_type', None)
         quarter = attrs.get('quarter') if 'quarter' in attrs else getattr(self.instance, 'quarter', None)
         semester = attrs.get('semester') if 'semester' in attrs else getattr(self.instance, 'semester', None)
+
+        # Validate that academic year is active (not archived)
+        if academic_year and not academic_year.is_active:
+            raise serializers.ValidationError({'academic_year': 'Cannot encode grades for an archived academic year.'})
 
         if enrollment and subject and academic_year and grading_period_type:
             queryset = AcademicRecord.objects.filter(
