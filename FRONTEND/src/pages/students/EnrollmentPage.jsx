@@ -345,7 +345,7 @@ export function EnrollmentPage() {
 
       {error ? <ErrorBanner message={error} /> : null}
 
-      <div className="panel-card record-panel">
+      <div className="panel-card record-panel enrollment-wizard-panel">
         <div className="section-header" style={{ marginBottom: '1.25rem' }}>
           <div>
             <p className="eyebrow">Enrollment process</p>

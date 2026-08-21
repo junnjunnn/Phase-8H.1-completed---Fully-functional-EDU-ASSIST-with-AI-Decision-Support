@@ -154,34 +154,37 @@ export function ProfilePage() {
               <div>
                 <p className="eyebrow">Account overview</p>
                 <h2>{profile?.first_name && profile?.last_name ? `${profile.first_name} ${profile.last_name}` : profile?.username || 'User'}</h2>
-                <p className="section-description">{profile?.email || 'No email provided'}</p>
+                <p className="profile-role">{getRoleLabel(user?.role)}{profile?.department ? ` · ${profile.department}` : ''}</p>
+                <span className={`status-pill ${profile?.is_active ? 'status-pill--active' : 'status-pill--inactive'}`}>
+                  {profile?.is_active ? 'Active account' : 'Inactive account'}
+                </span>
               </div>
             </div>
-            <div className="profile-details-grid">
-              <div className="detail-card subtle-card">
-                <p className="stat-label">Username</p>
-                <p className="stat-value">{profile?.username || '—'}</p>
-              </div>
-              <div className="detail-card subtle-card">
-                <p className="stat-label">Role</p>
-                <p className="stat-value">{getRoleLabel(user?.role)}</p>
-              </div>
-              <div className="detail-card subtle-card">
-                <p className="stat-label">Account status</p>
-                <p className="stat-value">{profile?.is_active ? 'Active' : 'Inactive'}</p>
-              </div>
-              <div className="detail-card subtle-card">
-                <p className="stat-label">Joined</p>
-                <p className="stat-value">{profile?.date_joined ? new Date(profile.date_joined).toLocaleDateString() : '—'}</p>
-              </div>
+            <div className="profile-contact-list">
+              <div><span>Email</span><strong>{profile?.email || 'Not provided'}</strong></div>
+              <div><span>Phone</span><strong>{profile?.phone_number || 'Not provided'}</strong></div>
+              <div><span>Username</span><strong>{profile?.username || '—'}</strong></div>
+              <div><span>Joined</span><strong>{profile?.date_joined ? new Date(profile.date_joined).toLocaleDateString() : '—'}</strong></div>
             </div>
           </section>
 
-          <section className="panel-card" aria-label="Edit profile">
+          <section className="panel-card profile-about-card" aria-label="About me">
+            <div>
+              <p className="eyebrow">About me</p>
+              <h3>About your account</h3>
+              <p className="section-description">Your EDU ASSIST account is configured for {getRoleLabel(user?.role).toLowerCase()} access. A biography field is not currently supported.</p>
+            </div>
+            <button className="action-button action-button--outline" type="button" onClick={() => document.querySelector('.profile-details-card input')?.focus()}>
+              Edit information
+            </button>
+          </section>
+
+          <section className="panel-card profile-details-card" aria-label="Personal information">
             <div className="section-header">
               <div>
-                <p className="eyebrow">Profile details</p>
-                <h3>Update your information</h3>
+                <p className="eyebrow">Personal information</p>
+                <h3>Update your account details</h3>
+                <p className="section-description">Keep the information used to identify and contact you up to date.</p>
               </div>
             </div>
             <form className="profile-form" onSubmit={handleSave}>
@@ -227,11 +230,21 @@ export function ProfilePage() {
             </form>
           </section>
 
-          <section className="panel-card" aria-label="Change password" ref={passwordSectionRef}>
+          <section className="panel-card profile-photo-card" aria-label="Profile photo">
+            <div>
+              <p className="eyebrow">Profile photo</p>
+              <h3>Profile photo</h3>
+              <p className="section-description">Profile photo uploads are not currently supported. Your initials are used as the account avatar.</p>
+            </div>
+            <div className="profile-photo-placeholder" aria-hidden="true">{initials}</div>
+          </section>
+
+          <section className="panel-card profile-security-card" aria-label="Change password" ref={passwordSectionRef}>
             <div className="section-header">
               <div>
                 <p className="eyebrow">Security</p>
                 <h3>Change password</h3>
+                <p className="section-description">Use a strong password to protect your account.</p>
               </div>
             </div>
             <form className="profile-form" onSubmit={handlePasswordChange}>

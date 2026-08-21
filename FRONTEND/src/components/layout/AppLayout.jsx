@@ -8,12 +8,15 @@ import { SearchDrawer } from './SearchDrawer'
 const sectionMap = {
   dashboard: 'Dashboard',
   students: 'Students',
+  'my-classes': 'My Classes',
   academics: 'Academics',
   'academic-structure': 'Academic Structure',
   'academic-years': 'Academic Years',
   'grade-levels': 'Grade Levels',
   sections: 'Sections',
   subjects: 'Subjects',
+  'teacher-assignments': 'Teacher Assignments',
+  enrollment: 'Enrollment',
   attendance: 'Attendance',
   behavior: 'Behavior',
   interventions: 'Interventions',
@@ -22,6 +25,7 @@ const sectionMap = {
   users: 'User Management',
   admin: 'Administrator Tools',
   profile: 'My Profile',
+  settings: 'Settings',
 }
 
 export function AppLayout() {

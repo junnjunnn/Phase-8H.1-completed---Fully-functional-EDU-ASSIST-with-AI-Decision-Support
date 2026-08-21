@@ -70,6 +70,8 @@ export function ReportsPage() {
     teacher: '',
     risk_level: '',
     status: '',
+    date_from: '',
+    date_to: '',
     search: '',
   })
 
@@ -80,6 +82,9 @@ export function ReportsPage() {
     }
     return categories
   }, [user])
+
+  const currentRole = (user?.role_name || user?.role || user?.profile?.role_name || 'NONE').toUpperCase()
+  const isTeacher = currentRole === 'TEACHER'
 
   useEffect(() => {
     const role = user?.role_name || user?.role || user?.profile?.role_name || 'NONE'
@@ -134,7 +139,7 @@ export function ReportsPage() {
   }
 
   function clearFilters() {
-    setFilters({ academic_year: '', grade_level: '', section: '', subject: '', teacher: '', risk_level: '', status: '', search: '' })
+    setFilters({ academic_year: '', grade_level: '', section: '', subject: '', teacher: '', risk_level: '', status: '', date_from: '', date_to: '', search: '' })
   }
 
   const handleExport = async (format) => {
@@ -232,11 +237,11 @@ export function ReportsPage() {
           Subject
           {teacherContext ? <select name="subject" value={filters.subject || ''} onChange={handleChange}><option value="">All assigned subjects</option>{[...new Map((teacherContext.subject_assignments || []).map((item) => [item.subject, item.subject_name])).entries()].map(([id, name]) => <option key={id} value={id}>{name}</option>)}</select> : <input name="subject" value={filters.subject || ''} onChange={handleChange} placeholder="Subject ID" />}
         </label>
-        <label>
+        {!isTeacher ? <label>
           Teacher
           <input name="teacher" value={filters.teacher} onChange={handleChange} placeholder="Teacher ID" />
-        </label>
-        <label>
+        </label> : null}
+        {activeCategory === 'ai' ? <label>
           Risk Level
           <select name="risk_level" value={filters.risk_level} onChange={handleChange}>
             <option value="">All</option>
@@ -244,8 +249,8 @@ export function ReportsPage() {
             <option value="Moderate">Moderate</option>
             <option value="High">High</option>
           </select>
-        </label>
-        <label>
+        </label> : null}
+        {activeCategory === 'intervention' ? <label>
           Status
           <select name="status" value={filters.status} onChange={handleChange}>
             <option value="">All</option>
@@ -254,14 +259,14 @@ export function ReportsPage() {
             <option value="completed">Completed</option>
             <option value="cancelled">Cancelled</option>
           </select>
-        </label>
+        </label> : null}
         <label>
           Date From
-          <input type="date" name="date_from" value={filters.date_from || ''} onChange={handleChange} />
+          <input type="date" name="date_from" value={filters.date_from} onChange={handleChange} />
         </label>
         <label>
           Date To
-          <input type="date" name="date_to" value={filters.date_to || ''} onChange={handleChange} />
+          <input type="date" name="date_to" value={filters.date_to} onChange={handleChange} />
         </label>
         <div className="filter-actions form-grid-full">
           <button type="button" className="action-button" onClick={() => setFiltersOpen(false)}>Apply filters</button>

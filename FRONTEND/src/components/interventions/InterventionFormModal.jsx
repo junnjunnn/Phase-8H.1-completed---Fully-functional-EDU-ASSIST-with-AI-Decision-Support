@@ -230,10 +230,12 @@ export function InterventionFormModal({
           </ul>
         </div>
 
-        <form className="form-grid intervention-form-grid" onSubmit={handleSubmit}>
+        <form className="intervention-form" onSubmit={handleSubmit}>
+          <fieldset className="intervention-form-section">
+            <legend>Student and concern</legend>
           {!enrollmentId ? (
             <label>
-              <span>Student</span>
+              <span>Student <strong aria-hidden="true">*</strong></span>
               <select value={form.enrollment} onChange={(event) => setForm({ ...form, enrollment: event.target.value })} required>
                 <option value="">Select student</option>
                 {loadingEnrollments ? <option value="">Loading active students...</option> : null}
@@ -246,10 +248,13 @@ export function InterventionFormModal({
             </label>
           ) : null}
           <label>
-            <span>Intervention title</span>
+            <span>Concern or reason <strong aria-hidden="true">*</strong></span>
             <input value={form.title} onChange={(event) => setForm({ ...form, title: event.target.value })} required />
           </label>
+          </fieldset>
 
+          <fieldset className="intervention-form-section">
+            <legend>Plan and assignment</legend>
           <label>
             <span>Intervention type</span>
             <select value={form.intervention_type} onChange={(event) => setForm({ ...form, intervention_type: event.target.value })}>
@@ -274,7 +279,14 @@ export function InterventionFormModal({
               ))}
             </select>
           </label>
+          <label className="form-grid-full">
+            <span>Plan or action</span>
+            <textarea rows="3" value={form.recommendation} onChange={(event) => setForm({ ...form, recommendation: event.target.value })} />
+          </label>
+          </fieldset>
 
+          <fieldset className="intervention-form-section intervention-form-section--compact">
+            <legend>Schedule and outcome</legend>
           <label>
             <span>Priority</span>
             <select value={form.priority} onChange={(event) => setForm({ ...form, priority: event.target.value })}>
@@ -300,14 +312,10 @@ export function InterventionFormModal({
           </label>
 
           <label className="form-grid-full">
-            <span>Recommendation</span>
-            <textarea rows="3" value={form.recommendation} onChange={(event) => setForm({ ...form, recommendation: event.target.value })} />
-          </label>
-
-          <label className="form-grid-full">
-            <span>Notes</span>
+            <span>Remarks</span>
             <textarea rows="3" value={form.notes} onChange={(event) => setForm({ ...form, notes: event.target.value })} />
           </label>
+          </fieldset>
 
           <div className="form-grid-full">
             <div className="detail-card">
@@ -323,9 +331,9 @@ export function InterventionFormModal({
             </div>
           </div>
 
-          {error ? <div className="status-banner status-banner--warning form-grid-full">{error}</div> : null}
+          {error ? <div className="status-banner status-banner--warning">{error}</div> : null}
 
-          <div className="grade-encoding-actions form-grid-full">
+          <div className="grade-encoding-actions">
             <button type="submit" className="action-button" disabled={saving}>
               {saving ? 'Saving...' : currentValue?.id ? 'Update intervention' : 'Create intervention'}
             </button>
