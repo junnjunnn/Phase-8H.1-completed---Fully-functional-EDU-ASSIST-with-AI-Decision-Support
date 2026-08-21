@@ -35,6 +35,7 @@ class SubjectAdmin(admin.ModelAdmin):
     list_display = ('code', 'name', 'category', 'grade_level', 'strand', 'is_active')
     list_filter = ('category', 'grade_level', 'is_active')
     search_fields = ('code', 'name')
+    readonly_fields = ('code',)
 
 
 @admin.register(Enrollment)

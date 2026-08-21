@@ -2,6 +2,8 @@ from django.db import models
 from django.core.validators import MinValueValidator, MaxValueValidator
 from django.contrib.auth import get_user_model
 from django.utils import timezone
+from django.db import IntegrityError
+import uuid
 from students.models import Student
 
 
@@ -133,6 +135,7 @@ class Subject(models.Model):
     description = models.TextField(blank=True, default='')
     category = models.CharField(max_length=30, choices=CATEGORY_CHOICES)
     grade_level = models.ForeignKey(GradeLevel, on_delete=models.CASCADE, related_name='subjects', null=True, blank=True)
+    grade_levels = models.ManyToManyField(GradeLevel, related_name='applicable_subjects', blank=True)
     strand = models.ForeignKey(Strand, on_delete=models.SET_NULL, related_name='subjects', null=True, blank=True)
     is_active = models.BooleanField(default=True)
 
@@ -143,9 +146,10 @@ class Subject(models.Model):
     @property
     def educational_level(self):
         """Derive educational level from grade_level."""
-        if not self.grade_level:
+        grade = self.grade_level or self.grade_levels.order_by('order', 'name').first()
+        if not grade:
             return None
-        return self.grade_level.school_level
+        return grade.school_level
 
     def clean(self):
         from django.core.exceptions import ValidationError
@@ -183,6 +187,18 @@ class Subject(models.Model):
 
     def __str__(self):
         return f"{self.code} - {self.name}"
+
+    def save(self, *args, **kwargs):
+        if self.code and self.code.strip():
+            return super().save(*args, **kwargs)
+
+        for _ in range(5):
+            self.code = f'SUBJ-{uuid.uuid4().hex[:12].upper()}'
+            try:
+                return super().save(*args, **kwargs)
+            except IntegrityError:
+                self.code = ''
+        raise IntegrityError('Could not generate a unique subject identifier.')
 
 
 class TeacherAssignment(models.Model):

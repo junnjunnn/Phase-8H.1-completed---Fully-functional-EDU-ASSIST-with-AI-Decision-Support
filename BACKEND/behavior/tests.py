@@ -1,4 +1,5 @@
 from django.contrib.auth import get_user_model
+from django.core.management import call_command
 from django.core.exceptions import ValidationError
 from django.test import TestCase
 from rest_framework.test import APIClient
@@ -35,7 +36,7 @@ class BehavioralAssessmentAPITests(TestCase):
 
         self.core_value = CoreValue.objects.create(name='Responsibility')
         self.behavior_indicator = BehaviorIndicator.objects.create(name='Attendance', core_value=self.core_value)
-        self.rating = BehavioralRating.objects.create(code='EX', label='Excellent', numeric_value=5.0)
+        self.rating = BehavioralRating.objects.create(code='AO', label='Always Observed')
 
         self.assessment_a = BehavioralAssessment.objects.create(
             enrollment=self.enrollment_a,
@@ -140,3 +141,110 @@ class BehavioralAssessmentAPITests(TestCase):
         self.assertEqual(response.status_code, 201)
         assessment = BehavioralAssessment.objects.get(pk=response.data['id'])
         self.assertEqual(assessment.assessed_by, self.teacher)
+
+    def test_teacher_cannot_create_behavior_for_unrelated_section(self):
+        self.client.force_authenticate(user=self.teacher)
+        response = self.client.post('/api/behavioral-assessments/', {
+            'enrollment': self.enrollment_b.id,
+            'academic_year': self.academic_year.id,
+            'grading_period_type': 'Quarter',
+            'quarter': 2,
+            'core_value': self.core_value.id,
+            'behavior_indicator': self.behavior_indicator.id,
+            'rating': self.rating.id,
+        }, format='json')
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('permission', str(response.data).lower())
+
+    def test_adviser_can_assess_students_in_advisory_section(self):
+        adviser = self.user_model.objects.create_user(username='adviser_behavior', password='AdviserPass1!')
+        UserProfile.objects.create(user=adviser, role_name='TEACHER')
+        section = self.enrollment_a.section
+        section.adviser = adviser
+        section.save(update_fields=['adviser'])
+        self.client.force_authenticate(user=adviser)
+        response = self.client.post('/api/behavioral-assessments/', {
+            'enrollment': self.enrollment_a.id,
+            'academic_year': self.academic_year.id,
+            'grading_period_type': 'Quarter',
+            'quarter': 2,
+            'core_value': self.core_value.id,
+            'behavior_indicator': self.behavior_indicator.id,
+            'rating': self.rating.id,
+        }, format='json')
+        self.assertEqual(response.status_code, 201)
+
+    def test_bulk_behavior_save_is_atomic_and_updates_existing_record(self):
+        self.client.force_authenticate(user=self.teacher)
+        payload = [
+            {
+                'enrollment': self.enrollment_a.id,
+                'academic_year': self.academic_year.id,
+                'grading_period_type': 'Quarter',
+                'quarter': 2,
+                'core_value': self.core_value.id,
+                'behavior_indicator': self.behavior_indicator.id,
+                'rating': self.rating.id,
+            },
+            {
+                'enrollment': self.enrollment_b.id,
+                'academic_year': self.academic_year.id,
+                'grading_period_type': 'Quarter',
+                'quarter': 2,
+                'core_value': self.core_value.id,
+                'behavior_indicator': self.behavior_indicator.id,
+                'rating': self.rating.id,
+            },
+        ]
+        response = self.client.post('/api/behavioral-assessments/bulk/', payload, format='json')
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(BehavioralAssessment.objects.filter(enrollment=self.enrollment_a, quarter=2).exists())
+
+        response = self.client.post('/api/behavioral-assessments/bulk/', [payload[0]], format='json')
+        self.assertEqual(response.status_code, 201)
+        created = BehavioralAssessment.objects.get(enrollment=self.enrollment_a, quarter=2)
+        response = self.client.post('/api/behavioral-assessments/bulk/', [{**payload[0], 'rating': self.rating.id}], format='json')
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(BehavioralAssessment.objects.filter(enrollment=self.enrollment_a, quarter=2).count(), 1)
+        self.assertEqual(response.data['results'][0]['id'], created.id)
+
+    def test_bulk_update_cannot_use_an_unrelated_assessment_id(self):
+        self.client.force_authenticate(user=self.teacher)
+        response = self.client.post('/api/behavioral-assessments/bulk/', [{
+            'id': self.assessment_b.id,
+            'enrollment': self.enrollment_a.id,
+            'academic_year': self.academic_year.id,
+            'grading_period_type': 'Quarter',
+            'quarter': 1,
+            'core_value': self.core_value.id,
+            'behavior_indicator': self.behavior_indicator.id,
+            'rating': self.rating.id,
+        }], format='json')
+        self.assertEqual(response.status_code, 400)
+        self.assessment_b.refresh_from_db()
+        self.assertEqual(self.assessment_b.enrollment_id, self.enrollment_b.id)
+
+    def test_invalid_source_rating_is_rejected(self):
+        invalid_rating = BehavioralRating.objects.create(code='EX', label='Excellent')
+        self.client.force_authenticate(user=self.teacher)
+        response = self.client.post('/api/behavioral-assessments/', {
+            'enrollment': self.enrollment_a.id,
+            'academic_year': self.academic_year.id,
+            'grading_period_type': 'Quarter',
+            'quarter': 2,
+            'core_value': self.core_value.id,
+            'behavior_indicator': self.behavior_indicator.id,
+            'rating': invalid_rating.id,
+        }, format='json')
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('valid DepEd', str(response.data))
+
+    def test_source_behavior_reference_structure_is_returned(self):
+        call_command('sync_deped_behavior')
+        self.client.force_authenticate(user=self.teacher)
+        values = self.client.get('/api/core-values/?is_active=true').data['results']
+        indicators = self.client.get('/api/behavior-indicators/?is_active=true').data['results']
+        ratings = self.client.get('/api/behavioral-ratings/?is_active=true').data['results']
+        self.assertEqual(len(values), 4)
+        self.assertEqual(len(indicators), 7)
+        self.assertEqual({item['code'] for item in ratings}, {'AO', 'SO', 'RO', 'NO'})

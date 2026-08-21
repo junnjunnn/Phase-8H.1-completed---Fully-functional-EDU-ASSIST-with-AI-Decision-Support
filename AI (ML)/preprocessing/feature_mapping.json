@@ -18,6 +18,7 @@
     "esp_grade",
     "mapeh_grade",
     "tle_grade",
+    "education_grade",
     "general_average",
     "failed_subjects",
     "present_days",
@@ -33,37 +34,46 @@
   ],
   "encoder_categories": [
     [
-      "2024-2025",
-      "2025-2026"
+      "2025-2026",
+      "2026-2027",
+      "Current",
+      "New School Year"
     ],
     [
-      "Grade 10",
+      "Grade 1",
+      "Grade 2",
+      "Grade 3",
       "Grade 4",
       "Grade 5",
       "Grade 6",
       "Grade 7",
       "Grade 8",
-      "Grade 9"
+      "Grade 9",
+      "Grade 10",
+      "Grade 11",
+      "Grade 12"
     ],
     [
       "A",
       "B",
       "C",
-      "D"
+      "D",
+      "Moonstone"
     ],
     [
-      "Compassion",
-      "Excellence",
-      "Integrity",
-      "Respect",
-      "Responsibility"
+      "Maka-Diyos (Love for God)",
+      "Makatao (Love for Fellowmen)",
+      "Maka-Kalikasan (Love for Nature)",
+      "Makabansa (Love for Country)"
     ],
     [
-      "Completes assignments on time",
-      "Demonstrates effort and perseverance",
-      "Displays kindness and empathy",
-      "Practices honesty",
-      "Shows respect to teachers and peers"
+      "Expresses one's spiritual beliefs while respecting the spiritual beliefs of others",
+      "Shows adherence to ethical principles by upholding truth",
+      "Is sensitive to individual, social, and cultural differences",
+      "Demonstrate contributions toward solidarity",
+      "Cares for the environment and utilizes resources wisely, judiciously, and economically",
+      "Demonstrates pride in being a Filipino; exercises the rights and responsibilities of a Filipino Citizen",
+      "Demonstrates appropriate behavior in carrying out activities in the school, community, and country"
     ],
     [
       "AO",
@@ -78,18 +88,32 @@
       "Counseling",
       "Guidance Referral",
       "Mentoring",
+      "No Intervention",
       "Parent/Guardian Conference",
-      "Tutoring",
-      "Unknown"
+      "Tutoring"
     ],
     [
       "Improved",
       "No Change",
       "Not Yet Evaluated",
       "Ongoing",
-      "Unknown",
       "Worsened"
     ]
   ],
-  "encoded_feature_count": 62
+  "subject_feature_map": {
+    "Mathematics": "mathematics_grade",
+    "Mathematics 9": "mathematics_grade",
+    "English": "english_grade",
+    "English 9": "english_grade",
+    "Science": "science_grade",
+    "Science 9": "science_grade",
+    "Filipino": "filipino_grade",
+    "Araling Panlipunan": "araling_panlipunan_grade",
+    "ESP": "esp_grade",
+    "MAPEH": "mapeh_grade",
+    "TLE": "tle_grade",
+    "EDUCATION": "education_grade"
+  },
+  "unknown_category_policy": "reject",
+  "encoded_feature_count": 71
 }

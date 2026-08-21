@@ -1,6 +1,6 @@
 import { MagnifyingGlassIcon, PlusIcon, UserPlusIcon } from '@heroicons/react/24/outline'
 import { useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useLocation } from 'react-router-dom'
 import { EmptyState } from '../../components/common/EmptyState'
 import { ErrorBanner } from '../../components/feedback/ErrorBanner'
 import { LoadingSpinner } from '../../components/common/LoadingSpinner'
@@ -33,6 +33,7 @@ function getSectionLabel(section) {
 
 export function StudentsPage() {
   const { user } = useAuth()
+  const location = useLocation()
   const [students, setStudents] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -111,7 +112,13 @@ export function StudentsPage() {
       setLoading(true)
       setError('')
       try {
-        const data = await getStudents({ search })
+        const routeParams = new URLSearchParams(location.search)
+        const data = await getStudents({
+          search,
+          academic_year: routeParams.get('academic_year') || undefined,
+          grade_level: routeParams.get('grade_level') || undefined,
+          section: routeParams.get('section') || undefined,
+        })
         if (!active) {
           return
         }
@@ -133,7 +140,7 @@ export function StudentsPage() {
     return () => {
       active = false
     }
-  }, [search])
+  }, [location.search, search])
 
   useEffect(() => {
     async function loadReferenceData() {

@@ -8,61 +8,34 @@ import { useRoleAwareAutoLoad } from '../../hooks/useRoleAwareAutoLoad'
 import { useAuth } from '../../context/AuthContext'
 import { getApiErrorMessage } from '../../services/api'
 import {
-  createBehavioralAssessment,
+  bulkCreateBehavioralAssessments,
   getBehavioralAssessments,
   getBehavioralRatings,
   getBehaviorIndicators,
-  updateBehavioralAssessment,
+  getCoreValues,
 } from '../../services/behaviorService'
-import { getAcademicYears, getEnrollments, getGradeLevels, getSections } from '../../services/academicsService'
+import { getAcademicYears, getEnrollments, getGradeLevels, getSections, getTeacherContext } from '../../services/academicsService'
 import { getStudentById } from '../../services/studentService'
 
 function normalizeListResponse(data) {
   const items = data?.results || data || []
-  return {
-    items,
-    count: typeof data?.count === 'number' ? data.count : Array.isArray(items) ? items.length : 0,
-    next: data?.next || null,
-    previous: data?.previous || null,
-  }
-}
-
-const CLASSIFICATION_RULES = [
-  { minimum: 4.5, label: 'Outstanding' },
-  { minimum: 4.0, label: 'Very Good' },
-  { minimum: 3.0, label: 'Good' },
-  { minimum: 2.0, label: 'Needs Improvement' },
-  { minimum: 0, label: 'At Risk' },
-]
-
-function getClassification(average) {
-  const numericAverage = Number(average)
-  if (Number.isNaN(numericAverage)) {
-    return 'Pending'
-  }
-
-  return CLASSIFICATION_RULES.find((rule) => numericAverage >= rule.minimum)?.label || 'At Risk'
-}
-
-function getAverageValue(values) {
-  const numericValues = values.filter((value) => typeof value === 'number' && !Number.isNaN(value))
-  if (!numericValues.length) {
-    return ''
-  }
-  return (numericValues.reduce((sum, value) => sum + value, 0) / numericValues.length).toFixed(2)
+  return Array.isArray(items) ? items : []
 }
 
 export function BehaviorEncodingPage() {
   const { user } = useAuth()
   const role = user?.role_name || user?.role || user?.profile?.role_name || 'NONE'
-  const canManageBehavior = role === 'SUPER_ADMIN' || role === 'SCHOOL_ADMIN' || role === 'TEACHER'
+  const canManageBehavior = ['SUPER_ADMIN', 'SCHOOL_ADMIN', 'TEACHER'].includes(role)
 
   const [academicYears, setAcademicYears] = useState([])
   const [gradeLevels, setGradeLevels] = useState([])
   const [sections, setSections] = useState([])
+  const [teacherContext, setTeacherContext] = useState(null)
+  const [coreValues, setCoreValues] = useState([])
   const [indicators, setIndicators] = useState([])
   const [ratings, setRatings] = useState([])
-
+  const [selectedCoreValueId, setSelectedCoreValueId] = useState('')
+  const [selectedIndicatorId, setSelectedIndicatorId] = useState('')
   const [filters, setFilters] = useState({
     academicYear: '',
     gradeLevel: '',
@@ -70,7 +43,6 @@ export function BehaviorEncodingPage() {
     gradingPeriod: 'Quarter',
     quarter: '1',
   })
-
   const [rows, setRows] = useState([])
   const [loading, setLoading] = useState(true)
   const [loadingClass, setLoadingClass] = useState(false)
@@ -83,55 +55,136 @@ export function BehaviorEncodingPage() {
     async function loadReferences() {
       setLoading(true)
       setError('')
-
       try {
-        const [yearsData, levelsData, sectionsData, indicatorsData, ratingsData] = await Promise.all([
-          getAcademicYears(),
-          getGradeLevels(),
-          getSections(),
+        const context = role === 'TEACHER' ? await getTeacherContext() : null
+        const referencesPromise = context
+          ? Promise.resolve([
+            [...new Map([...(context.advisory_classes || []), ...(context.subject_assignments || [])].map((item) => [item.academic_year, { id: item.academic_year, name: item.academic_year_name }])).values()],
+            [...new Map([...(context.advisory_classes || []), ...(context.subject_assignments || [])].map((item) => [item.grade_level, { id: item.grade_level, name: item.grade_level_name }])).values()],
+            [...new Map([...(context.advisory_classes || []), ...(context.subject_assignments || [])].map((item) => [item.section, { id: item.section, name: item.section_name, academic_year: item.academic_year, grade_level: item.grade_level }])).values()],
+          ])
+          : Promise.all([getAcademicYears(), getGradeLevels(), getSections()])
+        const [[yearsData, levelsData, sectionsData], coreValuesData, indicatorsData, ratingsData] = await Promise.all([
+          referencesPromise,
+          getCoreValues({ is_active: true }),
           getBehaviorIndicators({ is_active: true }),
           getBehavioralRatings({ is_active: true }),
         ])
-
-        if (!active) {
-          return
-        }
-
-        setAcademicYears(normalizeListResponse(yearsData).items)
-        setGradeLevels(normalizeListResponse(levelsData).items)
-        setSections(normalizeListResponse(sectionsData).items)
-        setIndicators(normalizeListResponse(indicatorsData).items)
-        setRatings(normalizeListResponse(ratingsData).items)
+        if (!active) return
+        setTeacherContext(context)
+        setAcademicYears(normalizeListResponse(yearsData))
+        setGradeLevels(normalizeListResponse(levelsData))
+        setSections(normalizeListResponse(sectionsData))
+        const nextCoreValues = normalizeListResponse(coreValuesData)
+        const nextIndicators = normalizeListResponse(indicatorsData)
+        setCoreValues(nextCoreValues)
+        setIndicators(nextIndicators)
+        setRatings(normalizeListResponse(ratingsData))
+        const firstCoreValue = nextCoreValues[0]
+        const firstIndicator = nextIndicators.find((indicator) => String(indicator.core_value) === String(firstCoreValue?.id))
+        setSelectedCoreValueId(firstCoreValue ? String(firstCoreValue.id) : '')
+        setSelectedIndicatorId(firstIndicator ? String(firstIndicator.id) : '')
       } catch (err) {
-        if (!active) {
-          return
-        }
-        setError(getApiErrorMessage(err))
+        if (active) setError(getApiErrorMessage(err))
       } finally {
-        if (active) {
-          setLoading(false)
-        }
+        if (active) setLoading(false)
       }
     }
 
     loadReferences()
-    return () => {
-      active = false
-    }
-  }, [])
+    return () => { active = false }
+  }, [role])
 
-  const getDefaultBehaviorFilters = () => {
-    const defaultSection = sections[0]
-    if (!defaultSection) {
-      return null
-    }
+  const teacherClassOptions = useMemo(() => {
+    if (!teacherContext) return []
+    const options = new Map()
+    const entries = [...(teacherContext.advisory_classes || []), ...(teacherContext.subject_assignments || [])]
+    entries.forEach((entry) => {
+      const key = `${entry.academic_year}-${entry.section}`
+      const existing = options.get(key)
+      options.set(key, { ...entry, role: existing ? 'Adviser and Subject Teacher' : entry.role })
+    })
+    return [...options.values()]
+  }, [teacherContext])
 
+  const selectedAcademicYear = useMemo(() => academicYears.find((year) => String(year.id) === String(filters.academicYear)) || null, [academicYears, filters.academicYear])
+  const selectedGradeLevel = useMemo(() => gradeLevels.find((level) => String(level.id) === String(filters.gradeLevel)) || null, [gradeLevels, filters.gradeLevel])
+  const selectedSection = useMemo(() => sections.find((section) => String(section.id) === String(filters.section)) || null, [sections, filters.section])
+  const selectedCoreValue = useMemo(() => coreValues.find((value) => String(value.id) === String(selectedCoreValueId)) || null, [coreValues, selectedCoreValueId])
+  const selectedIndicator = useMemo(() => indicators.find((indicator) => String(indicator.id) === String(selectedIndicatorId)) || null, [indicators, selectedIndicatorId])
+  const coreValueIndicators = useMemo(() => indicators.filter((indicator) => String(indicator.core_value) === String(selectedCoreValueId)), [indicators, selectedCoreValueId])
+  const filteredSections = useMemo(() => sections.filter((section) => {
+    const matchesYear = !filters.academicYear || String(section.academic_year) === String(filters.academicYear)
+    const matchesLevel = !filters.gradeLevel || String(section.grade_level) === String(filters.gradeLevel)
+    return matchesYear && matchesLevel
+  }), [filters.academicYear, filters.gradeLevel, sections])
+  const canEdit = canManageBehavior && selectedAcademicYear?.is_active !== false
+
+  function getDefaultBehaviorFilters() {
+    const assignment = teacherClassOptions[0] || sections[0]
+    if (!assignment) return null
     return {
-      academicYear: String(defaultSection.academic_year),
-      gradeLevel: String(defaultSection.grade_level),
-      section: String(defaultSection.id),
+      academicYear: String(assignment.academic_year),
+      gradeLevel: String(assignment.grade_level),
+      section: String(assignment.section || assignment.id),
       gradingPeriod: filters.gradingPeriod,
       quarter: filters.quarter,
+    }
+  }
+
+  async function loadClassData(nextFilters = filters) {
+    if (!nextFilters.academicYear || !nextFilters.gradeLevel || !nextFilters.section) {
+      setError('Select an academic year, grade level, and section before loading the behavior roster.')
+      return
+    }
+    setLoadingClass(true)
+    setError('')
+    setSuccessMessage('')
+    try {
+      const [enrollmentsData, assessmentsData] = await Promise.all([
+        getEnrollments({ academic_year: nextFilters.academicYear, grade_level: nextFilters.gradeLevel, section: nextFilters.section, enrollment_status: 'active' }),
+        getBehavioralAssessments({
+          academic_year: nextFilters.academicYear,
+          grading_period_type: nextFilters.gradingPeriod,
+          quarter: nextFilters.gradingPeriod === 'Quarter' ? nextFilters.quarter : undefined,
+          semester: nextFilters.gradingPeriod === 'Semester' ? nextFilters.quarter : undefined,
+        }),
+      ])
+      const enrollments = normalizeListResponse(enrollmentsData)
+      const assessments = normalizeListResponse(assessmentsData)
+      const assessmentMap = assessments.reduce((map, assessment) => {
+        map[`${assessment.enrollment}:${assessment.behavior_indicator}`] = assessment
+        return map
+      }, {})
+      const studentProfiles = await Promise.all(enrollments.map((enrollment) => getStudentById(enrollment.student)))
+      const studentMap = studentProfiles.reduce((map, student) => {
+        if (student?.id) map[student.id] = student
+        return map
+      }, {})
+      setRows(enrollments.map((enrollment) => {
+        const student = studentMap[enrollment.student]
+        const assessmentsByIndicator = indicators.reduce((map, indicator) => {
+          const assessment = assessmentMap[`${enrollment.id}:${indicator.id}`]
+          map[indicator.id] = {
+            assessmentId: assessment?.id || null,
+            ratingId: assessment?.rating || '',
+            remarks: assessment?.remarks || '',
+          }
+          return map
+        }, {})
+        return {
+          id: enrollment.id,
+          enrollmentId: enrollment.id,
+          studentId: student?.lrn || enrollment.student,
+          studentName: student ? `${student.first_name || ''} ${student.last_name || ''}`.trim() : `Student ${enrollment.student}`,
+          assessments: assessmentsByIndicator,
+        }
+      }))
+    } catch (err) {
+      setError(getApiErrorMessage(err))
+      setRows([])
+    } finally {
+      setLoadingClass(false)
     }
   }
 
@@ -142,319 +195,139 @@ export function BehaviorEncodingPage() {
     setFilters,
     getDefaultFilters: getDefaultBehaviorFilters,
     onLoad: loadClassData,
-    dependencies: [academicYears.length, gradeLevels.length, sections.length, filters.gradingPeriod, filters.quarter],
+    dependencies: [academicYears.length, gradeLevels.length, sections.length, indicators.length],
   })
 
-  const filteredSections = useMemo(() => {
-    return sections.filter((section) => {
-      const matchesYear = !filters.academicYear || String(section.academic_year) === String(filters.academicYear)
-      const matchesLevel = !filters.gradeLevel || String(section.grade_level) === String(filters.gradeLevel)
-      return matchesYear && matchesLevel
-    })
-  }, [filters.academicYear, filters.gradeLevel, sections])
-
-  async function loadClassData(nextFilters = filters) {
-    if (!nextFilters.academicYear || !nextFilters.gradeLevel || !nextFilters.section) {
-      setError('Select an academic year, grade level, and section before loading the behavior roster.')
-      return
-    }
-
-    setLoadingClass(true)
-    setError('')
-    setSuccessMessage('')
-
-    try {
-      const [enrollmentsData, assessmentsData] = await Promise.all([
-        getEnrollments({ academic_year: nextFilters.academicYear, grade_level: nextFilters.gradeLevel, section: nextFilters.section, enrollment_status: 'active' }),
-        getBehavioralAssessments({
-          academic_year: nextFilters.academicYear,
-          grading_period_type: nextFilters.gradingPeriod,
-          quarter: nextFilters.gradingPeriod === 'Quarter' ? nextFilters.quarter : undefined,
-          semester: nextFilters.gradingPeriod === 'Semester' ? 1 : undefined,
-        }),
-      ])
-
-      const enrollments = normalizeListResponse(enrollmentsData).items
-      const assessments = normalizeListResponse(assessmentsData).items
-
-      const assessmentMap = assessments.reduce((accumulator, assessment) => {
-        const key = `${assessment.enrollment}:${assessment.behavior_indicator}`
-        accumulator[key] = assessment
-        return accumulator
-      }, {})
-
-      const studentProfiles = await Promise.all(enrollments.map((enrollment) => getStudentById(enrollment.student)))
-      const studentMap = studentProfiles.reduce((accumulator, student) => {
-        accumulator[student.id] = student
-        return accumulator
-      }, {})
-
-      const classRows = enrollments.map((enrollment) => {
-        const student = studentMap[enrollment.student]
-        const assessmentsByIndicator = indicators.reduce((accumulator, indicator) => {
-          const assessment = assessmentMap[`${enrollment.id}:${indicator.id}`]
-          const rating = assessment?.rating ? ratings.find((entry) => entry.id === assessment.rating) || null : null
-          accumulator[indicator.id] = {
-            assessmentId: assessment?.id || null,
-            ratingId: assessment?.rating || '',
-            numericScore: assessment?.numeric_score != null ? Number(assessment.numeric_score) : '',
-            ratingCode: rating?.code || '',
-            ratingLabel: rating?.label || '',
-            remarks: assessment?.remarks || '',
-          }
-          return accumulator
-        }, {})
-
-        const numericScores = Object.values(assessmentsByIndicator)
-          .map((selection) => (selection.numericScore === '' ? null : Number(selection.numericScore)))
-          .filter((value) => value !== null && !Number.isNaN(value))
-
-        return {
-          id: enrollment.id,
-          enrollmentId: enrollment.id,
-          studentId: student?.lrn || enrollment.student,
-          studentName: student ? `${student.first_name || ''} ${student.last_name || ''}`.trim() : `Student ${enrollment.student}`,
-          assessments: assessmentsByIndicator,
-          average: numericScores.length ? getAverageValue(numericScores) : '',
-          classification: numericScores.length ? getClassification(getAverageValue(numericScores)) : 'Pending',
-          status: numericScores.length ? 'Loaded' : 'Pending',
-        }
-      })
-
-      setRows(classRows)
-    } catch (err) {
-      setError(getApiErrorMessage(err))
-      setRows([])
-    } finally {
-      setLoadingClass(false)
-    }
+  function selectTeacherClass(value) {
+    const assignment = teacherClassOptions.find((entry) => `${entry.academic_year}-${entry.section}` === value)
+    if (!assignment) return
+    const nextFilters = { ...filters, academicYear: String(assignment.academic_year), gradeLevel: String(assignment.grade_level), section: String(assignment.section) }
+    setFilters(nextFilters)
+    loadClassData(nextFilters)
   }
 
-  function updateRowIndicator(rowId, indicatorId, value) {
-    const selectedRating = ratings.find((entry) => String(entry.id) === String(value)) || null
+  function selectCoreValue(value) {
+    setSelectedCoreValueId(value)
+    const firstIndicator = indicators.find((indicator) => String(indicator.core_value) === String(value))
+    setSelectedIndicatorId(firstIndicator ? String(firstIndicator.id) : '')
+  }
 
-    setRows((currentRows) => currentRows.map((row) => {
-      if (row.id !== rowId) {
-        return row
-      }
-
-      const nextAssessments = {
+  function updateRowRating(rowId, value) {
+    setRows((currentRows) => currentRows.map((row) => row.id !== rowId ? row : {
+      ...row,
+      assessments: {
         ...row.assessments,
-        [indicatorId]: {
-          ...row.assessments[indicatorId],
+        [selectedIndicatorId]: {
+          ...row.assessments[selectedIndicatorId],
           ratingId: value,
-          numericScore: selectedRating?.numeric_value != null ? Number(selectedRating.numeric_value) : '',
-          ratingCode: selectedRating?.code || '',
-          ratingLabel: selectedRating?.label || '',
-          remarks: row.assessments[indicatorId]?.remarks || '',
         },
-      }
-
-      const numericScores = Object.values(nextAssessments)
-        .map((selection) => (selection.numericScore === '' ? null : Number(selection.numericScore)))
-        .filter((value) => value !== null && !Number.isNaN(value))
-
-      return {
-        ...row,
-        assessments: nextAssessments,
-        average: numericScores.length ? getAverageValue(numericScores) : '',
-        classification: numericScores.length ? getClassification(getAverageValue(numericScores)) : 'Pending',
-        status: 'Draft',
-      }
+      },
     }))
   }
 
   async function handleSave(shouldFinalize) {
-    if (!canManageBehavior) {
-      setError('You do not have permission to encode behavior for this class.')
+    if (!canEdit) {
+      setError(selectedAcademicYear?.is_active === false ? 'Archived Academic Year - Read Only' : 'You do not have permission to encode behavior for this class.')
       return
     }
-
+    if (!selectedIndicator) {
+      setError('Select a Core Value and behavior statement before saving.')
+      return
+    }
+    const payload = rows.map((row) => {
+      const selection = row.assessments[selectedIndicator.id]
+      if (!selection?.ratingId) return null
+      return {
+        id: selection.assessmentId || undefined,
+        enrollment: row.enrollmentId,
+        academic_year: Number(filters.academicYear),
+        grading_period_type: filters.gradingPeriod,
+        quarter: filters.gradingPeriod === 'Quarter' ? Number(filters.quarter) : null,
+        semester: filters.gradingPeriod === 'Semester' ? Number(filters.quarter) : null,
+        core_value: selectedIndicator.core_value,
+        behavior_indicator: Number(selectedIndicator.id),
+        rating: Number(selection.ratingId),
+        assessment_date: new Date().toISOString().slice(0, 10),
+        remarks: shouldFinalize ? 'Finalized' : '',
+      }
+    }).filter(Boolean)
+    if (!payload.length) {
+      setError('Select at least one rating before saving.')
+      return
+    }
     setError('')
     setSuccessMessage('')
-
     try {
-      for (const row of rows) {
-        const indicatorEntries = Object.entries(row.assessments)
-
-        for (const [indicatorId, selection] of indicatorEntries) {
-          if (!selection.ratingId) {
-            continue
-          }
-
-          const payload = {
-            enrollment: row.enrollmentId,
-            academic_year: Number(filters.academicYear),
-            grading_period_type: filters.gradingPeriod,
-            quarter: filters.gradingPeriod === 'Quarter' ? Number(filters.quarter) : null,
-            semester: filters.gradingPeriod === 'Semester' ? 1 : null,
-            core_value: indicators.find((indicator) => String(indicator.id) === String(indicatorId))?.core_value || null,
-            behavior_indicator: Number(indicatorId),
-            rating: Number(selection.ratingId),
-            numeric_score: selection.numericScore,
-            assessment_date: new Date().toISOString().slice(0, 10),
-            remarks: shouldFinalize ? `${selection.remarks || ''} Finalized`.trim() : selection.remarks || '',
-          }
-
-          if (selection.assessmentId) {
-            await updateBehavioralAssessment(selection.assessmentId, payload)
-          } else {
-            await createBehavioralAssessment(payload)
-          }
-        }
-      }
-
-      setSuccessMessage(shouldFinalize ? 'Behavior evaluation finalized successfully.' : 'Behavior evaluation saved as draft successfully.')
+      await bulkCreateBehavioralAssessments(payload)
+      await loadClassData(filters)
+      setSuccessMessage(shouldFinalize ? 'Behavior evaluation finalized successfully.' : 'Behavior evaluation saved successfully.')
     } catch (err) {
       setError(getApiErrorMessage(err))
     }
   }
 
-  if (loading) {
-    return <LoadingSpinner label="Loading behavior workspace..." />
-  }
+  if (loading) return <LoadingSpinner label="Loading behavior workspace..." />
 
   return (
     <div className="page-stack behavior-encoding-page">
       <PageHeader
         eyebrow="Behavior workflow"
         title="Behavior encoding"
-        description="Open the assigned class, rate each student’s indicators, and save the evaluation in a single guided workflow."
-        actions={(
-          <Link className="action-button action-button--secondary" to="/behavior">
-            Back to behavior
-          </Link>
-        )}
+        description="Assess the DepEd Core Values for an authorized class using the source behavior statements and observed-value ratings."
+        actions={<Link className="action-button action-button--secondary" to="/behavior">Back to behavior</Link>}
       />
-
-      {!canManageBehavior ? (
-        <div className="status-banner status-banner--warning">You do not currently have permission to encode behavior.</div>
-      ) : null}
-
+      {!canManageBehavior ? <div className="status-banner status-banner--warning">You do not currently have permission to encode behavior.</div> : null}
       <section className="students-panel behavior-encoding-panel">
         <div className="form-section-card">
-          <div className="workflow-step">Choose the class and grading period.</div>
-          <div className="workflow-step">Rate the indicators for each student.</div>
-          <div className="workflow-step">Save the draft or finalize the evaluation.</div>
+          <div className="gradebook-context-header">
+            <div className="gradebook-context-title-block">
+              <p className="eyebrow">DepEd observed values</p>
+              <h2>{selectedGradeLevel?.name || 'Class'}{selectedSection ? ` - ${selectedSection.name}` : ''}</h2>
+              <p>{selectedCoreValue?.name || 'Select a Core Value'}{selectedIndicator ? ` · ${selectedIndicator.name}` : ''}</p>
+            </div>
+            <div className="gradebook-context-metrics">
+              <span>Academic Year: {selectedAcademicYear?.name || '—'}</span>
+              <span>Grade Level: {selectedGradeLevel?.name || '—'}</span>
+              <span>Section: {selectedSection?.name || '—'}</span>
+              <span>Evaluation: {filters.gradingPeriod} {filters.quarter}</span>
+            </div>
+          </div>
           <div className="form-grid">
-            <label>
-              <span>Academic year</span>
-              <select value={filters.academicYear} onChange={(event) => setFilters({ ...filters, academicYear: event.target.value })}>
-                <option value="">Select academic year</option>
-                {academicYears.map((year) => (
-                  <option key={year.id} value={year.id}>{year.name}</option>
-                ))}
-              </select>
-            </label>
-
-            <label>
-              <span>Grade level</span>
-              <select value={filters.gradeLevel} onChange={(event) => setFilters({ ...filters, gradeLevel: event.target.value })}>
-                <option value="">Select grade level</option>
-                {gradeLevels.map((gradeLevel) => (
-                  <option key={gradeLevel.id} value={gradeLevel.id}>{gradeLevel.name}</option>
-                ))}
-              </select>
-            </label>
-
-            <label>
-              <span>Section</span>
-              <select value={filters.section} onChange={(event) => setFilters({ ...filters, section: event.target.value })}>
-                <option value="">Select section</option>
-                {filteredSections.map((section) => (
-                  <option key={section.id} value={section.id}>{section.name}</option>
-                ))}
-              </select>
-            </label>
-
-            <label>
-              <span>Evaluation period</span>
-              <select value={filters.gradingPeriod} onChange={(event) => setFilters({ ...filters, gradingPeriod: event.target.value })}>
-                <option value="Quarter">Quarter</option>
-                <option value="Semester">Semester</option>
-              </select>
-            </label>
-
-            <label>
-              <span>{filters.gradingPeriod === 'Quarter' ? 'Quarter' : 'Semester'}</span>
-              <select value={filters.quarter} onChange={(event) => setFilters({ ...filters, quarter: event.target.value })}>
-                {filters.gradingPeriod === 'Quarter' ? (
-                  [1, 2, 3, 4].map((quarter) => <option key={quarter} value={quarter}>{quarter}</option>)
-                ) : (
-                  [1, 2].map((semester) => <option key={semester} value={semester}>{semester}</option>)
-                )}
-              </select>
-            </label>
+            {role === 'TEACHER' ? (
+              <label className="form-grid-full">
+                <span>Authorized class</span>
+                <select value={filters.academicYear && filters.section ? `${filters.academicYear}-${filters.section}` : ''} onChange={(event) => selectTeacherClass(event.target.value)}>
+                  <option value="">Select an authorized class</option>
+                  {teacherClassOptions.map((assignment) => <option key={`${assignment.academic_year}-${assignment.section}`} value={`${assignment.academic_year}-${assignment.section}`}>{assignment.grade_level_name} · {assignment.section_name} · {assignment.role}</option>)}
+                </select>
+              </label>
+            ) : null}
+            {role !== 'TEACHER' ? (
+              <>
+                <label><span>Academic year</span><select value={filters.academicYear} onChange={(event) => setFilters({ ...filters, academicYear: event.target.value })}><option value="">Select academic year</option>{academicYears.map((year) => <option key={year.id} value={year.id}>{year.name}</option>)}</select></label>
+                <label><span>Grade level</span><select value={filters.gradeLevel} onChange={(event) => setFilters({ ...filters, gradeLevel: event.target.value })}><option value="">Select grade level</option>{gradeLevels.map((level) => <option key={level.id} value={level.id}>{level.name}</option>)}</select></label>
+                <label><span>Section</span><select value={filters.section} onChange={(event) => setFilters({ ...filters, section: event.target.value })}><option value="">Select section</option>{filteredSections.map((section) => <option key={section.id} value={section.id}>{section.name}</option>)}</select></label>
+              </>
+            ) : null}
+            <label><span>Core Value</span><select value={selectedCoreValueId} onChange={(event) => selectCoreValue(event.target.value)}><option value="">Select Core Value</option>{coreValues.map((coreValue) => <option key={coreValue.id} value={coreValue.id}>{coreValue.name}</option>)}</select></label>
+            <label className="form-grid-full"><span>Behavior Statement</span><select value={selectedIndicatorId} onChange={(event) => setSelectedIndicatorId(event.target.value)}><option value="">Select behavior statement</option>{coreValueIndicators.map((indicator) => <option key={indicator.id} value={indicator.id}>{indicator.name}</option>)}</select></label>
+            <label><span>Evaluation period</span><select value={filters.gradingPeriod} onChange={(event) => setFilters({ ...filters, gradingPeriod: event.target.value })}><option value="Quarter">Quarter</option><option value="Semester">Semester</option></select></label>
+            <label><span>{filters.gradingPeriod === 'Quarter' ? 'Quarter' : 'Semester'}</span><select value={filters.quarter} onChange={(event) => setFilters({ ...filters, quarter: event.target.value })}>{(filters.gradingPeriod === 'Quarter' ? [1, 2, 3, 4] : [1, 2]).map((period) => <option key={period} value={period}>{period}</option>)}</select></label>
           </div>
-
-          <div className="grade-encoding-actions">
-            <button type="button" className="action-button" onClick={loadClassData} disabled={loadingClass}>
-              {loadingClass ? 'Loading...' : 'Load class roster'}
-            </button>
-          </div>
+          <div className="grade-encoding-actions"><button type="button" className="action-button" onClick={() => loadClassData()} disabled={loadingClass}>{loadingClass ? 'Loading roster...' : 'Load class roster'}</button>{selectedAcademicYear?.is_active === false ? <span className="status-banner status-banner--warning">Archived Academic Year - Read Only</span> : null}</div>
         </div>
-
         {error ? <ErrorBanner message={error} /> : null}
         {successMessage ? <div className="status-banner status-banner--success">{successMessage}</div> : null}
-
-        {rows.length === 0 ? (
-          <EmptyState title="Ready for behavior entry" message="Load a class roster to begin encoding behavior indicators for the selected evaluation period." />
-        ) : null}
-
+        {!rows.length ? <EmptyState title="Ready for behavior entry" message="Select a class, Core Value, and behavior statement to load the roster." /> : null}
         {rows.length > 0 ? (
           <div className="table-card grade-encoding-table-wrapper">
             <table className="encoding-table" aria-label="Behavior encoding table">
-              <thead>
-                <tr>
-                  <th scope="col">Student ID</th>
-                  <th scope="col">Student name</th>
-                  {indicators.map((indicator) => (
-                    <th key={indicator.id} scope="col">{indicator.name}</th>
-                  ))}
-                  <th scope="col">Behavior average</th>
-                  <th scope="col">Classification</th>
-                  <th scope="col">Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((row) => (
-                  <tr key={row.id}>
-                    <td data-label="Student ID">{row.studentId}</td>
-                    <td data-label="Student name">{row.studentName}</td>
-                    {indicators.map((indicator) => (
-                      <td key={indicator.id} data-label={indicator.name}>
-                        <label className="sr-only" htmlFor={`indicator-${row.id}-${indicator.id}`}>
-                          {`${indicator.name} for ${row.studentName}`}
-                        </label>
-                        <select
-                          id={`indicator-${row.id}-${indicator.id}`}
-                          value={row.assessments[indicator.id]?.ratingId || ''}
-                          onChange={(event) => updateRowIndicator(row.id, indicator.id, event.target.value)}
-                          aria-label={`${indicator.name} for ${row.studentName}`}
-                        >
-                          <option value="">Select rating</option>
-                          {ratings.map((rating) => (
-                            <option key={rating.id} value={rating.id}>{rating.code} - {rating.label}</option>
-                          ))}
-                        </select>
-                      </td>
-                    ))}
-                    <td data-label="Behavior average">{row.average || '—'}</td>
-                    <td data-label="Classification">{row.classification}</td>
-                    <td data-label="Status">{row.status}</td>
-                  </tr>
-                ))}
-              </tbody>
+              <thead><tr><th scope="col">Student ID</th><th scope="col">Student name</th><th scope="col">{selectedCoreValue?.name || 'Core Value'} / {selectedIndicator?.name || 'Behavior Statement'}</th><th scope="col">Status</th></tr></thead>
+              <tbody>{rows.map((row) => { const selection = row.assessments[selectedIndicatorId] || {}; return <tr key={row.id}><td data-label="Student ID">{row.studentId}</td><td data-label="Student name">{row.studentName}</td><td data-label="Rating"><label className="sr-only" htmlFor={`behavior-rating-${row.id}`}>Rating for {row.studentName}</label><select id={`behavior-rating-${row.id}`} value={selection.ratingId || ''} onChange={(event) => updateRowRating(row.id, event.target.value)} disabled={!canEdit}><option value="">Select rating</option>{ratings.map((rating) => <option key={rating.id} value={rating.id}>{rating.code} - {rating.label}</option>)}</select></td><td data-label="Status">{selection.ratingId ? 'Rated' : 'Pending'}</td></tr> })}</tbody>
             </table>
           </div>
         ) : null}
-
-        {rows.length > 0 ? (
-          <div className="grade-encoding-actions">
-            <button type="button" className="action-button" onClick={() => handleSave(false)}>Save draft</button>
-            <button type="button" className="action-button action-button--secondary" onClick={() => handleSave(true)}>Finalize evaluation</button>
-          </div>
-        ) : null}
+        {rows.length > 0 && canEdit ? <div className="grade-encoding-actions"><button type="button" className="action-button" onClick={() => handleSave(false)}>Save assessments</button><button type="button" className="action-button action-button--secondary" onClick={() => handleSave(true)}>Finalize assessments</button></div> : null}
       </section>
     </div>
   )

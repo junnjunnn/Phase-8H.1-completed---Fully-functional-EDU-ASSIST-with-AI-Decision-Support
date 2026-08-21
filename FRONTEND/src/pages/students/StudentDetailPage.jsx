@@ -354,7 +354,8 @@ export function StudentDetailPage() {
     return behaviorAverage ? getBehaviorClassification(behaviorAverage) : 'Pending'
   }, [behaviorAverage])
 
-  const canGeneratePrediction = ['SUPER_ADMIN', 'SCHOOL_ADMIN', 'TEACHER'].includes(user?.role_name)
+  const currentRole = user?.role_name || user?.role || user?.profile?.role_name || 'NONE'
+  const canGeneratePrediction = ['SUPER_ADMIN', 'SCHOOL_ADMIN', 'TEACHER'].includes(currentRole)
 
   async function handleGeneratePrediction() {
     if (!canGeneratePrediction) {
@@ -701,6 +702,7 @@ export function StudentDetailPage() {
                         {generatingPrediction ? 'Generating prediction…' : 'Generate prediction now'}
                       </button>
                       {generationMessage ? <span className="status-text">{generationMessage}</span> : null}
+                      {predictionError ? <ErrorBanner message={predictionError} /> : null}
                     </div>
                   ) : null}
                 </>

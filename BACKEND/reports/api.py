@@ -5,7 +5,7 @@ from rest_framework import permissions, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
-from academics.models import AcademicRecord, AcademicYear, Enrollment, GradeLevel, Section, Subject
+from academics.models import AcademicRecord, AcademicYear, Enrollment, GradeLevel, Section, Subject, TeacherAssignment
 from accounts.utils import get_authorized_enrollment_queryset, get_user_scope
 from attendance.models import AttendanceRecord
 from behavior.models import BehavioralAssessment
@@ -27,6 +27,7 @@ class ReportsViewSet(viewsets.ViewSet):
         year_id = params.get('academic_year')
         grade_id = params.get('grade_level')
         section_id = params.get('section')
+        subject_id = params.get('subject')
         teacher_id = params.get('teacher')
         risk_level = params.get('risk_level')
         status = params.get('status')
@@ -40,6 +41,8 @@ class ReportsViewSet(viewsets.ViewSet):
             filters['grade_level_id'] = grade_id
         if section_id:
             filters['section_id'] = section_id
+        if subject_id:
+            filters['academic_records__subject_id'] = subject_id
         if teacher_id:
             filters['section__adviser_id'] = teacher_id
         if risk_level:
@@ -58,6 +61,16 @@ class ReportsViewSet(viewsets.ViewSet):
     def _base_enrollment_queryset(self):
         qs = Enrollment.objects.select_related('student', 'academic_year', 'grade_level', 'section').prefetch_related('academic_records', 'attendance_records', 'behavioral_assessments', 'risk_predictions', 'interventions')
         return self._get_queryset_for_scope(qs)
+
+    def _teacher_subject_is_authorized(self):
+        subject_id = self.request.query_params.get('subject')
+        if get_user_scope(self.request.user) != 'teacher' or not subject_id:
+            return True
+        return TeacherAssignment.objects.filter(
+            teacher=self.request.user,
+            subject_id=subject_id,
+            is_active=True,
+        ).exists()
 
     def _student_reports(self, enrollments):
         student_count = enrollments.values('student').distinct().count()
@@ -167,6 +180,8 @@ class ReportsViewSet(viewsets.ViewSet):
     @action(detail=False, methods=['get'])
     def center(self, request):
         qs = self._base_enrollment_queryset()
+        if not self._teacher_subject_is_authorized():
+            qs = qs.none()
         filters = self._get_filters()
         if filters:
             qs = qs.filter(**filters)

@@ -3,7 +3,7 @@
 ## Dataset Summary
 - Original row count: 1000
 - Final row count: 1000
-- Missing values removed: 4358
+- Missing values removed: 2627
 - Duplicate count: 0
 - Engineered features: absent_percentage, late_percentage, high_grade_count, has_intervention, number_of_interventions, risk_label
 
@@ -18,7 +18,7 @@
 
 ## Encoded Features
 - Encoded categorical features using OneHotEncoder
-- Final feature count: 62
+- Final feature count: 71
 
 ## Splitting
 - Training set size: 800

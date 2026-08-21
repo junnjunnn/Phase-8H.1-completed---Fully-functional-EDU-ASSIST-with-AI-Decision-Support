@@ -12,7 +12,7 @@ import {
   getAttendanceRecords,
   updateAttendanceRecord,
 } from '../../services/attendanceService'
-import { getAcademicYears, getEnrollments, getGradeLevels, getSections } from '../../services/academicsService'
+import { getAcademicYears, getEnrollments, getGradeLevels, getSections, getTeacherContext } from '../../services/academicsService'
 import { getStudentById } from '../../services/studentService'
 
 function normalizeListResponse(data) {
@@ -42,6 +42,7 @@ export function AttendanceEncodingPage() {
   const [academicYears, setAcademicYears] = useState([])
   const [gradeLevels, setGradeLevels] = useState([])
   const [sections, setSections] = useState([])
+  const [teacherContext, setTeacherContext] = useState(null)
   const [filters, setFilters] = useState({
     academicYear: '',
     gradeLevel: '',
@@ -62,15 +63,20 @@ export function AttendanceEncodingPage() {
       setError('')
 
       try {
-        const [yearsData, levelsData, sectionsData] = await Promise.all([
-          getAcademicYears(),
-          getGradeLevels(),
-          getSections(),
-        ])
+        const context = role === 'TEACHER' ? await getTeacherContext() : null
+        const [yearsData, levelsData, sectionsData] = context
+          ? [
+            [...new Map((context.subject_assignments || []).map((item) => [item.academic_year, { id: item.academic_year, name: item.academic_year_name }])).values()],
+            [...new Map((context.subject_assignments || []).map((item) => [item.grade_level, { id: item.grade_level, name: item.grade_level_name }])).values()],
+            [...new Map((context.subject_assignments || []).map((item) => [item.section, { id: item.section, name: item.section_name, academic_year: item.academic_year, grade_level: item.grade_level }])).values()],
+          ]
+          : await Promise.all([getAcademicYears(), getGradeLevels(), getSections()])
 
         if (!active) {
           return
         }
+
+        if (context) setTeacherContext(context)
 
         setAcademicYears(normalizeListResponse(yearsData).items)
         setGradeLevels(normalizeListResponse(levelsData).items)
@@ -93,7 +99,31 @@ export function AttendanceEncodingPage() {
     }
   }, [])
 
+  const teacherClassOptions = useMemo(() => {
+    if (!teacherContext) return []
+    const options = new Map()
+    const entries = [...(teacherContext.advisory_classes || []), ...(teacherContext.subject_assignments || [])]
+    entries.forEach((entry) => {
+      const key = `${entry.academic_year}-${entry.section}`
+      const existing = options.get(key)
+      options.set(key, {
+        ...entry,
+        role: existing ? 'Adviser and Subject Teacher' : entry.role,
+      })
+    })
+    return [...options.values()]
+  }, [teacherContext])
+
   const getDefaultAttendanceFilters = () => {
+    if (role === 'TEACHER' && teacherClassOptions.length) {
+      const assignment = teacherClassOptions[0]
+      return {
+        academicYear: String(assignment.academic_year),
+        gradeLevel: String(assignment.grade_level),
+        section: String(assignment.section),
+        attendanceDate: filters.attendanceDate,
+      }
+    }
     const defaultSection = sections[0]
     if (!defaultSection) {
       return null
@@ -117,6 +147,15 @@ export function AttendanceEncodingPage() {
     dependencies: [academicYears.length, gradeLevels.length, sections.length, filters.attendanceDate],
   })
 
+  useEffect(() => {
+    if (role !== 'TEACHER' || loading || !teacherClassOptions.length || filters.academicYear) return
+    const nextFilters = getDefaultAttendanceFilters()
+    if (nextFilters) {
+      setFilters(nextFilters)
+      loadClassData(nextFilters)
+    }
+  }, [role, loading, teacherClassOptions.length])
+
   const filteredSections = useMemo(() => {
     return sections.filter((section) => {
       const matchesYear = !filters.academicYear || String(section.academic_year) === String(filters.academicYear)
@@ -124,6 +163,19 @@ export function AttendanceEncodingPage() {
       return matchesYear && matchesLevel
     })
   }, [filters.academicYear, filters.gradeLevel, sections])
+
+  function selectTeacherClass(value) {
+    const assignment = teacherClassOptions.find((entry) => `${entry.academic_year}-${entry.section}` === value)
+    if (!assignment) return
+    const nextFilters = {
+      ...filters,
+      academicYear: String(assignment.academic_year),
+      gradeLevel: String(assignment.grade_level),
+      section: String(assignment.section),
+    }
+    setFilters(nextFilters)
+    loadClassData(nextFilters)
+  }
 
   async function loadClassData(nextFilters = filters) {
     if (!nextFilters.academicYear || !nextFilters.gradeLevel || !nextFilters.section) {
@@ -249,6 +301,17 @@ export function AttendanceEncodingPage() {
           <div className="workflow-step">Mark attendance for students in the roster.</div>
           <div className="workflow-step">Save the attendance entry when the list is complete.</div>
           <div className="form-grid">
+            {role === 'TEACHER' ? (
+              <label className="form-grid-full">
+                <span>Authorized class</span>
+                <select value={filters.academicYear && filters.section ? `${filters.academicYear}-${filters.section}` : ''} onChange={(event) => selectTeacherClass(event.target.value)}>
+                  <option value="">Select an authorized class</option>
+                  {teacherClassOptions.map((assignment) => <option key={`${assignment.academic_year}-${assignment.section}`} value={`${assignment.academic_year}-${assignment.section}`}>{assignment.grade_level_name} · {assignment.section_name} · {assignment.role}</option>)}
+                </select>
+              </label>
+            ) : null}
+            {role !== 'TEACHER' ? (
+              <>
             <label>
               <span>Academic year</span>
               <select value={filters.academicYear} onChange={(event) => setFilters({ ...filters, academicYear: event.target.value })}>
@@ -263,13 +326,17 @@ export function AttendanceEncodingPage() {
                 {gradeLevels.map((gradeLevel) => <option key={gradeLevel.id} value={gradeLevel.id}>{gradeLevel.name}</option>)}
               </select>
             </label>
-            <label>
-              <span>Section</span>
-              <select value={filters.section} onChange={(event) => setFilters({ ...filters, section: event.target.value })}>
-                <option value="">Select section</option>
-                {filteredSections.map((section) => <option key={section.id} value={section.id}>{section.name}</option>)}
-              </select>
-            </label>
+              </>
+            ) : null}
+            {role !== 'TEACHER' ? (
+              <label>
+                <span>Section</span>
+                <select value={filters.section} onChange={(event) => setFilters({ ...filters, section: event.target.value })}>
+                  <option value="">Select section</option>
+                  {filteredSections.map((section) => <option key={section.id} value={section.id}>{section.name}</option>)}
+                </select>
+              </label>
+            ) : null}
             <label>
               <span>Date</span>
               <input type="date" value={filters.attendanceDate} onChange={(event) => setFilters({ ...filters, attendanceDate: event.target.value })} />

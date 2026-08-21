@@ -97,7 +97,7 @@ def save_comparison(results, feature_names):
     comparison_path = EVALUATION_DIR / 'model_comparison.csv'
     comparison_df.to_csv(comparison_path, index=False)
 
-    best_result = max(results, key=lambda r: r['ROC-AUC'])
+    best_result = next(result for result in results if result['Algorithm'] == 'Random Forest')
     best_model = best_result['Model']
 
     with (MODELS_DIR / 'risk_model.pkl').open('wb') as fh:

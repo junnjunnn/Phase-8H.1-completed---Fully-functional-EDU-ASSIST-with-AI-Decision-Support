@@ -561,8 +561,145 @@ class SubjectValidationTests(TestCase):
             'is_active': True
         })
         self.assertEqual(response.status_code, 201)
-        self.assertEqual(response.data['code'], 'API_ELEM_MATH')
+        self.assertRegex(response.data['code'], r'^SUBJ-[0-9A-F]{12}$')
         self.assertEqual(response.data['educational_level'], 'Elementary')
+
+    def test_new_subject_identifier_is_generated_and_stable(self):
+        serializer = SubjectSerializer(data={
+            'name': 'Generated Identifier Subject',
+            'category': 'Learning Area',
+            'grade_level': self.grade_1.id,
+        })
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        subject = serializer.save()
+        self.assertRegex(subject.code, r'^SUBJ-[0-9A-F]{12}$')
+        original_code = subject.code
+        subject.name = 'Renamed Generated Identifier Subject'
+        subject.save()
+        subject.refresh_from_db()
+        self.assertEqual(subject.code, original_code)
+
+    def test_existing_subject_identifier_is_preserved(self):
+        subject = Subject.objects.create(
+            code='HISTORICAL-CODE',
+            name='Historical Subject',
+            category='Learning Area',
+            grade_level=self.grade_1,
+        )
+        subject.name = 'Updated Historical Subject'
+        subject.save()
+        subject.refresh_from_db()
+        self.assertEqual(subject.code, 'HISTORICAL-CODE')
+
+    def test_api_update_cannot_overwrite_subject_identifier(self):
+        subject = Subject.objects.create(
+            code='STABLE-CODE',
+            name='Stable Subject',
+            category='Learning Area',
+            grade_level=self.grade_1,
+        )
+        serializer = SubjectSerializer(
+            instance=subject,
+            data={'code': 'ATTEMPTED-REPLACEMENT', 'name': 'Renamed Stable Subject'},
+            partial=True,
+        )
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        updated = serializer.save()
+        self.assertEqual(updated.code, 'STABLE-CODE')
+
+    def test_blank_subject_identifier_is_backfilled_on_save(self):
+        subject = Subject(
+            code='',
+            name='Blank Identifier Subject',
+            category='Learning Area',
+            grade_level=self.grade_1,
+        )
+        subject.save()
+        self.assertRegex(subject.code, r'^SUBJ-[0-9A-F]{12}$')
+
+    def test_create_subject_by_academic_division_resolves_selected_grade_levels(self):
+        client = APIClient()
+        user = get_user_model().objects.create_user(username='division_elem_admin', password='AdminPass1!')
+        UserProfile.objects.create(user=user, role_name='SCHOOL_ADMIN')
+        client.force_authenticate(user=user)
+
+        response = client.post('/api/subjects/', {
+            'code': 'DIV_ELEM',
+            'name': 'Division Elementary Subject',
+            'category': 'Learning Area',
+            'academic_division': 'ELEMENTARY',
+            'grade_levels': [self.grade_1.id, self.grade_6.id],
+        })
+
+        self.assertEqual(response.status_code, 201)
+        subject = Subject.objects.get(name='Division Elementary Subject')
+        self.assertRegex(subject.code, r'^SUBJ-[0-9A-F]{12}$')
+        self.assertEqual(list(subject.grade_levels.values_list('code', flat=True)), ['G1', 'G6'])
+        self.assertEqual(response.data['academic_division'], 'ELEMENTARY')
+        self.assertEqual(response.data['grade_level_names'], ['Grade 1', 'Grade 6'])
+
+    def test_create_subject_by_junior_high_division_resolves_grades(self):
+        serializer = SubjectSerializer(data={
+            'code': 'DIV_JHS',
+            'name': 'Division JHS Subject',
+            'category': 'Learning Area',
+            'academic_division': 'JUNIOR_HIGH_SCHOOL',
+            'grade_levels': [self.grade_7.id, self.grade_10.id],
+        })
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        subject = serializer.save()
+        self.assertEqual(list(subject.grade_levels.values_list('code', flat=True)), ['G7', 'G10'])
+
+    def test_create_subject_by_senior_high_division_keeps_strand_optional(self):
+        serializer = SubjectSerializer(data={
+            'code': 'DIV_SHS',
+            'name': 'Division SHS Subject',
+            'category': 'Core',
+            'academic_division': 'SENIOR_HIGH_SCHOOL',
+            'grade_levels': [self.grade_11.id],
+        })
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        subject = serializer.save()
+        self.assertEqual(list(subject.grade_levels.values_list('code', flat=True)), ['G11'])
+        self.assertIsNone(subject.strand)
+
+    def test_invalid_academic_division_is_rejected(self):
+        serializer = SubjectSerializer(data={
+            'code': 'DIV_INVALID',
+            'name': 'Invalid Division Subject',
+            'category': 'Learning Area',
+            'academic_division': 'MIDDLE_SCHOOL',
+            'grade_levels': [self.grade_1.id],
+        })
+        self.assertFalse(serializer.is_valid())
+        self.assertIn('academic_division', serializer.errors)
+
+    def test_division_without_source_defined_applicability_is_rejected(self):
+        serializer = SubjectSerializer(data={
+            'code': 'DIV_NO_GRADES',
+            'name': 'Division Without Grades',
+            'category': 'Learning Area',
+            'academic_division': 'ELEMENTARY',
+        })
+        self.assertFalse(serializer.is_valid())
+        self.assertIn('grade_levels', serializer.errors)
+
+    def test_editing_division_updates_explicit_grade_relationships(self):
+        subject = Subject.objects.create(
+            code='DIV_EDIT',
+            name='Editable Division Subject',
+            category='Learning Area',
+            grade_level=self.grade_1,
+        )
+        subject.grade_levels.set([self.grade_1, self.grade_2 if hasattr(self, 'grade_2') else GradeLevel.objects.get(code='G2')])
+        serializer = SubjectSerializer(instance=subject, data={
+            'academic_division': 'JUNIOR_HIGH_SCHOOL',
+            'grade_levels': [self.grade_7.id, self.grade_10.id],
+        }, partial=True)
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        subject = serializer.save()
+        self.assertEqual(list(subject.grade_levels.values_list('code', flat=True)), ['G7', 'G10'])
+        self.assertEqual(subject.grade_level.code, 'G7')
 
     def test_create_shs_core_subject_via_api(self):
         """Create SHS Core subject via API should be valid."""

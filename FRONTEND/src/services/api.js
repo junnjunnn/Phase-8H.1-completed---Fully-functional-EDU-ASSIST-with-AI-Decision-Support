@@ -130,6 +130,10 @@ export function getApiErrorMessage(error) {
       return data.detail
     }
 
+    if (data.error) {
+      return data.error
+    }
+
     const firstMessage = Object.values(data).find((value) => Array.isArray(value) && value.length > 0)
     if (firstMessage) {
       return firstMessage[0]

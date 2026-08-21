@@ -8,6 +8,7 @@ import {
   createGradeLevel,
   createSection,
   createSubject,
+  getAcademicDivisions,
   getAcademicYears,
   getGradeLevels,
   getSections,
@@ -18,7 +19,6 @@ import {
   updateSection,
   updateSubject,
 } from '../../services/academicsService'
-import { getUsers as getUserProfiles } from '../../services/userService'
 import { notifySubjectsUpdated, subscribeSubjectsUpdated, unsubscribeSubjectsUpdated } from '../../services/referenceService'
 import AdviserSelect from '../../components/AdviserSelect'
 
@@ -38,13 +38,13 @@ export function AcademicStructurePage() {
   const [sections, setSections] = useState([])
   const [strands, setStrands] = useState([])
   const [subjects, setSubjects] = useState([])
-  const [teachers, setTeachers] = useState([])
+  const [academicDivisions, setAcademicDivisions] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [yearForm, setYearForm] = useState({ id: '', name: '', start_date: '', end_date: '', is_active: false })
   const [gradeForm, setGradeForm] = useState({ id: '', name: '', code: '', school_level: 'Elementary', order: 1, is_active: true })
   const [sectionForm, setSectionForm] = useState({ id: '', academic_year: '', grade_level: '', name: '', capacity: 40, description: '', adviser: '', adviser_name: '', is_active: true })
-  const [subjectForm, setSubjectForm] = useState({ id: '', code: '', name: '', category: 'Learning Area', grade_level: '', strand: '', is_active: true })
+  const [subjectForm, setSubjectForm] = useState({ id: '', code: '', name: '', category: 'Learning Area', academic_division: '', grade_level: '', grade_levels: [], strand: '', is_active: true })
   const [saving, setSaving] = useState(false)
   const [yearSearch, setYearSearch] = useState('')
   const [yearStatusFilter, setYearStatusFilter] = useState('all')
@@ -130,20 +130,20 @@ export function AcademicStructurePage() {
       setLoading(true)
       setError('')
       try {
-        const [yearsData, gradeData, sectionData, strandData, subjectData, teacherData] = await Promise.all([
+        const [yearsData, gradeData, sectionData, strandData, divisionData, subjectData] = await Promise.all([
           getAcademicYears(),
           getGradeLevels(),
           getSections(),
           getStrands(),
+          getAcademicDivisions(),
           getSubjects(),
-          getUserProfiles(),
         ])
         setAcademicYears(normalizeListResponse(yearsData).items)
         setGradeLevels(normalizeListResponse(gradeData).items)
         setSections(normalizeListResponse(sectionData).items)
         setStrands(normalizeListResponse(strandData).items)
+        setAcademicDivisions(Array.isArray(divisionData) ? divisionData : [])
         setSubjects(normalizeListResponse(subjectData).items)
-        setTeachers(normalizeListResponse(teacherData).items || [])
       } catch (err) {
         setError(getApiErrorMessage(err))
       } finally {
@@ -253,6 +253,8 @@ export function AcademicStructurePage() {
       const payload = {
         ...subjectForm,
         grade_level: subjectForm.grade_level || null,
+        grade_levels: subjectForm.grade_levels,
+        academic_division: subjectForm.academic_division || undefined,
         strand: subjectForm.strand || null,
       }
       if (subjectForm.id) {
@@ -263,7 +265,7 @@ export function AcademicStructurePage() {
       const refreshed = await getSubjects()
       setSubjects(normalizeListResponse(refreshed).items)
       notifySubjectsUpdated()
-      setSubjectForm({ id: '', code: '', name: '', category: 'Learning Area', grade_level: '', strand: '', is_active: true })
+      setSubjectForm({ id: '', code: '', name: '', category: 'Learning Area', academic_division: '', grade_level: '', grade_levels: [], strand: '', is_active: true })
     } catch (err) {
       setError(getApiErrorMessage(err))
     } finally {
@@ -299,7 +301,9 @@ export function AcademicStructurePage() {
       code: subject.code || '',
       name: subject.name || '',
       category: subject.category || 'Learning Area',
+      academic_division: subject.academic_division || '',
       grade_level: subject.grade_level || '',
+      grade_levels: subject.grade_levels || (subject.grade_level ? [subject.grade_level] : []),
       strand: subject.strand || '',
       is_active: subject.is_active !== false,
     })
@@ -679,37 +683,38 @@ export function AcademicStructurePage() {
         </div>
 
         <form className="form-grid" onSubmit={handleSubjectSubmit}>
-          <label>
-            <span>Subject code</span>
-            <input value={subjectForm.code} onChange={(event) => setSubjectForm({ ...subjectForm, code: event.target.value })} required />
-          </label>
+          <div className="form-field subject-identifier-field">
+            <span className="form-field__label">Subject identifier</span>
+            <strong>{subjectForm.id ? subjectForm.code : 'Automatically generated after saving'}</strong>
+            <small>Internal system identifier; it is assigned by EDU ASSIST.</small>
+          </div>
           <label>
             <span>Subject name</span>
             <input value={subjectForm.name} onChange={(event) => setSubjectForm({ ...subjectForm, name: event.target.value })} required />
           </label>
           <label>
-            <span>Category</span>
-            <select value={subjectForm.category} onChange={(event) => setSubjectForm({ ...subjectForm, category: event.target.value })}>
-              <option value="Learning Area">Learning Area</option>
-              <option value="Core">Core</option>
-              <option value="Applied">Applied</option>
-              <option value="Specialized">Specialized</option>
+            <span>Academic division</span>
+            <select value={subjectForm.academic_division} onChange={(event) => {
+              const division = academicDivisions.find((item) => item.value === event.target.value)
+              setSubjectForm({ ...subjectForm, academic_division: event.target.value, grade_level: division?.grade_levels?.[0]?.id || '', category: event.target.value === 'SENIOR_HIGH_SCHOOL' ? 'Core' : 'Learning Area', strand: '' })
+            }}>
+              <option value="">Select academic division</option>
+              {academicDivisions.map((division) => <option key={division.value} value={division.value}>{division.label}</option>)}
             </select>
           </label>
-          <label>
-            <span>Grade level</span>
-            <select value={subjectForm.grade_level} onChange={(event) => setSubjectForm({ ...subjectForm, grade_level: event.target.value })}>
-              <option value="">All grades</option>
-              {gradeLevels.map((grade) => <option key={grade.id} value={grade.id}>{grade.name}</option>)}
-            </select>
-          </label>
-          <label>
+          <div className="form-field">
+            <span className="form-field__label">Applicable grade levels</span>
+            <div className="selection-summary">
+              {(academicDivisions.find((division) => division.value === subjectForm.academic_division)?.grade_levels || []).map((grade) => <label key={grade.id}><input type="checkbox" checked={subjectForm.grade_levels.map(String).includes(String(grade.id))} onChange={(event) => setSubjectForm({ ...subjectForm, grade_level: event.target.checked ? (subjectForm.grade_level || grade.id) : subjectForm.grade_level, grade_levels: event.target.checked ? [...new Set([...subjectForm.grade_levels, grade.id])] : subjectForm.grade_levels.filter((id) => String(id) !== String(grade.id)) })} /> {grade.name}</label>)}
+            </div>
+          </div>
+          {subjectForm.academic_division === 'SENIOR_HIGH_SCHOOL' ? <label>
             <span>Strand</span>
             <select value={subjectForm.strand} onChange={(event) => setSubjectForm({ ...subjectForm, strand: event.target.value })}>
               <option value="">No strand</option>
-              {strands.map((strand) => <option key={strand.id} value={strand.id}>{strand.name}</option>)}
+              {strands.filter((strand) => strand.is_active !== false).map((strand) => <option key={strand.id} value={strand.id}>{strand.name}</option>)}
             </select>
-          </label>
+          </label> : null}
           <label>
             <span>Status</span>
             <select value={subjectForm.is_active ? 'true' : 'false'} onChange={(event) => setSubjectForm({ ...subjectForm, is_active: event.target.value === 'true' })}>
@@ -719,7 +724,7 @@ export function AcademicStructurePage() {
           </label>
           <div className="section-actions form-grid-full">
             <button type="submit" className="action-button" disabled={saving}>{saving ? 'Saving...' : subjectForm.id ? 'Update subject' : 'Create subject'}</button>
-            {subjectForm.id ? <button type="button" className="action-button action-button--neutral" onClick={() => setSubjectForm({ id: '', code: '', name: '', category: 'Learning Area', grade_level: '', strand: '', is_active: true })}>Cancel</button> : null}
+            {subjectForm.id ? <button type="button" className="action-button action-button--neutral" onClick={() => setSubjectForm({ id: '', code: '', name: '', category: 'Learning Area', academic_division: '', grade_level: '', grade_levels: [], strand: '', is_active: true })}>Cancel</button> : null}
           </div>
         </form>
 

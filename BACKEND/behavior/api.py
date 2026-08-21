@@ -1,4 +1,8 @@
+from django.db import transaction
 from rest_framework import mixins, permissions, viewsets
+from rest_framework.decorators import action
+from rest_framework.exceptions import ValidationError
+from rest_framework.response import Response
 from rest_framework.filters import OrderingFilter, SearchFilter
 from django_filters.rest_framework import DjangoFilterBackend
 
@@ -18,6 +22,8 @@ class CoreValueViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins.
     queryset = CoreValue.objects.all()
     serializer_class = CoreValueSerializer
     permission_classes = [permissions.IsAuthenticated, IsAuthorizedStaff]
+    filter_backends = [DjangoFilterBackend]
+    filterset_fields = ['is_active']
 
     def get_permissions(self):
         if self.request.method in ['POST', 'PUT', 'PATCH']:
@@ -29,6 +35,8 @@ class BehaviorIndicatorViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin,
     queryset = BehaviorIndicator.objects.select_related('core_value').all()
     serializer_class = BehaviorIndicatorSerializer
     permission_classes = [permissions.IsAuthenticated, IsAuthorizedStaff]
+    filter_backends = [DjangoFilterBackend]
+    filterset_fields = ['core_value', 'is_active']
 
     def get_permissions(self):
         if self.request.method in ['POST', 'PUT', 'PATCH']:
@@ -40,6 +48,8 @@ class BehavioralRatingViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, 
     queryset = BehavioralRating.objects.all()
     serializer_class = BehavioralRatingSerializer
     permission_classes = [permissions.IsAuthenticated, IsAuthorizedStaff]
+    filter_backends = [DjangoFilterBackend]
+    filterset_fields = ['is_active']
 
     def get_permissions(self):
         if self.request.method in ['POST', 'PUT', 'PATCH']:
@@ -79,3 +89,47 @@ class BehavioralAssessmentViewSet(mixins.ListModelMixin, mixins.RetrieveModelMix
             object_type=self.serializer_class.Meta.model.__name__,
             object_id=str(instance.pk),
         )
+
+    @action(detail=False, methods=['post'], url_path='bulk')
+    def bulk_create_or_update(self, request):
+        if not isinstance(request.data, list):
+            raise ValidationError({'detail': 'Bulk behavior payload must be a list of records.'})
+
+        results = []
+        with transaction.atomic():
+            for index, item in enumerate(request.data):
+                if not isinstance(item, dict):
+                    raise ValidationError({'detail': f'Record at index {index} must be an object.'})
+
+                record_id = item.get('id')
+                instance = None
+                if record_id:
+                    instance = self.get_queryset().filter(pk=record_id).first()
+                    if instance is None:
+                        raise ValidationError({'detail': f'Behavior assessment {record_id} was not found or is not authorized.'})
+                else:
+                    unique_fields = {
+                        'enrollment_id': item.get('enrollment'),
+                        'academic_year_id': item.get('academic_year'),
+                        'core_value_id': item.get('core_value'),
+                        'behavior_indicator_id': item.get('behavior_indicator'),
+                        'grading_period_type': item.get('grading_period_type'),
+                    }
+                    period_value = item.get('quarter') if item.get('grading_period_type') == 'Quarter' else item.get('semester')
+                    period_field = 'quarter' if item.get('grading_period_type') == 'Quarter' else 'semester'
+                    if period_value is not None and all(value is not None for value in unique_fields.values()):
+                        instance = BehavioralAssessment.objects.filter(**unique_fields, **{period_field: period_value}).first()
+
+                serializer = self.get_serializer(instance, data=item, partial=bool(instance), context={'request': request})
+                serializer.is_valid(raise_exception=True)
+                saved = serializer.save(assessed_by=request.user if request.user.is_authenticated else None)
+                AuditLog.objects.create(
+                    user=request.user if request.user.is_authenticated else None,
+                    action='UPDATE' if instance else 'CREATE',
+                    module=self.serializer_class.Meta.model._meta.app_label,
+                    object_type=self.serializer_class.Meta.model.__name__,
+                    object_id=str(saved.pk),
+                )
+                results.append(saved)
+
+        return Response({'results': self.get_serializer(results, many=True).data, 'count': len(results)}, status=201)

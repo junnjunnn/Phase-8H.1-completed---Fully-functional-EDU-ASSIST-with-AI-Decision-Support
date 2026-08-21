@@ -1,4 +1,5 @@
 from typing import Iterable
+from django.db import models
 from django.db.models import QuerySet
 
 
@@ -34,6 +35,28 @@ def get_user_scope(user: object) -> str:
     return 'none'
 
 
+def teacher_assignment_queryset(user: object, active_only: bool = True):
+    """Return the teacher's authoritative subject assignments."""
+    from academics.models import TeacherAssignment
+
+    queryset = TeacherAssignment.objects.filter(teacher=user)
+    if active_only:
+        queryset = queryset.filter(is_active=True)
+    return queryset
+
+
+def teacher_section_queryset(user: object):
+    """Return sections where the teacher teaches or is the adviser."""
+    from academics.models import Section
+
+    profile = _get_profile(user)
+    assigned_sections = profile.assigned_sections.values('pk') if profile else Section.objects.none().values('pk')
+    assignments = teacher_assignment_queryset(user).values('section_id')
+    return Section.objects.filter(
+        models.Q(adviser=user) | models.Q(pk__in=assignments) | models.Q(pk__in=assigned_sections)
+    ).distinct()
+
+
 def authorized_students_queryset(user: object, queryset: QuerySet) -> QuerySet:
     """Return a queryset of Student objects authorized for the given user."""
     scope = get_user_scope(user)
@@ -43,7 +66,7 @@ def authorized_students_queryset(user: object, queryset: QuerySet) -> QuerySet:
         profile = _get_profile(user)
         if not profile:
             return queryset.none()
-        sections = profile.assigned_sections.all()
+        sections = teacher_section_queryset(user)
         return queryset.filter(enrollments__section__in=sections).distinct()
     if scope == 'guidance':
         return queryset.filter(enrollments__isnull=False).distinct()
@@ -64,7 +87,7 @@ def authorized_enrollment_queryset(user: object, queryset: QuerySet, enrollment_
         profile = _get_profile(user)
         if not profile:
             return queryset.none()
-        sections = profile.assigned_sections.all()
+        sections = teacher_section_queryset(user)
         # Determine if the queryset is already Enrollment-like (has 'section' field)
         model_fields = {f.name for f in queryset.model._meta.get_fields()}
         # If enrollment_field refers to a related lookup like 'prediction__enrollment',

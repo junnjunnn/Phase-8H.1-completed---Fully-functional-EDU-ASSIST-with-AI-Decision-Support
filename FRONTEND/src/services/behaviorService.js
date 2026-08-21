@@ -25,6 +25,11 @@ export async function createBehavioralAssessment(payload) {
   return response.data
 }
 
+export async function bulkCreateBehavioralAssessments(payload) {
+  const response = await apiClient.post('/behavioral-assessments/bulk/', payload)
+  return response.data
+}
+
 export async function updateBehavioralAssessment(id, payload) {
   const response = await apiClient.patch(`/behavioral-assessments/${id}/`, payload)
   return response.data

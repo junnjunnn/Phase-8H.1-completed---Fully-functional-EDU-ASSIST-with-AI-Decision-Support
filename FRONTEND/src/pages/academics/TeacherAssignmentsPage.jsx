@@ -267,7 +267,7 @@ export function TeacherAssignmentsPage() {
             <span>Subject</span>
             <select value={form.subject} onChange={(event) => setForm({ ...form, subject: event.target.value })} required>
               <option value="">Select</option>
-              {subjects.filter((subject) => !form.grade_level || String(subject.grade_level) === String(form.grade_level)).map((subject) => <option key={subject.id} value={subject.id}>{subject.name}</option>)}
+              {subjects.filter((subject) => !form.grade_level || (subject.grade_levels || [subject.grade_level]).map(String).includes(String(form.grade_level))).map((subject) => <option key={subject.id} value={subject.id}>{subject.name}</option>)}
             </select>
           </label>
           <label>

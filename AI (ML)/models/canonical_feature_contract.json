@@ -1,0 +1,51 @@
+{
+  "version": "sprint4-phase4-v1",
+  "numeric_columns": [
+    "mathematics_grade",
+    "english_grade",
+    "science_grade",
+    "filipino_grade",
+    "araling_panlipunan_grade",
+    "esp_grade",
+    "mapeh_grade",
+    "tle_grade",
+    "education_grade",
+    "general_average",
+    "failed_subjects",
+    "present_days",
+    "absent_days",
+    "late_days",
+    "excused_absences",
+    "attendance_rate",
+    "absent_percentage",
+    "late_percentage",
+    "high_grade_count",
+    "has_intervention",
+    "number_of_interventions"
+  ],
+  "categorical_values": {
+    "school_year": ["2025-2026", "2026-2027", "Current", "New School Year"],
+    "grade_level": ["Grade 1", "Grade 2", "Grade 3", "Grade 4", "Grade 5", "Grade 6", "Grade 7", "Grade 8", "Grade 9", "Grade 10", "Grade 11", "Grade 12"],
+    "section": ["A", "B", "C", "D", "Moonstone"],
+    "behavior_core_value": ["Maka-Diyos (Love for God)", "Makatao (Love for Fellowmen)", "Maka-Kalikasan (Love for Nature)", "Makabansa (Love for Country)"],
+    "behavior_indicator": ["Expresses one's spiritual beliefs while respecting the spiritual beliefs of others", "Shows adherence to ethical principles by upholding truth", "Is sensitive to individual, social, and cultural differences", "Demonstrate contributions toward solidarity", "Cares for the environment and utilizes resources wisely, judiciously, and economically", "Demonstrates pride in being a Filipino; exercises the rights and responsibilities of a Filipino Citizen", "Demonstrates appropriate behavior in carrying out activities in the school, community, and country"],
+    "behavior_teacher_rating": ["AO", "NO", "RO", "SO"],
+    "intervention_type": ["Academic Monitoring", "Attendance Monitoring", "Behavioral Monitoring", "Counseling", "Guidance Referral", "Mentoring", "No Intervention", "Parent/Guardian Conference", "Tutoring"],
+    "intervention_outcome": ["Improved", "No Change", "Not Yet Evaluated", "Ongoing", "Worsened"]
+  },
+  "subject_feature_map": {
+    "Mathematics": "mathematics_grade",
+    "Mathematics 9": "mathematics_grade",
+    "English": "english_grade",
+    "English 9": "english_grade",
+    "Science": "science_grade",
+    "Science 9": "science_grade",
+    "Filipino": "filipino_grade",
+    "Araling Panlipunan": "araling_panlipunan_grade",
+    "ESP": "esp_grade",
+    "MAPEH": "mapeh_grade",
+    "TLE": "tle_grade",
+    "EDUCATION": "education_grade"
+  },
+  "unknown_category_policy": "reject"
+}

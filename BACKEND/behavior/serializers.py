@@ -3,6 +3,7 @@ from rest_framework import serializers
 from common.authorization import authorized_enrollment_queryset
 from academics.models import Enrollment
 from .models import CoreValue, BehaviorIndicator, BehavioralRating, BehavioralAssessment
+from .reference_data import DEPED_RATINGS
 
 
 class CoreValueSerializer(serializers.ModelSerializer):
@@ -75,3 +76,41 @@ class BehavioralAssessmentSerializer(serializers.ModelSerializer):
             )
         
         return value
+
+    def validate(self, attrs):
+        enrollment = attrs.get('enrollment') or getattr(self.instance, 'enrollment', None)
+        academic_year = attrs.get('academic_year') or getattr(self.instance, 'academic_year', None)
+        core_value = attrs.get('core_value') or getattr(self.instance, 'core_value', None)
+        behavior_indicator = attrs.get('behavior_indicator') or getattr(self.instance, 'behavior_indicator', None)
+        rating = attrs.get('rating') or getattr(self.instance, 'rating', None)
+        grading_period_type = attrs.get('grading_period_type') or getattr(self.instance, 'grading_period_type', None)
+        quarter = attrs.get('quarter') if 'quarter' in attrs else getattr(self.instance, 'quarter', None)
+        semester = attrs.get('semester') if 'semester' in attrs else getattr(self.instance, 'semester', None)
+
+        if academic_year and not academic_year.is_active:
+            raise serializers.ValidationError({'academic_year': 'Cannot save behavior assessments for an archived academic year.'})
+
+        if core_value and behavior_indicator and behavior_indicator.core_value_id != core_value.id:
+            raise serializers.ValidationError({'behavior_indicator': 'The behavior indicator must belong to the selected Core Value.'})
+
+        allowed_codes = {item['code'] for item in DEPED_RATINGS}
+        if rating and rating.code not in allowed_codes:
+            raise serializers.ValidationError({'rating': 'Select a valid DepEd observed-values rating.'})
+        if rating and not rating.is_active:
+            raise serializers.ValidationError({'rating': 'The selected rating is inactive.'})
+
+        if grading_period_type == 'Quarter':
+            if quarter is None:
+                raise serializers.ValidationError({'quarter': 'Quarter is required when grading_period_type is Quarter.'})
+            if semester is not None:
+                raise serializers.ValidationError({'semester': 'Semester must be blank when grading_period_type is Quarter.'})
+        elif grading_period_type == 'Semester':
+            if semester is None:
+                raise serializers.ValidationError({'semester': 'Semester is required when grading_period_type is Semester.'})
+            if quarter is not None:
+                raise serializers.ValidationError({'quarter': 'Quarter must be blank when grading_period_type is Semester.'})
+
+        if enrollment and academic_year and enrollment.academic_year_id != academic_year.id:
+            raise serializers.ValidationError({'academic_year': 'The academic year must match the enrollment.'})
+
+        return attrs

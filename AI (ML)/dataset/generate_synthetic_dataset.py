@@ -1,4 +1,5 @@
 import csv
+import json
 import random
 from pathlib import Path
 from collections import Counter
@@ -8,15 +9,17 @@ random.seed(42)
 base_dir = Path(r'f:\edu_new\AI (ML)')
 dataset_dir = base_dir / 'dataset'
 dataset_dir.mkdir(parents=True, exist_ok=True)
+contract = json.loads((base_dir / 'models' / 'canonical_feature_contract.json').read_text(encoding='utf-8'))
+categorical_values = contract['categorical_values']
 
 num_students = 1000
-school_years = ['2024-2025', '2025-2026']
-grade_levels = ['Grade 4', 'Grade 5', 'Grade 6', 'Grade 7', 'Grade 8', 'Grade 9', 'Grade 10']
-sections = ['A', 'B', 'C', 'D']
+school_years = categorical_values['school_year']
+grade_levels = categorical_values['grade_level']
+sections = categorical_values['section']
 quarters = [1, 2, 3, 4]
-behavior_ratings = ['AO', 'SO', 'RO', 'NO']
-intervention_types = ['Academic Monitoring', 'Tutoring', 'Counseling', 'Parent/Guardian Conference', 'Attendance Monitoring', 'Mentoring', 'Guidance Referral', 'Behavioral Monitoring']
-outcomes = ['Improved', 'Ongoing', 'No Change', 'Worsened', 'Not Yet Evaluated']
+behavior_ratings = categorical_values['behavior_teacher_rating']
+intervention_types = [value for value in categorical_values['intervention_type'] if value != 'No Intervention']
+outcomes = categorical_values['intervention_outcome']
 
 
 def clamp(value, low, high):
@@ -76,8 +79,9 @@ for i in range(1, num_students + 1):
     esp_grade = generate_grade(base_avg + 0.5)
     mapeh_grade = generate_grade(base_avg + 1.0)
     tle_grade = generate_grade(base_avg - 0.2)
+    education_grade = generate_grade(base_avg + 0.2)
 
-    general_average = round((math_grade + english_grade + science_grade + filipino_grade + araling_grade + esp_grade + mapeh_grade + tle_grade) / 8, 2)
+    general_average = round((math_grade + english_grade + science_grade + filipino_grade + araling_grade + esp_grade + mapeh_grade + tle_grade + education_grade) / 9, 2)
 
     if attendance_issue:
         absent_days = int(random.uniform(1, 8))
@@ -108,9 +112,9 @@ for i in range(1, num_students + 1):
     failed_subjects = min(failed_subjects, 3)
 
     has_intervention = False
-    intervention_type = ''
+    intervention_type = 'No Intervention'
     intervention_reason = ''
-    intervention_outcome = ''
+    intervention_outcome = 'Not Yet Evaluated'
     improved_after_intervention = ''
     if risk_level == 'high' or (academic_struggle and attendance_issue) or (behavior_issue and academic_struggle):
         has_intervention = True
@@ -147,11 +151,6 @@ for i in range(1, num_students + 1):
         risk_score += 1
     risk_status = 'At Risk' if risk_score >= 4 else 'Not At Risk'
 
-    if risk_status == 'Not At Risk' and random.random() < 0.08:
-        risk_status = 'At Risk'
-    if risk_status == 'At Risk' and random.random() < 0.12:
-        risk_status = 'Not At Risk'
-
     rows.append({
         'student_id': f'ST-{i:04d}',
         'school_year': school_year,
@@ -166,6 +165,7 @@ for i in range(1, num_students + 1):
         'esp_grade': esp_grade,
         'mapeh_grade': mapeh_grade,
         'tle_grade': tle_grade,
+        'education_grade': education_grade,
         'general_average': general_average,
         'failed_subjects': failed_subjects,
         'present_days': present_days,
@@ -173,8 +173,8 @@ for i in range(1, num_students + 1):
         'late_days': late_days,
         'excused_absences': excused_absences,
         'attendance_rate': attendance_rate,
-        'behavior_core_value': random.choice(['Respect', 'Responsibility', 'Compassion', 'Integrity', 'Excellence']),
-        'behavior_indicator': random.choice(['Shows respect to teachers and peers', 'Completes assignments on time', 'Displays kindness and empathy', 'Practices honesty', 'Demonstrates effort and perseverance']),
+        'behavior_core_value': random.choice(categorical_values['behavior_core_value']),
+        'behavior_indicator': random.choice(categorical_values['behavior_indicator']),
         'behavior_teacher_rating': behavior_rating,
         'behavior_quarter': quarter,
         'teacher_remarks': random.choice([
@@ -195,7 +195,7 @@ for i in range(1, num_students + 1):
 csv_path = dataset_dir / 'synthetic_student_dataset.csv'
 fieldnames = [
     'student_id', 'school_year', 'grade_level', 'section', 'assessment_quarter',
-    'mathematics_grade', 'english_grade', 'science_grade', 'filipino_grade', 'araling_panlipunan_grade', 'esp_grade', 'mapeh_grade', 'tle_grade',
+    'mathematics_grade', 'english_grade', 'science_grade', 'filipino_grade', 'araling_panlipunan_grade', 'esp_grade', 'mapeh_grade', 'tle_grade', 'education_grade',
     'general_average', 'failed_subjects', 'present_days', 'absent_days', 'late_days', 'excused_absences', 'attendance_rate',
     'behavior_core_value', 'behavior_indicator', 'behavior_teacher_rating', 'behavior_quarter', 'teacher_remarks',
     'intervention_type', 'intervention_date', 'intervention_reason', 'intervention_outcome', 'improved_after_intervention', 'risk_status'

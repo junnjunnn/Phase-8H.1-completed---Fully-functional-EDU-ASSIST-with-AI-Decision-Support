@@ -7,6 +7,7 @@ import { PageHeader } from '../../components/common/PageHeader'
 import { FilterBar, KpiCard, SearchBar, SectionHeader } from '../../components/design-system/DesignSystem'
 import { getApiErrorMessage } from '../../services/api'
 import { exportReport, getReportCenter } from '../../services/reportService'
+import { getTeacherContext } from '../../services/academicsService'
 
 const categories = [
   { key: 'student', label: 'Student Reports', description: 'Master list, profiles, and enrollment visibility.' },
@@ -58,11 +59,14 @@ export function ReportsPage() {
   const [reportData, setReportData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [teacherContext, setTeacherContext] = useState(null)
+  const [filtersOpen, setFiltersOpen] = useState(false)
   const [activeCategory, setActiveCategory] = useState('student')
   const [filters, setFilters] = useState({
     academic_year: '',
     grade_level: '',
     section: '',
+    subject: '',
     teacher: '',
     risk_level: '',
     status: '',
@@ -75,6 +79,12 @@ export function ReportsPage() {
       return categories.filter((category) => category.key !== 'ai')
     }
     return categories
+  }, [user])
+
+  useEffect(() => {
+    const role = user?.role_name || user?.role || user?.profile?.role_name || 'NONE'
+    if (role !== 'TEACHER') return
+    getTeacherContext().then(setTeacherContext).catch(() => setTeacherContext(null))
   }, [user])
 
   // Only update active category when it actually differs to avoid synchronous setState loops
@@ -121,6 +131,10 @@ export function ReportsPage() {
   const handleChange = (event) => {
     const { name, value } = event.target
     setFilters((current) => ({ ...current, [name]: value }))
+  }
+
+  function clearFilters() {
+    setFilters({ academic_year: '', grade_level: '', section: '', subject: '', teacher: '', risk_level: '', status: '', search: '' })
   }
 
   const handleExport = async (format) => {
@@ -195,19 +209,28 @@ export function ReportsPage() {
         </p>
       </div>
 
-      <FilterBar title="Report filters">
+      <div className="report-filter-toolbar">
         <SearchBar value={filters.search} onChange={(event) => handleChange({ target: { name: 'search', value: event.target.value } })} placeholder="Search student" ariaLabel="Search reports" />
+        <button type="button" className="action-button action-button--outline" onClick={() => setFiltersOpen((open) => !open)} aria-expanded={filtersOpen} aria-controls="report-filter-panel">
+          {filtersOpen ? 'Hide filters' : 'Show filters'}
+        </button>
+      </div>
+      {filtersOpen ? <div id="report-filter-panel"><FilterBar title="Report filters">
         <label>
           Academic Year
-          <input name="academic_year" value={filters.academic_year} onChange={handleChange} placeholder="2024-2025" />
+          {teacherContext ? <select name="academic_year" value={filters.academic_year} onChange={handleChange}><option value="">All assigned years</option>{[...new Map([...(teacherContext.advisory_classes || []), ...(teacherContext.subject_assignments || [])].map((item) => [item.academic_year, item.academic_year_name])).entries()].map(([id, name]) => <option key={id} value={id}>{name}</option>)}</select> : <input name="academic_year" value={filters.academic_year} onChange={handleChange} placeholder="2024-2025" />}
         </label>
         <label>
           Grade Level
-          <input name="grade_level" value={filters.grade_level} onChange={handleChange} placeholder="Grade 10" />
+          {teacherContext ? <select name="grade_level" value={filters.grade_level} onChange={handleChange}><option value="">All assigned grades</option>{[...new Map([...(teacherContext.advisory_classes || []), ...(teacherContext.subject_assignments || [])].map((item) => [item.grade_level, item.grade_level_name])).entries()].map(([id, name]) => <option key={id} value={id}>{name}</option>)}</select> : <input name="grade_level" value={filters.grade_level} onChange={handleChange} placeholder="Grade 10" />}
         </label>
         <label>
           Section
-          <input name="section" value={filters.section} onChange={handleChange} placeholder="Section A" />
+          {teacherContext ? <select name="section" value={filters.section} onChange={handleChange}><option value="">All assigned sections</option>{[...new Map([...(teacherContext.advisory_classes || []), ...(teacherContext.subject_assignments || [])].map((item) => [item.section, `${item.grade_level_name} · ${item.section_name}`])).entries()].map(([id, name]) => <option key={id} value={id}>{name}</option>)}</select> : <input name="section" value={filters.section} onChange={handleChange} placeholder="Section A" />}
+        </label>
+        <label>
+          Subject
+          {teacherContext ? <select name="subject" value={filters.subject || ''} onChange={handleChange}><option value="">All assigned subjects</option>{[...new Map((teacherContext.subject_assignments || []).map((item) => [item.subject, item.subject_name])).entries()].map(([id, name]) => <option key={id} value={id}>{name}</option>)}</select> : <input name="subject" value={filters.subject || ''} onChange={handleChange} placeholder="Subject ID" />}
         </label>
         <label>
           Teacher
@@ -240,7 +263,11 @@ export function ReportsPage() {
           Date To
           <input type="date" name="date_to" value={filters.date_to || ''} onChange={handleChange} />
         </label>
-      </FilterBar>
+        <div className="filter-actions form-grid-full">
+          <button type="button" className="action-button" onClick={() => setFiltersOpen(false)}>Apply filters</button>
+          <button type="button" className="action-button action-button--outline" onClick={clearFilters}>Clear</button>
+        </div>
+      </FilterBar></div> : null}
 
       <section className="panel-card" aria-label="Report categories">
         <div className="chip-list">

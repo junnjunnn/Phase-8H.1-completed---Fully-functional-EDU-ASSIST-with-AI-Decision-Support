@@ -59,10 +59,10 @@ The target label was assigned using a weighted risk score:
 
 ## Validation Summary
 - Number of students: 1000
-- Number of At Risk students: 394
-- Number of Not At Risk students: 606
-- Missing value count: 4358
+- Number of At Risk students: 448
+- Number of Not At Risk students: 552
+- Missing value count: 2627
 - Duplicate count: 0
-- Behavior rating distribution: {'NO': 164, 'AO': 311, 'SO': 268, 'RO': 257}
-- Attendance rate summary: min=88.75, max=100.00, mean=97.54
-- General average summary: min=57.18, max=93.99, mean=78.50
+- Behavior rating distribution: {'SO': 240, 'NO': 151, 'AO': 336, 'RO': 273}
+- Attendance rate summary: min=88.75, max=100.00, mean=97.45
+- General average summary: min=56.87, max=90.96, mean=77.70

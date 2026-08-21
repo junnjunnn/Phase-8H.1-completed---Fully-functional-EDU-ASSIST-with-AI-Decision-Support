@@ -25,6 +25,16 @@ export async function getSubjects(params = {}) {
   return response.data
 }
 
+export async function getAcademicDivisions() {
+  const response = await apiClient.get('/subjects/academic-divisions/')
+  return response.data
+}
+
+export async function getTeacherContext() {
+  const response = await apiClient.get('/teacher-assignments/my-context/')
+  return response.data
+}
+
 export async function getEnrollments(params = {}) {
   const response = await apiClient.get('/enrollments/', { params })
   return response.data
@@ -37,6 +47,11 @@ export async function getAcademicRecords(params = {}) {
 
 export async function createAcademicRecord(payload) {
   const response = await apiClient.post('/academic-records/', payload)
+  return response.data
+}
+
+export async function bulkCreateAcademicRecords(payload) {
+  const response = await apiClient.post('/academic-records/bulk/', payload)
   return response.data
 }
 

@@ -45,6 +45,17 @@ class AcademicsAPITests(TestCase):
         self.assertIn(self.enrollment_a.id, enrollment_ids)
         self.assertNotIn(self.enrollment_b.id, enrollment_ids)
 
+    def test_teacher_student_section_filter_is_exact(self):
+        self.client.force_authenticate(user=self.teacher)
+        response = self.client.get('/api/students/', {
+            'academic_year': self.academic_year.id,
+            'section': self.enrollment_a.section.id,
+        })
+        self.assertEqual(response.status_code, 200)
+        student_ids = {item['id'] for item in response.data['results']}
+        self.assertIn(self.student_a.id, student_ids)
+        self.assertNotIn(self.student_b.id, student_ids)
+
     def test_teacher_only_sees_assigned_section_academic_records(self):
         self.client.force_authenticate(user=self.teacher)
         response = self.client.get('/api/academic-records/')
@@ -52,6 +63,197 @@ class AcademicsAPITests(TestCase):
         record_ids = {item['id'] for item in response.data['results']}
         self.assertIn(self.record_a.id, record_ids)
         self.assertNotIn(self.record_b.id, record_ids)
+
+    def test_teacher_can_bulk_save_valid_grades_for_assigned_class(self):
+        self.client.force_authenticate(user=self.teacher)
+        TeacherAssignment.objects.create(
+            teacher=self.teacher,
+            academic_year=self.academic_year,
+            grade_level=self.grade_level,
+            section=self.enrollment_a.section,
+            subject=self.subject,
+            is_active=True,
+        )
+
+        student_c = Student.objects.create(first_name='Cara', last_name='Carter', gender='Female', student_status='active')
+        enrollment_c = Enrollment.objects.create(
+            student=student_c,
+            academic_year=self.academic_year,
+            grade_level=self.grade_level,
+            section=self.enrollment_a.section,
+            enrollment_status='active',
+        )
+
+        payload = [
+            {
+                'enrollment': self.enrollment_a.id,
+                'subject': self.subject.id,
+                'academic_year': self.academic_year.id,
+                'grading_period_type': 'Quarter',
+                'quarter': 1,
+                'grade': 86.0,
+            },
+            {
+                'enrollment': enrollment_c.id,
+                'subject': self.subject.id,
+                'academic_year': self.academic_year.id,
+                'grading_period_type': 'Quarter',
+                'quarter': 1,
+                'grade': 91.0,
+            },
+        ]
+        response = self.client.post('/api/academic-records/bulk/', payload, format='json')
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(len(response.data['results']), 2)
+        self.assertEqual(AcademicRecord.objects.filter(enrollment=self.enrollment_a, subject=self.subject).count(), 1)
+        self.assertEqual(AcademicRecord.objects.filter(enrollment=enrollment_c, subject=self.subject).count(), 1)
+
+    def test_teacher_bulk_save_is_atomic_when_one_item_is_invalid(self):
+        self.client.force_authenticate(user=self.teacher)
+        TeacherAssignment.objects.create(
+            teacher=self.teacher,
+            academic_year=self.academic_year,
+            grade_level=self.grade_level,
+            section=self.enrollment_a.section,
+            subject=self.subject,
+            is_active=True,
+        )
+        payload = [
+            {
+                'enrollment': self.enrollment_a.id,
+                'subject': self.subject.id,
+                'academic_year': self.academic_year.id,
+                'grading_period_type': 'Quarter',
+                'quarter': 2,
+                'grade': 86.0,
+            },
+            {
+                'enrollment': self.enrollment_a.id,
+                'subject': self.subject.id,
+                'academic_year': self.academic_year.id,
+                'grading_period_type': 'Quarter',
+                'quarter': 3,
+                'grade': 101.0,
+            },
+        ]
+        response = self.client.post('/api/academic-records/bulk/', payload, format='json')
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(AcademicRecord.objects.filter(enrollment=self.enrollment_a, quarter=2).exists())
+
+    def test_teacher_cannot_bulk_save_grades_for_unauthorized_subject(self):
+        self.client.force_authenticate(user=self.teacher)
+        subject = Subject.objects.create(code='SCI11A', name='Science 11', category='Learning Area', grade_level=self.grade_level)
+        payload = [{
+            'enrollment': self.enrollment_a.id,
+            'subject': subject.id,
+            'academic_year': self.academic_year.id,
+            'grading_period_type': 'Quarter',
+            'quarter': 1,
+            'grade': 89.0,
+        }]
+        response = self.client.post('/api/academic-records/bulk/', payload, format='json')
+        self.assertIn(response.status_code, {400, 403})
+        self.assertIn('assigned', str(response.data).lower())
+
+    def test_teacher_cannot_submit_another_students_enrollment_id(self):
+        self.client.force_authenticate(user=self.teacher)
+        TeacherAssignment.objects.create(
+            teacher=self.teacher,
+            academic_year=self.academic_year,
+            grade_level=self.grade_level,
+            section=self.enrollment_a.section,
+            subject=self.subject,
+            is_active=True,
+        )
+        payload = [{
+            'enrollment': self.enrollment_b.id,
+            'subject': self.subject.id,
+            'academic_year': self.academic_year.id,
+            'grading_period_type': 'Quarter',
+            'quarter': 1,
+            'grade': 89.0,
+        }]
+        response = self.client.post('/api/academic-records/bulk/', payload, format='json')
+        self.assertIn(response.status_code, {400, 403})
+        self.assertIn('permission', str(response.data).lower())
+
+    def test_invalid_grade_value_is_rejected_for_bulk_save(self):
+        self.client.force_authenticate(user=self.teacher)
+        TeacherAssignment.objects.create(
+            teacher=self.teacher,
+            academic_year=self.academic_year,
+            grade_level=self.grade_level,
+            section=self.enrollment_a.section,
+            subject=self.subject,
+            is_active=True,
+        )
+        payload = [{
+            'enrollment': self.enrollment_a.id,
+            'subject': self.subject.id,
+            'academic_year': self.academic_year.id,
+            'grading_period_type': 'Quarter',
+            'quarter': 1,
+            'grade': 101,
+        }]
+        response = self.client.post('/api/academic-records/bulk/', payload, format='json')
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('grade', str(response.data).lower())
+
+    def test_teacher_bulk_update_existing_record_for_same_period(self):
+        self.client.force_authenticate(user=self.teacher)
+        TeacherAssignment.objects.create(
+            teacher=self.teacher,
+            academic_year=self.academic_year,
+            grade_level=self.grade_level,
+            section=self.enrollment_a.section,
+            subject=self.subject,
+            is_active=True,
+        )
+        payload = [{
+            'enrollment': self.enrollment_a.id,
+            'subject': self.subject.id,
+            'academic_year': self.academic_year.id,
+            'grading_period_type': 'Quarter',
+            'quarter': 1,
+            'grade': 94.25,
+            'remarks': 'Updated for Sprint 4',
+        }]
+        response = self.client.post('/api/academic-records/bulk/', payload, format='json')
+        self.assertEqual(response.status_code, 201)
+        self.record_a.refresh_from_db()
+        self.assertEqual(float(self.record_a.grade), 94.25)
+        self.assertEqual(self.record_a.remarks, 'Updated for Sprint 4')
+
+    def test_teacher_bulk_save_isolated_by_grading_period(self):
+        self.client.force_authenticate(user=self.teacher)
+        TeacherAssignment.objects.create(
+            teacher=self.teacher,
+            academic_year=self.academic_year,
+            grade_level=self.grade_level,
+            section=self.enrollment_a.section,
+            subject=self.subject,
+            is_active=True,
+        )
+        AcademicRecord.objects.create(
+            enrollment=self.enrollment_a,
+            subject=self.subject,
+            academic_year=self.academic_year,
+            grading_period_type='Quarter',
+            quarter=2,
+            grade=78.00,
+        )
+        payload = [{
+            'enrollment': self.enrollment_a.id,
+            'subject': self.subject.id,
+            'academic_year': self.academic_year.id,
+            'grading_period_type': 'Quarter',
+            'quarter': 2,
+            'grade': 82.00,
+        }]
+        response = self.client.post('/api/academic-records/bulk/', payload, format='json')
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(AcademicRecord.objects.filter(enrollment=self.enrollment_a, subject=self.subject, academic_year=self.academic_year, grading_period_type='Quarter', quarter=1).count(), 1)
+        self.assertEqual(AcademicRecord.objects.filter(enrollment=self.enrollment_a, subject=self.subject, academic_year=self.academic_year, grading_period_type='Quarter', quarter=2).count(), 1)
 
     def test_superadmin_sees_all_academic_records(self):
         self.client.force_authenticate(user=self.superadmin)
@@ -107,7 +309,7 @@ class AcademicsAPITests(TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertIn('already exists', str(response.data))
 
-    def test_duplicate_subject_code_is_rejected(self):
+    def test_subject_identifier_cannot_be_manually_overwritten(self):
         self.client.force_authenticate(user=self.superadmin)
         response = self.client.post('/api/subjects/', {
             'code': 'MATH11',
@@ -116,8 +318,8 @@ class AcademicsAPITests(TestCase):
             'grade_level': self.grade_level.id,
             'is_active': True,
         })
-        self.assertEqual(response.status_code, 400)
-        self.assertIn('already exists', str(response.data))
+        self.assertEqual(response.status_code, 201)
+        self.assertRegex(response.data['code'], r'^SUBJ-[0-9A-F]{12}$')
 
     def test_duplicate_teacher_assignment_is_rejected(self):
         self.client.force_authenticate(user=self.superadmin)

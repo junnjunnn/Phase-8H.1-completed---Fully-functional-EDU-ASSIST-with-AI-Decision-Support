@@ -1,7 +1,8 @@
 .app-shell {
   display: grid;
   grid-template-columns: 280px minmax(0, 1fr);
-  min-height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
 }
 
 .app-shell--collapsed {
@@ -15,9 +16,10 @@
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
-  min-height: 100vh;
-  position: sticky;
-  top: 0;
+  min-height: 0;
+  height: 100%;
+  position: relative;
+  overflow-y: auto;
   border-right: 1px solid rgba(255, 255, 255, 0.12);
   width: 100%;
 }
@@ -292,7 +294,10 @@
 .content-area {
   display: flex;
   flex-direction: column;
-  min-height: 100vh;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
 }
 
 .topbar {
@@ -304,8 +309,9 @@
   background: linear-gradient(180deg, #ffffff 0%, #eef6ff 100%);
   border-bottom: 1px solid var(--color-border);
   box-shadow: 0 8px 24px rgba(15, 23, 42, 0.06);
-  position: sticky;
-  top: 0;
+  position: relative;
+  flex: 0 0 auto;
+  min-height: 78px;
   z-index: 10;
 }
 
@@ -412,6 +418,7 @@
 
 .profile-menu-wrapper {
   position: relative;
+  z-index: 30;
 }
 
 .profile-chip {
@@ -456,6 +463,21 @@
 .profile-chip small {
   display: block;
   color: var(--color-text-secondary);
+}
+
+.profile-dropdown {
+  position: absolute;
+  top: calc(100% + 0.55rem);
+  right: 0;
+  z-index: 40;
+  width: min(320px, calc(100vw - 2rem));
+  padding: 0.45rem;
+  display: grid;
+  gap: 0.25rem;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-medium);
+  box-shadow: 0 18px 40px rgba(15, 23, 42, 0.18);
 }
 
   .profile-grid {
@@ -512,6 +534,11 @@
 }
 
 .page-content {
+  min-height: 0;
+  min-width: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  flex: 1 1 auto;
   padding: 1.30rem 1.1rem 1.50rem;
   width: min(100%, 1480px);
   margin: 0 auto;
@@ -2221,6 +2248,175 @@
   outline: none;
   border-color: var(--color-primary);
   box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.12);
+}
+
+/* Subject management keeps its dense workflow independent from generic record panels. */
+.subjects-page {
+  gap: 1rem;
+  width: 100%;
+  min-width: 0;
+}
+
+.subjects-page > .record-summary-grid {
+  display: none;
+}
+
+.subjects-page .record-panel {
+  padding: 1.25rem;
+  min-width: 0;
+}
+
+.subjects-page .record-panel > .section-header {
+  margin-bottom: 1rem;
+}
+
+.subjects-page .subject-form-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+  gap: 1rem 1.25rem;
+  margin-bottom: 0;
+}
+
+.subjects-page .subject-form-grid > label,
+.subjects-page .subject-form-grid > .form-field {
+  min-width: 0;
+}
+
+.subjects-page .subject-form-grid label,
+.subjects-page .subject-form-grid .form-field {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.subjects-page .form-field__label,
+.subjects-page .subject-form-grid label > span {
+  color: var(--color-text-secondary);
+  font-size: 0.78rem;
+  font-weight: var(--font-weight-semibold);
+  line-height: 1.2;
+}
+
+.subjects-page .subject-form-grid input:not([type='checkbox']),
+.subjects-page .subject-form-grid select {
+  width: 100%;
+  min-height: 42px;
+  padding: 0.55rem 0.75rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-small);
+  background: var(--color-surface);
+}
+
+.subjects-page .subject-identifier-field {
+  min-height: 78px;
+  padding: 0.1rem 0;
+}
+
+.subjects-page .subject-identifier-field strong {
+  color: var(--color-text-primary);
+  font-size: 0.92rem;
+  line-height: 1.25;
+}
+
+.subjects-page .subject-identifier-field small {
+  color: var(--color-text-muted);
+  font-size: 0.75rem;
+  line-height: 1.35;
+}
+
+.subjects-page .selection-summary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.38rem 0.75rem;
+  min-height: 42px;
+  padding: 0.45rem 0.65rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-small);
+  background: var(--color-surface-muted);
+}
+
+.subjects-page .selection-summary label {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: var(--color-text-primary);
+  font-size: 0.82rem;
+  font-weight: var(--font-weight-regular);
+}
+
+.subjects-page .selection-summary input[type='checkbox'] {
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  accent-color: var(--color-primary);
+}
+
+.subjects-page .subject-form-grid .form-grid-full {
+  margin-top: 0.2rem;
+}
+
+.subjects-page .subject-list-header {
+  align-items: center;
+  margin-bottom: 0;
+}
+
+.subjects-page .subject-list-header h2,
+.subjects-page .subject-list-header p {
+  margin-block: 0;
+}
+
+.subjects-page .subject-list-count {
+  margin-top: 0.2rem !important;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-small);
+}
+
+.subjects-page .subject-filters {
+  display: grid;
+  grid-template-columns: minmax(190px, 1.35fr) minmax(130px, 0.85fr) minmax(130px, 0.85fr);
+  align-items: center;
+  gap: 0.5rem;
+  min-width: min(100%, 560px);
+  max-width: 560px;
+}
+
+.subjects-page .subject-filters input,
+.subjects-page .subject-filters select {
+  width: 100%;
+  min-width: 0;
+  min-height: 42px;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-small);
+  background: var(--color-surface);
+  font-size: 0.84rem;
+}
+
+.subjects-page .subject-filters input {
+  padding-left: 0.75rem;
+}
+
+.subjects-page .subject-filters input:focus,
+.subjects-page .subject-filters select:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px rgba(17, 63, 138, 0.12);
+}
+
+.subjects-page .table-card {
+  min-width: 0;
+  overflow-x: auto;
+}
+
+@media (max-width: 760px) {
+  .subjects-page .subject-form-grid,
+  .subjects-page .subject-filters {
+    grid-template-columns: 1fr;
+  }
+
+  .subjects-page .subject-filters {
+    min-width: 100%;
+    max-width: none;
+  }
 }
 
 .search-icon {

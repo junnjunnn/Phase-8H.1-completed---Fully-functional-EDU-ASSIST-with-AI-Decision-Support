@@ -1,4 +1,5 @@
 import json
+import logging
 import pickle
 from pathlib import Path
 from decimal import Decimal
@@ -25,6 +26,15 @@ FEATURE_MAPPING_PATH = ROOT_DIR / 'AI (ML)' / 'models' / 'feature_mapping.json'
 _MODEL = None
 _LABELS = None
 _FEATURE_MAPPING = None
+logger = logging.getLogger(__name__)
+
+
+class FeatureContractError(ValueError):
+    """Raised when application data cannot be represented by the saved model."""
+
+    def __init__(self, diagnostics: List[str]) -> None:
+        self.diagnostics = diagnostics
+        super().__init__('Prediction unavailable because the student data is not compatible with the current model.')
 
 
 class PredictionService:
@@ -111,20 +121,23 @@ class PredictionService:
         absent_percentage = round((absent_days / (school_days or 1) * 100), 2) if school_days else 0.0
         late_percentage = round((late_days / (school_days or 1) * 100), 2) if school_days else 0.0
 
+        latest_behavior = behavior_assessments.order_by('-assessment_date', '-created_at').first()
         behavior_ratings = []
         for record in behavior_assessments:
             if record.rating and record.rating.code:
                 behavior_ratings.append(record.rating.code)
         behavior_rating = max(set(behavior_ratings), key=behavior_ratings.count) if behavior_ratings else 'AO'
+        source_core_value = latest_behavior.core_value.name if latest_behavior and latest_behavior.core_value else 'Not available'
+        source_indicator = latest_behavior.behavior_indicator.name if latest_behavior and latest_behavior.behavior_indicator else 'Not available'
 
         feature_values = {
             'school_year': str(enrollment.academic_year.name) if enrollment.academic_year else 'Unknown',
             'grade_level': str(enrollment.grade_level.name) if enrollment.grade_level else 'Unknown',
             'section': str(enrollment.section.name) if enrollment.section else 'Unknown',
-            'behavior_core_value': 'Respect',
-            'behavior_indicator': 'Shows respect to teachers and peers',
+            'behavior_core_value': source_core_value,
+            'behavior_indicator': source_indicator,
             'behavior_teacher_rating': behavior_rating,
-            'intervention_type': 'No Intervention' if not interventions.exists() else 'Academic Monitoring',
+            'intervention_type': 'No Intervention' if not interventions.exists() else str(interventions.order_by('-created_at').first().intervention_type),
             'intervention_outcome': 'Not Yet Evaluated',
             'mathematics_grade': 0.0,
             'english_grade': 0.0,
@@ -148,25 +161,32 @@ class PredictionService:
             'number_of_interventions': interventions.count(),
         }
 
+        contract_diagnostics = []
         if academic_records.exists():
-            subject_map = {
-                'Mathematics': 'mathematics_grade',
-                'English': 'english_grade',
-                'Science': 'science_grade',
-                'Filipino': 'filipino_grade',
-                'Araling Panlipunan': 'araling_panlipunan_grade',
-                'ESP': 'esp_grade',
-                'MAPEH': 'mapeh_grade',
-                'TLE': 'tle_grade',
-            }
+            subject_map = self.feature_mapping.get('subject_feature_map', {})
+            normalized_subject_map = {str(name).casefold(): feature for name, feature in subject_map.items()}
             for record in academic_records:
                 subject_name = record.subject.name if record.subject else ''
-                feature_key = subject_map.get(subject_name)
+                feature_key = normalized_subject_map.get(str(subject_name).casefold())
                 if feature_key:
                     feature_values[feature_key] = float(record.final_grade or record.grade or 0)
+                else:
+                    contract_diagnostics.append(
+                        f"Subject '{subject_name or 'Unknown'}' is not represented in the current model vocabulary; "
+                        f"grade {float(record.final_grade or record.grade or 0)} was not encoded."
+                    )
 
         categorical_columns = self.feature_mapping.get('categorical_columns', [])
         numeric_columns = self.feature_mapping.get('numeric_columns', [])
+        encoder_categories = self.feature_mapping.get('encoder_categories', [])
+        for column, value, categories in zip(categorical_columns, (
+            feature_values.get(column) for column in categorical_columns
+        ), encoder_categories):
+            if value not in categories:
+                contract_diagnostics.append(
+                    f"{column} value '{value}' is not represented in the current model vocabulary."
+                )
+
         encoded_feature_values = {col: feature_values.get(col, 0) for col in categorical_columns + numeric_columns}
 
         frame = pd.DataFrame([encoded_feature_values], columns=categorical_columns + numeric_columns)
@@ -180,15 +200,34 @@ class PredictionService:
 
         for col_idx, col in enumerate(categorical_columns):
             value = str(frame.iloc[0][col])
-            for category in self.feature_mapping.get('encoder_categories', [])[col_idx]:
+            for category in encoder_categories[col_idx]:
                 encoded_columns.append(f'{col}_{category}')
                 encoded_values.append(1.0 if value == category else 0.0)
 
         encoded_frame = pd.DataFrame([encoded_values], columns=encoded_columns)
+        feature_values['contract_diagnostics'] = contract_diagnostics
         return encoded_frame, feature_values
+
+    def validate_feature_frame(self, feature_frame: pd.DataFrame, feature_values: Dict[str, Any]) -> None:
+        expected_columns = list(getattr(self.model, 'feature_names_in_', []))
+        expected_count = int(getattr(self.model, 'n_features_in_', len(expected_columns)))
+        if len(feature_frame.columns) != expected_count:
+            raise FeatureContractError([f'Feature vector contains {len(feature_frame.columns)} columns; expected {expected_count}.'])
+        if list(feature_frame.columns) != expected_columns:
+            raise FeatureContractError(['Feature names or order do not match the saved model contract.'])
+        numeric_frame = feature_frame.apply(pd.to_numeric, errors='coerce')
+        finite_frame = numeric_frame.replace([float('inf'), float('-inf')], pd.NA)
+        if finite_frame.isna().any().any():
+            raise FeatureContractError(['Feature vector contains a non-numeric or missing value.'])
+
+        diagnostics = feature_values.get('contract_diagnostics', [])
+        if diagnostics:
+            logger.warning('Prediction blocked by feature contract: %s', diagnostics)
+            raise FeatureContractError(diagnostics)
 
     def predict_for_student(self, student_id: int) -> Dict[str, Any]:
         feature_frame, feature_values = self.build_feature_vector(student_id)
+        self.validate_feature_frame(feature_frame, feature_values)
         prediction = int(self.model.predict(feature_frame)[0])
         probability = float(self.model.predict_proba(feature_frame)[0][prediction])
         prediction_label = self.label_map.get(prediction, 'At Risk' if prediction == 1 else 'Not At Risk')
@@ -203,9 +242,11 @@ class PredictionService:
 
         top_features = []
         for factor in explanation['top_factors']:
-            direction = 'Positive' if factor['importance'] >= 0.03 else 'Neutral'
+            direction = 'Informational'
             explanation_text = (
-                f"{factor['feature']} had {factor['influence'].lower()} with value {factor['current_value']}."
+                f"{factor['feature']} was among the model's most influential features "
+                f"with value {factor['current_value']}; this is global feature importance, "
+                f"not a per-student causal contribution."
             )
             top_features.append({
                 'feature_name': factor['feature'],

@@ -7,6 +7,7 @@ from sklearn.preprocessing import OneHotEncoder
 
 BASE_DIR = Path(r'f:\edu_new\AI (ML)')
 DATASET_PATH = BASE_DIR / 'dataset' / 'synthetic_student_dataset.csv'
+CONTRACT_PATH = BASE_DIR / 'models' / 'canonical_feature_contract.json'
 PREPROCESSING_DIR = BASE_DIR / 'preprocessing'
 PREPROCESSING_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -25,7 +26,7 @@ def load_dataset(path: Path) -> pd.DataFrame:
     df = pd.read_csv(path)
     expected_columns = [
         'student_id', 'school_year', 'grade_level', 'section', 'assessment_quarter',
-        'mathematics_grade', 'english_grade', 'science_grade', 'filipino_grade', 'araling_panlipunan_grade', 'esp_grade', 'mapeh_grade', 'tle_grade',
+            'mathematics_grade', 'english_grade', 'science_grade', 'filipino_grade', 'araling_panlipunan_grade', 'esp_grade', 'mapeh_grade', 'tle_grade', 'education_grade',
         'general_average', 'failed_subjects', 'present_days', 'absent_days', 'late_days', 'excused_absences', 'attendance_rate',
         'behavior_core_value', 'behavior_indicator', 'behavior_teacher_rating', 'behavior_quarter', 'teacher_remarks',
         'intervention_type', 'intervention_date', 'intervention_reason', 'intervention_outcome', 'improved_after_intervention', 'risk_status'
@@ -71,7 +72,7 @@ def assess_quality(df: pd.DataFrame) -> dict:
     }
 
     allowed_intervention_types = {
-        'Academic Monitoring', 'Tutoring', 'Counseling', 'Parent/Guardian Conference', 'Attendance Monitoring', 'Mentoring', 'Guidance Referral', 'Behavioral Monitoring'
+        'Academic Monitoring', 'Tutoring', 'Counseling', 'Parent/Guardian Conference', 'Attendance Monitoring', 'Mentoring', 'Guidance Referral', 'Behavioral Monitoring', 'No Intervention'
     }
     intervention_series = df['intervention_type'].fillna('')
     quality_report['invalid_intervention_values'] = {
@@ -89,11 +90,12 @@ def clean_dataset(df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
         if col in cleaned.columns:
             cleaned[col] = cleaned[col].replace({pd.NA: '', None: ''})
 
-    for col in ['mathematics_grade', 'english_grade', 'science_grade', 'filipino_grade', 'araling_panlipunan_grade', 'esp_grade', 'mapeh_grade', 'tle_grade', 'general_average', 'attendance_rate']:
+    grade_columns = ['mathematics_grade', 'english_grade', 'science_grade', 'filipino_grade', 'araling_panlipunan_grade', 'esp_grade', 'mapeh_grade', 'tle_grade', 'education_grade', 'general_average']
+    for col in [*grade_columns, 'attendance_rate']:
         if col in cleaned.columns:
             cleaned[col] = pd.to_numeric(cleaned[col], errors='coerce')
             cleaned[col] = cleaned[col].fillna(cleaned[col].median())
-            if col in ['mathematics_grade', 'english_grade', 'science_grade', 'filipino_grade', 'araling_panlipunan_grade', 'esp_grade', 'mapeh_grade', 'tle_grade', 'general_average']:
+            if col in grade_columns:
                 cleaned.loc[cleaned[col] < 0, col] = 0
                 cleaned.loc[cleaned[col] > 100, col] = 100
             if col == 'attendance_rate':
@@ -131,9 +133,10 @@ def clean_dataset(df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
         (cleaned['araling_panlipunan_grade'] >= 90).astype(int) +
         (cleaned['esp_grade'] >= 90).astype(int) +
         (cleaned['mapeh_grade'] >= 90).astype(int) +
-        (cleaned['tle_grade'] >= 90).astype(int)
+        (cleaned['tle_grade'] >= 90).astype(int) +
+        (cleaned['education_grade'] >= 90).astype(int)
     )
-    cleaned['has_intervention'] = cleaned['intervention_type'].ne('').astype(int)
+    cleaned['has_intervention'] = cleaned['intervention_type'].ne('No Intervention').astype(int)
     cleaned['number_of_interventions'] = cleaned['intervention_type'].apply(lambda x: 1 if str(x).strip() not in {'', 'No Intervention'} else 0)
     cleaned['risk_label'] = cleaned['risk_status'].map({'At Risk': 1, 'Not At Risk': 0, 'Unknown': -1})
 
@@ -148,19 +151,22 @@ def clean_dataset(df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
 
 
 def encode_features(cleaned: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
+    contract = json.loads(CONTRACT_PATH.read_text(encoding='utf-8'))
     feature_columns = [
         'school_year', 'grade_level', 'section', 'behavior_core_value', 'behavior_indicator',
         'behavior_teacher_rating', 'intervention_type', 'intervention_outcome',
-        'mathematics_grade', 'english_grade', 'science_grade', 'filipino_grade', 'araling_panlipunan_grade', 'esp_grade', 'mapeh_grade', 'tle_grade',
-        'general_average', 'failed_subjects', 'present_days', 'absent_days', 'late_days', 'excused_absences', 'attendance_rate',
-        'absent_percentage', 'late_percentage', 'high_grade_count', 'has_intervention', 'number_of_interventions'
+        *contract['numeric_columns'],
     ]
 
     X = cleaned[feature_columns].copy()
     y = cleaned['risk_label']
 
     categorical_columns = ['school_year', 'grade_level', 'section', 'behavior_core_value', 'behavior_indicator', 'behavior_teacher_rating', 'intervention_type', 'intervention_outcome']
-    encoder = OneHotEncoder(handle_unknown='ignore', sparse_output=False)
+    encoder = OneHotEncoder(
+        categories=[contract['categorical_values'][column] for column in categorical_columns],
+        handle_unknown='ignore',
+        sparse_output=False,
+    )
     encoded_cats = encoder.fit_transform(X[categorical_columns])
     encoded_df = pd.DataFrame(encoded_cats, columns=encoder.get_feature_names_out(categorical_columns), index=X.index)
 
@@ -171,6 +177,8 @@ def encode_features(cleaned: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
         'categorical_columns': categorical_columns,
         'numeric_columns': list(X_numeric.columns),
         'encoder_categories': [list(cat) for cat in encoder.categories_],
+        'subject_feature_map': contract['subject_feature_map'],
+        'unknown_category_policy': contract['unknown_category_policy'],
         'encoded_feature_count': int(X_final.shape[1]),
     }
 

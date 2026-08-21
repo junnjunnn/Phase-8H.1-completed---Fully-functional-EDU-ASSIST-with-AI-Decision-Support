@@ -7,7 +7,7 @@ from accounts.permissions import IsAuthorizedStaff
 from audit.models import AuditLog
 from common.authorization import authorized_students_queryset
 from students.models import Student
-from .services.prediction_service import PredictionService
+from .services.prediction_service import FeatureContractError, PredictionService
 
 
 @api_view(['POST'])
@@ -48,5 +48,13 @@ def predict_student_view(request, student_id):
             'prediction_id': prediction.id,
             'explanation': result.get('explanation', {}),
         }, status=status.HTTP_200_OK)
+    except FeatureContractError as exc:
+        return Response(
+            {
+                'error': str(exc),
+                'diagnostics': exc.diagnostics,
+            },
+            status=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        )
     except Exception as exc:
         return Response({'error': str(exc)}, status=status.HTTP_400_BAD_REQUEST)

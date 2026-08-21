@@ -4,13 +4,9 @@ import { useAuth } from '../../context/AuthContext'
 import { EmptyState } from '../../components/common/EmptyState'
 import { ErrorBanner } from '../../components/feedback/ErrorBanner'
 import { PageHeader } from '../../components/common/PageHeader'
-import apiClient, { getApiErrorMessage } from '../../services/api'
+import { getApiErrorMessage } from '../../services/api'
 import { getReportCenter } from '../../services/reportService'
-
-function normalizeListResponse(data) {
-  const items = data?.results || data || []
-  return { items, count: typeof data?.count === 'number' ? data.count : Array.isArray(items) ? items.length : 0 }
-}
+import { getTeacherContext } from '../../services/academicsService'
 
 export function MyClassesPage() {
   const { user } = useAuth()
@@ -24,12 +20,9 @@ export function MyClassesPage() {
       setLoading(true)
       setError('')
       try {
-        const response = await apiClient.get('/teacher-assignments/')
-        const normalized = normalizeListResponse(response.data)
-        const myAssignments = normalized.items.filter((assignment) => {
-          const teacherId = assignment.teacher || assignment.teacher_id || null
-          return teacherId === user?.id || String(teacherId) === String(user?.id)
-        })
+        const context = await getTeacherContext()
+        const advisoryClasses = context.advisory_classes || []
+        const myAssignments = context.subject_assignments || []
 
         const assignmentsWithReports = await Promise.all(myAssignments.map(async (assignment) => {
           let reportSummary
@@ -50,7 +43,7 @@ export function MyClassesPage() {
           }
         }))
 
-        setAssignments(assignmentsWithReports)
+        setAssignments({ advisory: advisoryClasses, subject: assignmentsWithReports })
       } catch (err) {
         setError(getApiErrorMessage(err))
       } finally {
@@ -72,18 +65,32 @@ export function MyClassesPage() {
       <PageHeader eyebrow="Teaching workspace" title="My classes" description="Your assigned classes appear immediately so you can move straight into attendance, grading, and follow-up actions." />
       {error ? <ErrorBanner message={error} /> : null}
       {loading ? <div className="table-skeleton-grid"><div className="table-skeleton-card" /></div> : null}
-      {!loading && assignments.length === 0 ? <EmptyState title="No classes assigned" message="You do not have any assigned classes yet." /> : null}
-      {!loading && assignments.length > 0 ? (
-        <div className="panel-card record-panel">
+      {!loading && !assignments.advisory?.length && !assignments.subject?.length ? <EmptyState title="No classes assigned" message="You do not have any assigned classes yet." /> : null}
+      {!loading && (assignments.advisory?.length || assignments.subject?.length) ? (
+        <div className="teacher-classes-stack">
+          <section className="panel-card record-panel teacher-class-section" aria-labelledby="advisory-classes-title">
+          <div className="section-header"><div><p className="eyebrow">Advisory responsibility</p><h2 id="advisory-classes-title">My advisory classes</h2></div></div>
           <div className="workflow-grid">
-            {assignments.map((assignment) => (
+            {(assignments.advisory || []).map((assignment) => (
+              <article key={`adviser-${assignment.section}`} className="module-card">
+                <div className="section-header"><div><p className="eyebrow">Adviser</p><h3>{assignment.grade_level_name} · {assignment.section_name}</h3><p>Academic year: {assignment.academic_year_name}</p></div><span className="badge badge--success">Advisory Class</span></div>
+                <div className="kpi-grid"><div className="kpi-card"><p className="kpi-label">Students</p><p className="kpi-value">{assignment.student_count}</p></div></div>
+                <div className="module-card-actions"><button type="button" className="action-button action-button--secondary" onClick={() => navigate(`/students?academic_year=${assignment.academic_year}&section=${assignment.section}`)}>View class</button></div>
+              </article>
+            ))}
+          </div>
+          </section>
+          <section className="panel-card record-panel teacher-class-section" aria-labelledby="subject-assignments-title">
+          <div className="section-header"><div><p className="eyebrow">Teaching responsibility</p><h2 id="subject-assignments-title">My subject assignments</h2></div></div>
+          <div className="workflow-grid">
+            {(assignments.subject || []).map((assignment) => (
               <article key={assignment.id} className="module-card">
                 <div className="section-header">
                   <div>
-                    <p className="eyebrow">Assigned class</p>
+                    <p className="eyebrow">{assignment.role || 'Subject Teacher'}</p>
                     <h3>{assignment.grade_level_name || assignment.grade_level || 'Grade'} · {assignment.section_name || assignment.section || 'Section'}</h3>
                     <p>{assignment.academic_year_name || assignment.academic_year || 'Academic year unavailable'}</p>
-                    <p>Subject: {assignment.subject_name || assignment.subject || 'Subject unavailable'}</p>
+                    <p>{assignment.subject_name || assignment.subject || 'Subject unavailable'} · {assignment.role || 'Subject Teacher'}</p>
                   </div>
                   <span className={`badge ${assignment.is_active ? 'badge--success' : 'badge--status'}`}>
                     {assignment.is_active ? 'Open' : 'Inactive'}
@@ -110,6 +117,7 @@ export function MyClassesPage() {
               </article>
             ))}
           </div>
+          </section>
         </div>
       ) : null}
     </div>
