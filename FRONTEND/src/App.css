@@ -2777,6 +2777,8 @@
   display: grid;
   grid-template-columns: 230px minmax(0, 1fr);
   gap: var(--space-5);
+  width: min(100%, 1050px);
+  margin-inline: auto;
   align-items: start;
 }
 
@@ -2829,10 +2831,52 @@
 }
 
 .settings-content {
-  min-height: 320px;
   display: grid;
   gap: var(--space-4);
+  align-content: start;
 }
+
+.settings-panel-card { height: auto; }
+
+.my-classes-page {
+  width: min(100%, 1180px);
+  margin-inline: auto;
+}
+
+.my-classes-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-4);
+  margin-top: 0;
+}
+
+.class-landscape-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-4);
+  min-width: 0;
+  padding: var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-large);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-small);
+}
+
+.class-card-details,
+.class-card-actions {
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.class-card-details h3,
+.class-card-details p { margin: 0; }
+.class-card-details h3 { overflow-wrap: anywhere; }
+.class-card-actions { justify-items: end; align-content: center; }
+.class-card-actions .module-card-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--space-2); }
+.class-card-students { display: flex; align-items: baseline; gap: var(--space-2); color: var(--color-text-secondary); font-size: var(--font-size-small); }
+.class-card-students strong { color: var(--color-text-primary); font-size: 1.05rem; }
 
 .settings-account-card,
 .settings-secondary-card {
@@ -2937,6 +2981,8 @@
   .settings-navigation {
     position: static;
   }
+
+  .my-classes-grid { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 440px) {
@@ -2948,6 +2994,10 @@
   .settings-toggle-row {
     align-items: flex-start;
   }
+
+  .class-landscape-card { grid-template-columns: 1fr; align-items: start; }
+  .class-card-actions { justify-items: start; }
+  .class-card-actions .module-card-actions { justify-content: flex-start; }
 }
 
 /* Dark theme surface corrections for legacy hardcoded states. */

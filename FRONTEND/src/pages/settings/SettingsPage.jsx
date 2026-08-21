@@ -129,7 +129,7 @@ export function SettingsPage() {
               <button type="button" className="action-button action-button--outline" onClick={() => window.location.assign('/profile?section=security')}>Change password</button>
             </section>
           ) : activeSection === 'appearance' ? (
-            <>
+            <section className="panel-card settings-panel-card">
               <div className="section-header">
                 <div>
                   <p className="eyebrow">Appearance</p>
@@ -151,9 +151,9 @@ export function SettingsPage() {
                   </label>
                 ))}
               </div>
-            </>
+            </section>
           ) : (
-            <>
+            <section className="panel-card settings-panel-card">
               <div className="section-header">
                 <div>
                   <p className="eyebrow">Notifications</p>
@@ -169,7 +169,7 @@ export function SettingsPage() {
                   onChange={(event) => setNotificationsEnabled(event.target.checked)}
                 />
               </label>
-            </>
+            </section>
           )}
         </section>
       </div>
