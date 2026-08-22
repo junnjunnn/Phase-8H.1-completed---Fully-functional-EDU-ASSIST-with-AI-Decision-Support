@@ -704,6 +704,11 @@ export function AcademicStructurePage() {
           </label>
           <div className="form-field">
             <span className="form-field__label">Applicable grade levels</span>
+            <div className="section-actions">
+              <button type="button" className="action-button action-button--neutral" onClick={() => { const options = academicDivisions.find((division) => division.value === subjectForm.academic_division)?.grade_levels || []; setSubjectForm({ ...subjectForm, grade_levels: options.map((grade) => grade.id), grade_level: options[0]?.id || '' }) }}>Select all grade levels</button>
+              <button type="button" className="action-button action-button--neutral" onClick={() => setSubjectForm({ ...subjectForm, grade_levels: [], grade_level: '' })}>Clear all</button>
+              <span>{subjectForm.grade_levels.length} selected</span>
+            </div>
             <div className="selection-summary">
               {(academicDivisions.find((division) => division.value === subjectForm.academic_division)?.grade_levels || []).map((grade) => <label key={grade.id}><input type="checkbox" checked={subjectForm.grade_levels.map(String).includes(String(grade.id))} onChange={(event) => setSubjectForm({ ...subjectForm, grade_level: event.target.checked ? (subjectForm.grade_level || grade.id) : subjectForm.grade_level, grade_levels: event.target.checked ? [...new Set([...subjectForm.grade_levels, grade.id])] : subjectForm.grade_levels.filter((id) => String(id) !== String(grade.id)) })} /> {grade.name}</label>)}
             </div>

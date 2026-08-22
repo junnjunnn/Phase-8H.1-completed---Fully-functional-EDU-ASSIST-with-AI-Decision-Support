@@ -332,6 +332,7 @@ class TeacherAssignmentSerializer(serializers.ModelSerializer):
     grade_level_name = serializers.CharField(source='grade_level.name', read_only=True)
     section_name = serializers.CharField(source='section.name', read_only=True)
     subject_name = serializers.CharField(source='subject.name', read_only=True)
+    assignment_type = serializers.ChoiceField(choices=TeacherAssignment.ASSIGNMENT_TYPE_CHOICES, required=False)
     role = serializers.SerializerMethodField()
     is_adviser = serializers.SerializerMethodField()
 
@@ -349,16 +350,12 @@ class TeacherAssignmentSerializer(serializers.ModelSerializer):
             'section_name',
             'subject',
             'subject_name',
+            'assignment_type',
             'role',
             'is_adviser',
             'is_active',
         ]
         validators = [
-            UniqueTogetherValidator(
-                queryset=TeacherAssignment.objects.all(),
-                fields=('teacher', 'academic_year', 'grade_level', 'section', 'subject'),
-                message='This teacher assignment already exists.',
-            )
         ]
 
     def get_teacher_name(self, obj):
@@ -368,10 +365,12 @@ class TeacherAssignmentSerializer(serializers.ModelSerializer):
         return None
 
     def get_is_adviser(self, obj):
-        return obj.section.adviser_id == obj.teacher_id
+        return obj.assignment_type == 'ADVISER' or obj.section.adviser_id == obj.teacher_id
 
     def get_role(self, obj):
-        return 'Adviser and Subject Teacher' if self.get_is_adviser(obj) else 'Subject Teacher'
+        if obj.assignment_type == 'ADVISER':
+            return 'Class Adviser'
+        return 'Adviser and Subject Teacher' if obj.section.adviser_id == obj.teacher_id else 'Subject Teacher'
 
     def validate(self, attrs):
         teacher = attrs.get('teacher') or getattr(self.instance, 'teacher', None)
@@ -379,6 +378,7 @@ class TeacherAssignmentSerializer(serializers.ModelSerializer):
         grade_level = attrs.get('grade_level') or getattr(self.instance, 'grade_level', None)
         section = attrs.get('section') or getattr(self.instance, 'section', None)
         subject = attrs.get('subject') or getattr(self.instance, 'subject', None)
+        assignment_type = attrs.get('assignment_type') or getattr(self.instance, 'assignment_type', 'SUBJECT')
 
         if section and grade_level and section.grade_level_id != grade_level.id:
             raise serializers.ValidationError({'section': 'The selected section does not belong to the selected grade level.'})
@@ -391,16 +391,19 @@ class TeacherAssignmentSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({'grade_level': 'Grade level is required.'})
         if not section:
             raise serializers.ValidationError({'section': 'Section is required.'})
-        if not subject:
+        if assignment_type == 'SUBJECT' and not subject:
             raise serializers.ValidationError({'subject': 'Subject is required.'})
+        if assignment_type == 'ADVISER' and subject:
+            raise serializers.ValidationError({'subject': 'Class Adviser assignments cannot include a subject.'})
 
-        subject_grades = subject.grade_levels.values_list('pk', flat=True)
-        if subject.grade_level_id and not subject_grades:
-            subject_grades = [subject.grade_level_id]
-        if grade_level and grade_level.id not in subject_grades:
-            raise serializers.ValidationError({'subject': 'The selected subject is not associated with this grade level.'})
+        if assignment_type == 'SUBJECT':
+            subject_grades = list(subject.grade_levels.values_list('pk', flat=True))
+            if subject.grade_level_id and not subject_grades:
+                subject_grades = [subject.grade_level_id]
+            if grade_level and grade_level.id not in subject_grades:
+                raise serializers.ValidationError({'subject': 'The selected subject is not associated with this grade level.'})
 
-        if teacher and academic_year and grade_level and section and subject:
+        if assignment_type == 'SUBJECT' and teacher and academic_year and grade_level and section and subject:
             queryset = TeacherAssignment.objects.filter(
                 teacher=teacher,
                 academic_year=academic_year,
@@ -412,6 +415,12 @@ class TeacherAssignmentSerializer(serializers.ModelSerializer):
                 queryset = queryset.exclude(pk=self.instance.pk)
             if queryset.exists():
                 raise serializers.ValidationError('This teacher assignment already exists.')
+        if assignment_type == 'ADVISER' and section and academic_year:
+            queryset = TeacherAssignment.objects.filter(assignment_type='ADVISER', academic_year=academic_year, section=section, is_active=True)
+            if self.instance:
+                queryset = queryset.exclude(pk=self.instance.pk)
+            if attrs.get('is_active', getattr(self.instance, 'is_active', True)) and queryset.exists():
+                raise serializers.ValidationError({'section': 'This section already has an active class adviser for the academic year.'})
 
         return attrs
 

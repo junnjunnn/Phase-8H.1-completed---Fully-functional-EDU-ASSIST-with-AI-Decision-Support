@@ -49,7 +49,7 @@ export function EnrollmentPage() {
   const [selectedGradeId, setSelectedGradeId] = useState('')
   const [selectedStrandId, setSelectedStrandId] = useState('')
   const [selectedSectionId, setSelectedSectionId] = useState('')
-  const [selectedStudentId, setSelectedStudentId] = useState('')
+  const [selectedStudentIds, setSelectedStudentIds] = useState([])
   const [studentSearch, setStudentSearch] = useState('')
   const [sectionSearch, setSectionSearch] = useState('')
   const [submitting, setSubmitting] = useState(false)
@@ -118,9 +118,9 @@ export function EnrollmentPage() {
     [sections, selectedSectionId],
   )
 
-  const selectedStudent = useMemo(
-    () => students.find((student) => String(student.id) === String(selectedStudentId)) || null,
-    [students, selectedStudentId],
+  const selectedStudents = useMemo(
+    () => students.filter((student) => selectedStudentIds.map(String).includes(String(student.id))),
+    [students, selectedStudentIds],
   )
 
   const selectedStrand = useMemo(
@@ -183,7 +183,7 @@ export function EnrollmentPage() {
     setSelectedGradeId('')
     setSelectedStrandId('')
     setSelectedSectionId('')
-    setSelectedStudentId('')
+    setSelectedStudentIds([])
     setStudentSearch('')
     setSectionSearch('')
     setWizardError('')
@@ -239,7 +239,7 @@ export function EnrollmentPage() {
     }
 
     if (currentStep === 5) {
-      if (!selectedStudentId) {
+      if (selectedStudentIds.length === 0) {
         setWizardError('Choose a student before continuing.')
         return false
       }
@@ -269,7 +269,7 @@ export function EnrollmentPage() {
   }
 
   async function handleEnroll() {
-    if (!selectedYearId || !selectedGradeId || !selectedSectionId || !selectedStudentId) {
+    if (!selectedYearId || !selectedGradeId || !selectedSectionId || selectedStudentIds.length === 0) {
       setWizardError('Complete the enrollment wizard before submitting.')
       return
     }
@@ -280,7 +280,7 @@ export function EnrollmentPage() {
     }
 
     const alreadyEnrolled = enrollments.some((entry) => {
-      const sameStudent = String(entry.student) === String(selectedStudentId)
+      const sameStudent = selectedStudentIds.map(String).includes(String(entry.student))
       const sameYear = String(entry.academic_year) === String(selectedYearId)
       const isActive = String(entry.enrollment_status || 'active') === 'active'
       return sameStudent && sameYear && isActive
@@ -295,7 +295,7 @@ export function EnrollmentPage() {
       setSubmitting(true)
       setWizardError('')
       await createEnrollment({
-        student: Number(selectedStudentId),
+        students: selectedStudentIds.map(Number),
         academic_year: Number(selectedYearId),
         grade_level: Number(selectedGradeId),
         section: Number(selectedSectionId),
@@ -306,7 +306,7 @@ export function EnrollmentPage() {
 
       const refreshed = await apiClient.get('/enrollments/')
       setEnrollments(normalizeListResponse(refreshed.data).items)
-      setSuccessMessage('Student enrolled successfully. The enrollment has been added to the selected section.')
+      setSuccessMessage(`${selectedStudentIds.length} student${selectedStudentIds.length === 1 ? '' : 's'} enrolled successfully.`)
       setCurrentStep(enrollmentSteps.length - 1)
     } catch (err) {
       setWizardError(getApiErrorMessage(err))
@@ -316,13 +316,13 @@ export function EnrollmentPage() {
   }
 
   const reviewSummary = useMemo(() => ({
-    student: selectedStudent ? `${selectedStudent.first_name || ''} ${selectedStudent.last_name || ''}`.trim() : 'Not selected',
+    student: selectedStudents.length ? selectedStudents.map((student) => `${student.first_name || ''} ${student.last_name || ''}`.trim()).join(', ') : 'Not selected',
     schoolYear: selectedYear?.name || 'Not selected',
     grade: selectedGrade?.name || 'Not selected',
     strand: selectedStrand?.name || 'Not applicable',
     section: selectedSection ? `${selectedSection.name}` : 'Not selected',
     adviser: selectedSection?.adviser_name || selectedSection?.adviser || 'Not assigned',
-  }), [selectedSection, selectedStrand, selectedStudent, selectedYear, selectedGrade])
+  }), [selectedSection, selectedStrand, selectedStudents, selectedYear, selectedGrade])
 
   if (loading) {
     return (
@@ -402,7 +402,7 @@ export function EnrollmentPage() {
                         setSelectedLevel('')
                         setSelectedStrandId('')
                         setSelectedSectionId('')
-                        setSelectedStudentId('')
+                        setSelectedStudentIds([])
                         setSectionSearch('')
                         setStudentSearch('')
                       }}
@@ -441,7 +441,7 @@ export function EnrollmentPage() {
                       setSelectedGradeId('')
                       setSelectedStrandId('')
                       setSelectedSectionId('')
-                      setSelectedStudentId('')
+                      setSelectedStudentIds([])
                       setSectionSearch('')
                       setStudentSearch('')
                     }}
@@ -479,7 +479,7 @@ export function EnrollmentPage() {
                       setSelectedGradeId(String(grade.id))
                       setSelectedStrandId('')
                       setSelectedSectionId('')
-                      setSelectedStudentId('')
+                      setSelectedStudentIds([])
                       setSectionSearch('')
                       setStudentSearch('')
                     }}
@@ -554,6 +554,11 @@ export function EnrollmentPage() {
                 style={{ width: '100%', marginTop: '0.35rem' }}
               />
             </label>
+            <div className="section-actions" style={{ marginBottom: '1rem' }}>
+              <button type="button" className="action-button action-button--neutral" onClick={() => setSelectedStudentIds(availableStudents.map((student) => String(student.id)))}>Select All</button>
+              <button type="button" className="action-button action-button--neutral" onClick={() => setSelectedStudentIds([])}>Clear Selection</button>
+              <span>{selectedStudentIds.length} selected</span>
+            </div>
 
             <div className="form-grid" style={{ marginTop: '1rem' }}>
               {sectionOptions.length === 0 ? (
@@ -623,12 +628,12 @@ export function EnrollmentPage() {
                 </div>
               ) : (
                 availableStudents.map((student) => {
-                  const selected = String(student.id) === String(selectedStudentId)
+                  const selected = selectedStudentIds.map(String).includes(String(student.id))
                   return (
                     <button
                       key={student.id}
                       type="button"
-                      onClick={() => setSelectedStudentId(String(student.id))}
+                      onClick={() => setSelectedStudentIds((current) => selected ? current.filter((id) => String(id) !== String(student.id)) : [...current, String(student.id)])}
                       style={{
                         padding: '1rem',
                         borderRadius: '12px',
@@ -673,6 +678,7 @@ export function EnrollmentPage() {
               >
                 {submitting ? 'Completing Enrollment...' : 'Complete Enrollment'}
               </button>
+              {successMessage ? <button type="button" className="action-button action-button--neutral" onClick={resetWizard} style={{ width: '100%', marginTop: '0.75rem' }}>Start New Enrollment</button> : null}
             </div>
           </div>
         )}
@@ -683,7 +689,7 @@ export function EnrollmentPage() {
               type="button"
               className="action-button action-button--neutral"
               onClick={resetWizard}
-              disabled={currentStep === 0 && !selectedYearId && !selectedGradeId && !selectedSectionId && !selectedStudentId}
+              disabled={currentStep === 0 && !selectedYearId && !selectedGradeId && !selectedSectionId && selectedStudentIds.length === 0}
             >
               Restart
             </button>

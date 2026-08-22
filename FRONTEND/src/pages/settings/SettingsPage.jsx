@@ -1,4 +1,4 @@
-import { BellIcon, KeyIcon, PaintBrushIcon, UserCircleIcon } from '@heroicons/react/24/outline'
+import { BellIcon, InformationCircleIcon, KeyIcon, PaintBrushIcon, UserCircleIcon } from '@heroicons/react/24/outline'
 import { useEffect, useState } from 'react'
 import { PageHeader } from '../../components/common/PageHeader'
 import { ErrorBanner } from '../../components/feedback/ErrorBanner'
@@ -11,9 +11,9 @@ const STORAGE_KEYS = {
 }
 
 const themeOptions = [
-  { value: 'system', label: 'System default' },
-  { value: 'light', label: 'Light mode' },
-  { value: 'dark', label: 'Dark mode' },
+  { value: 'system', label: 'System Default', description: 'Automatically follows your operating-system preference.' },
+  { value: 'dark', label: 'Dark Mode', description: 'Uses the application\'s dark theme.' },
+  { value: 'light', label: 'Light Mode', description: 'Uses the application\'s light theme.' },
 ]
 
 const settingsSections = [
@@ -21,6 +21,11 @@ const settingsSections = [
   { key: 'security', label: 'Security', description: 'Password and access.', icon: KeyIcon },
   { key: 'notifications', label: 'Notifications', description: 'In-app alert preferences.', icon: BellIcon },
   { key: 'appearance', label: 'Appearance', description: 'Theme and display preferences.', icon: PaintBrushIcon },
+]
+
+const settingsGroups = [
+  { label: 'General', keys: ['account', 'security', 'notifications'] },
+  { label: 'Preferences', keys: ['appearance'] },
 ]
 
 export function SettingsPage() {
@@ -60,6 +65,7 @@ export function SettingsPage() {
 
   useEffect(() => {
     window.localStorage.setItem(STORAGE_KEYS.notifications, String(notificationsEnabled))
+    window.dispatchEvent(new CustomEvent('edu-assist-notifications-change', { detail: { enabled: notificationsEnabled } }))
   }, [notificationsEnabled])
 
   async function handleProfileSave(event) {
@@ -87,19 +93,19 @@ export function SettingsPage() {
 
       <div className="settings-layout">
         <nav className="panel-card settings-navigation" aria-label="Settings sections">
-          <p className="eyebrow">Settings</p>
+          <p className="settings-navigation-title">Settings</p>
           <div className="settings-navigation-list">
-            {settingsSections.map(({ key, label, description, icon: Icon }) => (
-              <button
-                key={key}
-                type="button"
-                className={`settings-navigation-item ${activeSection === key ? 'settings-navigation-item--active' : ''}`}
-                onClick={() => setActiveSection(key)}
-                aria-current={activeSection === key ? 'page' : undefined}
-              >
-                <Icon className="icon" aria-hidden="true" />
-                <span><strong>{label}</strong><small>{description}</small></span>
-              </button>
+            {settingsGroups.map((group) => (
+              <div className="settings-navigation-group" key={group.label}>
+                <p className="settings-navigation-group-label">{group.label}</p>
+                {group.keys.map((key) => {
+                  const { label, description, icon: Icon } = settingsSections.find((section) => section.key === key)
+                  return <button key={key} type="button" className={`settings-navigation-item ${activeSection === key ? 'settings-navigation-item--active' : ''}`} onClick={() => setActiveSection(key)} aria-current={activeSection === key ? 'page' : undefined}>
+                    <Icon className="icon" aria-hidden="true" />
+                    <span><strong>{label}</strong><small>{description}</small></span>
+                  </button>
+                })}
+              </div>
             ))}
           </div>
         </nav>
@@ -133,13 +139,15 @@ export function SettingsPage() {
               <div className="section-header">
                 <div>
                   <p className="eyebrow">Appearance</p>
-                  <h3>Theme preference</h3>
-                  <p className="section-description">Choose how EDU ASSIST appears on this device.</p>
+                  <h3>Customize how the application looks and feels.</h3>
+                  <p className="section-description">Choose how the application looks based on your preference or system settings.</p>
                 </div>
               </div>
+              <div className="settings-subsection-heading"><p className="eyebrow">Theme appearance</p><p className="section-description">Theme preference</p></div>
               <div className="settings-choice-list">
                 {themeOptions.map((option) => (
-                  <label key={option.value} className={`settings-choice ${theme === option.value ? 'settings-choice--selected' : ''}`}>
+                  <label key={option.value} className={`settings-choice settings-theme-choice settings-theme-choice--${option.value} ${theme === option.value ? 'settings-choice--selected' : ''}`}>
+                    <span className="settings-theme-preview" aria-hidden="true"><span /><span /><span /></span>
                     <input
                       type="radio"
                       name="theme"
@@ -147,28 +155,28 @@ export function SettingsPage() {
                       checked={theme === option.value}
                       onChange={() => setTheme(option.value)}
                     />
-                    <span><strong>{option.label}</strong><small>{option.value === 'system' ? 'Follow your device preference.' : `Use ${option.label.toLowerCase()} across the workspace.`}</small></span>
+                    <span><strong>{option.label}</strong><small>{option.description}</small></span>
                   </label>
                 ))}
               </div>
+              <div className="settings-theme-preview-panel"><div><p className="eyebrow">Theme preview</p><p className="section-description">See how the selected theme will look.</p></div><div className="settings-mini-preview" aria-label="Preview of the selected theme"><span className="settings-mini-sidebar" /><span className="settings-mini-content"><i /><b /><b /></span></div></div>
+              <div className="settings-info-note"><InformationCircleIcon className="icon" aria-hidden="true" /><span><strong>Note</strong><small>Changing the theme will update the appearance across the entire application.</small></span></div>
             </section>
           ) : (
             <section className="panel-card settings-panel-card">
               <div className="section-header">
                 <div>
                   <p className="eyebrow">Notifications</p>
-                  <h3>Alert preferences</h3>
+                  <h3>Manage how and when you receive notifications from the application.</h3>
                   <p className="section-description">Control whether in-app notification indicators are enabled.</p>
                 </div>
               </div>
               <label className="settings-toggle-row">
+                <span className="settings-icon-container"><BellIcon className="icon" aria-hidden="true" /></span>
                 <span><strong>Enable in-app notifications</strong><small>These preferences are saved in your browser.</small></span>
-                <input
-                  type="checkbox"
-                  checked={notificationsEnabled}
-                  onChange={(event) => setNotificationsEnabled(event.target.checked)}
-                />
+                <span className="settings-switch"><input type="checkbox" checked={notificationsEnabled} onChange={(event) => setNotificationsEnabled(event.target.checked)} /><span aria-hidden="true" /></span>
               </label>
+              <div className="settings-info-note settings-info-note--soft"><InformationCircleIcon className="icon" aria-hidden="true" /><span><strong>In-app notifications</strong><small>When enabled, you will see notification indicators such as badges and alerts within the application.</small></span></div>
             </section>
           )}
         </section>

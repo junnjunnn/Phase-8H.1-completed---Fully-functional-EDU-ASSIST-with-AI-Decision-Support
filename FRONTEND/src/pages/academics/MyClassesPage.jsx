@@ -61,7 +61,7 @@ export function MyClassesPage() {
   }
 
   return (
-    <div className="page-stack">
+    <div className="page-stack my-classes-page">
       <PageHeader eyebrow="Teaching workspace" title="My classes" description="Your assigned classes appear immediately so you can move straight into attendance, grading, and follow-up actions." />
       {error ? <ErrorBanner message={error} /> : null}
       {loading ? <div className="table-skeleton-grid"><div className="table-skeleton-card" /></div> : null}
@@ -70,47 +70,31 @@ export function MyClassesPage() {
         <div className="teacher-classes-stack">
           <section className="panel-card record-panel teacher-class-section" aria-labelledby="advisory-classes-title">
           <div className="section-header"><div><p className="eyebrow">Advisory responsibility</p><h2 id="advisory-classes-title">My advisory classes</h2></div></div>
-          <div className="workflow-grid">
+          <div className="workflow-grid my-classes-grid">
             {(assignments.advisory || []).map((assignment) => (
-              <article key={`adviser-${assignment.section}`} className="module-card">
-                <div className="section-header"><div><p className="eyebrow">Adviser</p><h3>{assignment.grade_level_name} · {assignment.section_name}</h3><p>Academic year: {assignment.academic_year_name}</p></div><span className="badge badge--success">Advisory Class</span></div>
-                <div className="kpi-grid"><div className="kpi-card"><p className="kpi-label">Students</p><p className="kpi-value">{assignment.student_count}</p></div></div>
-                <div className="module-card-actions"><button type="button" className="action-button action-button--secondary" onClick={() => navigate(`/students?academic_year=${assignment.academic_year}&section=${assignment.section}`)}>View class</button></div>
+              <article key={`adviser-${assignment.section}`} className="module-card class-landscape-card">
+                <div className="class-card-details"><p className="eyebrow">Adviser</p><h3>{assignment.grade_level_name} · {assignment.section_name}</h3><p>Academic year: {assignment.academic_year_name}</p><p className="class-card-students"><span>Students</span><strong>{assignment.student_count}</strong></p></div>
+                <div className="class-card-actions"><span className="badge badge--success">Advisory Class</span><div className="module-card-actions"><button type="button" className="action-button action-button--secondary" onClick={() => navigate(`/students?academic_year=${assignment.academic_year}&section=${assignment.section}`)}>View class</button></div></div>
               </article>
             ))}
           </div>
           </section>
           <section className="panel-card record-panel teacher-class-section" aria-labelledby="subject-assignments-title">
           <div className="section-header"><div><p className="eyebrow">Teaching responsibility</p><h2 id="subject-assignments-title">My subject assignments</h2></div></div>
-          <div className="workflow-grid">
+          <div className="workflow-grid my-classes-grid">
             {(assignments.subject || []).map((assignment) => (
-              <article key={assignment.id} className="module-card">
-                <div className="section-header">
-                  <div>
-                    <p className="eyebrow">{assignment.role || 'Subject Teacher'}</p>
-                    <h3>{assignment.grade_level_name || assignment.grade_level || 'Grade'} · {assignment.section_name || assignment.section || 'Section'}</h3>
-                    <p>{assignment.academic_year_name || assignment.academic_year || 'Academic year unavailable'}</p>
-                    <p>{assignment.subject_name || assignment.subject || 'Subject unavailable'} · {assignment.role || 'Subject Teacher'}</p>
-                  </div>
+              <article key={assignment.id} className="module-card class-landscape-card">
+                <div className="class-card-details">
+                  <p className="eyebrow">{assignment.role || 'Subject Teacher'}</p>
+                  <h3>{assignment.grade_level_name || assignment.grade_level || 'Grade'} · {assignment.section_name || assignment.section || 'Section'}</h3>
+                  <p>{assignment.subject_name || assignment.subject || 'Subject unavailable'}</p>
+                  <p>{assignment.academic_year_name || assignment.academic_year || 'Academic year unavailable'}</p>
+                  <p className="class-card-students"><span>Students</span><strong>{assignment.studentCount ?? 0}</strong></p>
+                </div>
+                <div className="class-card-actions">
                   <span className={`badge ${assignment.is_active ? 'badge--success' : 'badge--status'}`}>
                     {assignment.is_active ? 'Open' : 'Inactive'}
                   </span>
-                </div>
-                <div className="summary-card">
-                  <p className="eyebrow">Current view</p>
-                  <p>{assignment.studentCount > 0 ? `Monitor ${assignment.studentCount} learners with a balanced support plan.` : 'Set up attendance and academic tracking for this section.'}</p>
-                </div>
-                <div className="kpi-grid">
-                  <div className="kpi-card">
-                    <p className="kpi-label">Students</p>
-                    <p className="kpi-value">{assignment.studentCount ?? 0}</p>
-                  </div>
-                  <div className="kpi-card">
-                    <p className="kpi-label">Attendance</p>
-                    <p className="kpi-value">{assignment.reportSummary?.summary?.attendance_percentage != null ? `${assignment.reportSummary.summary.attendance_percentage}%` : '—'}</p>
-                  </div>
-                </div>
-                <div className="module-card-actions">
                   <button type="button" className="action-button action-button--secondary" onClick={() => handleViewClass(assignment)}>Open class</button>
                   <button type="button" className="action-button action-button--outline" onClick={() => handleViewClass(assignment)}>Open insights</button>
                 </div>

@@ -36,7 +36,7 @@ export function TeacherAssignmentsPage() {
   const [subjectFilter, setSubjectFilter] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
   const [page, setPage] = useState(1)
-  const [form, setForm] = useState({ id: '', teacher: '', academic_year: '', grade_level: '', section: '', subject: '', is_active: true })
+  const [form, setForm] = useState({ id: '', assignment_type: 'SUBJECT', teacher: '', academic_year: '', grade_level: '', section: '', subjects: [], is_active: true })
   const [submitting, setSubmitting] = useState(false)
   const [formError, setFormError] = useState('')
   const [confirmOpen, setConfirmOpen] = useState(false)
@@ -63,10 +63,13 @@ export function TeacherAssignmentsPage() {
         const teacherPayload = teacherData?.data ?? teacherData
         const teacherItems = normalizeListResponse(teacherPayload).items || []
         setTeachers(teacherItems)
-        setAcademicYears(normalizeListResponse(yearData).items)
+        const yearItems = normalizeListResponse(yearData).items
+        setAcademicYears(yearItems)
         setGradeLevels(normalizeListResponse(gradeData).items)
         setSections(normalizeListResponse(sectionData).items)
         setSubjects(normalizeListResponse(subjectData).items)
+        const activeYear = yearItems.find((year) => year.is_active)
+        if (activeYear) setForm((current) => ({ ...current, academic_year: String(activeYear.id) }))
       } catch (err) {
         if (!active) return
         setError(getApiErrorMessage(err))
@@ -149,7 +152,9 @@ export function TeacherAssignmentsPage() {
         academic_year: Number(form.academic_year),
         grade_level: Number(form.grade_level),
         section: Number(form.section),
-        subject: Number(form.subject),
+        ...(form.id && form.assignment_type === 'SUBJECT' ? { subject: Number(form.subjects[0]) } : {}),
+        ...(!form.id && form.assignment_type === 'SUBJECT' ? { subjects: form.subjects.map(Number) } : {}),
+        assignment_type: form.assignment_type,
         is_active: form.is_active !== false,
       }
       if (form.id) {
@@ -159,7 +164,7 @@ export function TeacherAssignmentsPage() {
       }
       const refreshed = await apiClient.get('/teacher-assignments/')
       setAssignments(normalizeListResponse(refreshed.data).items)
-      setForm({ id: '', teacher: '', academic_year: '', grade_level: '', section: '', subject: '', is_active: true })
+      setForm({ id: '', assignment_type: 'SUBJECT', teacher: '', academic_year: '', grade_level: '', section: '', subjects: [], is_active: true })
     } catch (err) {
       setFormError(getApiErrorMessage(err))
     } finally {
@@ -174,13 +179,14 @@ export function TeacherAssignmentsPage() {
       academic_year: assignment.academic_year || '',
       grade_level: assignment.grade_level || '',
       section: assignment.section || '',
-      subject: assignment.subject || '',
+      subjects: assignment.subject ? [assignment.subject] : [],
+      assignment_type: assignment.assignment_type || (assignment.is_adviser ? 'ADVISER' : 'SUBJECT'),
       is_active: assignment.is_active !== false,
     })
   }
 
   function cancelEdit() {
-    setForm({ id: '', teacher: '', academic_year: '', grade_level: '', section: '', subject: '', is_active: true })
+    setForm({ id: '', assignment_type: 'SUBJECT', teacher: '', academic_year: '', grade_level: '', section: '', subjects: [], is_active: true })
   }
 
   async function toggleAssignmentStatus(assignment) {
@@ -207,9 +213,10 @@ export function TeacherAssignmentsPage() {
     const matchesGrade = !form.grade_level || String(section.grade_level) === String(form.grade_level)
     return matchesYear && matchesGrade
   })
+  const visibleSubjects = subjects.filter((subject) => !form.grade_level || (subject.grade_levels || [subject.grade_level]).map(String).includes(String(form.grade_level)))
 
   return (
-    <div className="page-stack">
+    <div className="page-stack teacher-assignments-page">
       <PageHeader eyebrow="Teacher assignments" title="Assign teachers to classes and subjects" description="Create, edit, and manage assignments for academic years, sections, and subjects." />
       {error ? <ErrorBanner message={error} /> : null}
       <div className="record-summary-grid">
@@ -230,8 +237,15 @@ export function TeacherAssignmentsPage() {
             <h2>{form.id ? 'Update assignment' : 'Assign teacher to section and subject'}</h2>
           </div>
         </div>
-        <form className="form-grid" onSubmit={handleSubmit}>
+        <form className="form-grid assignment-form-grid" onSubmit={handleSubmit}>
           {formError ? <ErrorBanner message={formError} /> : null}
+          <label>
+            <span>Assignment type</span>
+            <select value={form.assignment_type} onChange={(event) => setForm({ ...form, assignment_type: event.target.value, subjects: [] })} required>
+              <option value="SUBJECT">Subject Teacher</option>
+              <option value="ADVISER">Class Adviser</option>
+            </select>
+          </label>
           <label>
             <span>Teacher</span>
             <select value={form.teacher} onChange={(event) => setForm({ ...form, teacher: event.target.value })} required>
@@ -242,16 +256,27 @@ export function TeacherAssignmentsPage() {
               })}
             </select>
           </label>
+          {form.assignment_type === 'SUBJECT' ? <div className="form-field">
+            <span className="form-field__label">Subjects</span>
+            <div className="section-actions">
+              <button type="button" className="action-button action-button--neutral" onClick={() => setForm({ ...form, subjects: visibleSubjects.map((subject) => subject.id) })}>Select all</button>
+              <button type="button" className="action-button action-button--neutral" onClick={() => setForm({ ...form, subjects: [] })}>Clear selection</button>
+              <span>{form.subjects.length} selected</span>
+            </div>
+            <div className="selection-summary">
+              {visibleSubjects.map((subject) => <label key={subject.id}><input type="checkbox" checked={form.subjects.map(String).includes(String(subject.id))} onChange={(event) => setForm({ ...form, subjects: event.target.checked ? [...new Set([...form.subjects, subject.id])] : form.subjects.filter((id) => String(id) !== String(subject.id)) })} /> {subject.name}</label>)}
+            </div>
+          </div> : null}
           <label>
             <span>Academic year</span>
-            <select value={form.academic_year} onChange={(event) => setForm({ ...form, academic_year: event.target.value, grade_level: '', section: '', subject: '' })} required>
+            <select value={form.academic_year} onChange={(event) => setForm({ ...form, academic_year: event.target.value, grade_level: '', section: '', subjects: [] })} required>
               <option value="">Select</option>
               {academicYears.map((year) => <option key={year.id} value={year.id}>{year.name}</option>)}
             </select>
           </label>
           <label>
             <span>Grade level</span>
-            <select value={form.grade_level} onChange={(event) => setForm({ ...form, grade_level: event.target.value, section: '', subject: '' })} required>
+            <select value={form.grade_level} onChange={(event) => setForm({ ...form, grade_level: event.target.value, section: '', subjects: [] })} required>
               <option value="">Select</option>
               {gradeLevels.map((grade) => <option key={grade.id} value={grade.id}>{grade.name}</option>)}
             </select>
@@ -261,13 +286,6 @@ export function TeacherAssignmentsPage() {
             <select value={form.section} onChange={(event) => setForm({ ...form, section: event.target.value })} required>
               <option value="">Select</option>
               {visibleSections.map((section) => <option key={section.id} value={section.id}>{section.name}</option>)}
-            </select>
-          </label>
-          <label>
-            <span>Subject</span>
-            <select value={form.subject} onChange={(event) => setForm({ ...form, subject: event.target.value })} required>
-              <option value="">Select</option>
-              {subjects.filter((subject) => !form.grade_level || (subject.grade_levels || [subject.grade_level]).map(String).includes(String(form.grade_level))).map((subject) => <option key={subject.id} value={subject.id}>{subject.name}</option>)}
             </select>
           </label>
           <label>

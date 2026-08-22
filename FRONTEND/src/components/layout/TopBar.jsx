@@ -6,7 +6,7 @@ import {
   MagnifyingGlassIcon,
   UserCircleIcon,
 } from '@heroicons/react/24/outline'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 
@@ -67,6 +67,13 @@ export function TopBar({ pageTitle, onOpenProfile, onOpenNotifications, onOpenSe
   const location = useLocation()
   const navigate = useNavigate()
   const [dropdownOpen, setDropdownOpen] = useState(false)
+  const [notificationsEnabled, setNotificationsEnabled] = useState(() => window.localStorage.getItem('edu_assist_notifications') !== 'false')
+
+  useEffect(() => {
+    const handleNotificationPreferenceChange = (event) => setNotificationsEnabled(event.detail?.enabled !== false)
+    window.addEventListener('edu-assist-notifications-change', handleNotificationPreferenceChange)
+    return () => window.removeEventListener('edu-assist-notifications-change', handleNotificationPreferenceChange)
+  }, [])
 
   const breadcrumbs = useMemo(() => {
     const pathParts = location.pathname.split('/').filter(Boolean)
@@ -118,7 +125,7 @@ export function TopBar({ pageTitle, onOpenProfile, onOpenNotifications, onOpenSe
         </div>
         <button type="button" className="icon-button icon-button--notification" aria-label="Notifications" onClick={onOpenNotifications}>
           <BellIcon className="icon" />
-          <span className="notification-badge">0</span>
+          {notificationsEnabled ? <span className="notification-badge">0</span> : null}
         </button>
         <div className="profile-menu-wrapper">
           <button type="button" className="profile-chip" onClick={() => setDropdownOpen((value) => !value)} aria-expanded={dropdownOpen} aria-haspopup="menu">

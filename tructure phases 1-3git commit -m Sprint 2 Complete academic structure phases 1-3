@@ -1,0 +1,20 @@
+ BACKEND/academics/api.py                           |   2 [32m+[m[31m-[m
+ .../0004_add_grade_levels_and_strands.py           | 105 [32m+++[m
+ .../migrations/0005_add_section_strand.py          |  23 [32m+[m
+ BACKEND/academics/models.py                        |  72 [32m+[m[31m-[m
+ BACKEND/academics/serializers.py                   | 109 [32m++[m[31m-[m
+ BACKEND/academics/test_subject_sync.py             |   3 [32m+[m[31m-[m
+ BACKEND/academics/tests.py                         | 848 [32m++++++++++++++++++++[m[31m-[m
+ BACKEND/academics/tests_subject_validation.py      | 575 [32m++++++++++++++[m
+ BACKEND/attendance/tests.py                        |   3 [32m+[m[31m-[m
+ BACKEND/behavior/tests.py                          |   3 [32m+[m[31m-[m
+ BACKEND/interventions/test_intervention_create.py  |   3 [32m+[m[31m-[m
+ BACKEND/interventions/tests.py                     |   3 [32m+[m[31m-[m
+ BACKEND/predictions/tests.py                       |   3 [32m+[m[31m-[m
+ BACKEND/reports/tests.py                           |   3 [32m+[m[31m-[m
+ BACKEND/students/tests.py                          |   3 [32m+[m[31m-[m
+ BACKEND/tests/test_authorization.py                |   3 [32m+[m[31m-[m
+ FRONTEND/src/pages/academics/SectionsPage.jsx      |  29 [32m+[m[31m-[m
+ FRONTEND/src/pages/academics/SubjectsPage.jsx      |  69 [32m+[m[31m-[m
+ FRONTEND/src/pages/students/EnrollmentPage.jsx     |   5 [32m+[m[31m-[m
+ 19 files changed, 1823 insertions(+), 41 deletions(-)

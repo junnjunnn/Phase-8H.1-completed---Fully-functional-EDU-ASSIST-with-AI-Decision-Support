@@ -5,6 +5,7 @@ import { ErrorBanner } from '../../components/feedback/ErrorBanner'
 import { PageHeader } from '../../components/common/PageHeader'
 import { getApiErrorMessage } from '../../services/api'
 import { changePassword, getCurrentUserProfile, updateCurrentUserProfile } from '../../services/profileService'
+import { PasswordInput } from '../../components/common/PasswordInput'
 
 function getRoleLabel(role) {
   switch (role) {
@@ -250,16 +251,16 @@ export function ProfilePage() {
             <form className="profile-form" onSubmit={handlePasswordChange}>
               <label>
                 <span>Current password</span>
-                <input type="password" value={passwordForm.current_password} onChange={(event) => setPasswordForm({ ...passwordForm, current_password: event.target.value })} />
+                <PasswordInput name="current_password" autoComplete="current-password" value={passwordForm.current_password} onChange={(event) => setPasswordForm({ ...passwordForm, current_password: event.target.value })} />
               </label>
               <div className="form-grid">
                 <label>
                   <span>New password</span>
-                  <input type="password" value={passwordForm.new_password} onChange={(event) => setPasswordForm({ ...passwordForm, new_password: event.target.value })} />
+                  <PasswordInput name="new_password" autoComplete="new-password" value={passwordForm.new_password} onChange={(event) => setPasswordForm({ ...passwordForm, new_password: event.target.value })} />
                 </label>
                 <label>
                   <span>Confirm password</span>
-                  <input type="password" value={passwordForm.confirm_password} onChange={(event) => setPasswordForm({ ...passwordForm, confirm_password: event.target.value })} />
+                  <PasswordInput name="confirm_password" autoComplete="new-password" value={passwordForm.confirm_password} onChange={(event) => setPasswordForm({ ...passwordForm, confirm_password: event.target.value })} />
                 </label>
               </div>
               <div className="modal-actions">

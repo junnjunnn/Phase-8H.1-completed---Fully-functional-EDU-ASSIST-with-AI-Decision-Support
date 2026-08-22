@@ -13,6 +13,7 @@ import { ErrorBanner } from '../../components/feedback/ErrorBanner'
 import { PageHeader } from '../../components/common/PageHeader'
 import { getApiErrorMessage } from '../../services/api'
 import { activateUser, createUser, deactivateUser, getUsers, resetUserPassword, updateUser } from '../../services/userService'
+import { PasswordInput } from '../../components/common/PasswordInput'
 
 const roleOptions = [
   { value: 'SUPER_ADMIN', label: 'Administrator' },
@@ -398,12 +399,12 @@ export function UsersPage() {
                   <div className="form-grid">
                     <label>
                       <span>Password</span>
-                      <input type="password" value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} required />
+                      <PasswordInput name="password" autoComplete="new-password" value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} required />
                       {validation.password ? <p className="validation-message">{validation.password}</p> : null}
                     </label>
                     <label>
                       <span>Confirm password</span>
-                      <input type="password" value={form.confirm_password} onChange={(event) => setForm({ ...form, confirm_password: event.target.value })} required />
+                      <PasswordInput name="confirm_password" autoComplete="new-password" value={form.confirm_password} onChange={(event) => setForm({ ...form, confirm_password: event.target.value })} required />
                       {validation.confirm_password ? <p className="validation-message">{validation.confirm_password}</p> : null}
                     </label>
                   </div>
@@ -481,12 +482,12 @@ export function UsersPage() {
               <div className="form-grid">
                 <label>
                   <span>New password</span>
-                  <input type="password" value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} required />
+                  <PasswordInput name="password" autoComplete="new-password" value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} required />
                   {validation.password ? <p className="validation-message">{validation.password}</p> : null}
                 </label>
                 <label>
                   <span>Confirm password</span>
-                  <input type="password" value={form.confirm_password} onChange={(event) => setForm({ ...form, confirm_password: event.target.value })} required />
+                  <PasswordInput name="confirm_password" autoComplete="new-password" value={form.confirm_password} onChange={(event) => setForm({ ...form, confirm_password: event.target.value })} required />
                   {validation.confirm_password ? <p className="validation-message">{validation.confirm_password}</p> : null}
                 </label>
               </div>

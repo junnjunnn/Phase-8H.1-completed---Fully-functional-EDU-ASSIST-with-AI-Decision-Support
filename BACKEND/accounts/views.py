@@ -133,9 +133,7 @@ class UserListCreateView(generics.ListCreateAPIView):
     permission_classes = [permissions.IsAuthenticated, IsAuthorizedStaff]
 
     def get_permissions(self):
-        if self.request.method == 'POST':
-            return [permissions.IsAuthenticated(), IsSchoolAdmin()]
-        return [permissions.IsAuthenticated(), IsAuthorizedStaff()]
+        return [permissions.IsAuthenticated(), IsSchoolAdmin()]
 
     def get_serializer_class(self):
         if self.request.method == 'POST':

@@ -202,22 +202,41 @@ class Subject(models.Model):
 
 
 class TeacherAssignment(models.Model):
+    ASSIGNMENT_TYPE_CHOICES = [
+        ('SUBJECT', 'Subject Teacher'),
+        ('ADVISER', 'Class Adviser'),
+    ]
     teacher = models.ForeignKey(get_user_model(), on_delete=models.CASCADE, related_name='teacher_assignments')
     academic_year = models.ForeignKey(AcademicYear, on_delete=models.CASCADE, related_name='teacher_assignments')
     grade_level = models.ForeignKey(GradeLevel, on_delete=models.CASCADE, related_name='teacher_assignments')
     section = models.ForeignKey(Section, on_delete=models.CASCADE, related_name='teacher_assignments')
-    subject = models.ForeignKey(Subject, on_delete=models.CASCADE, related_name='teacher_assignments')
+    subject = models.ForeignKey(Subject, on_delete=models.CASCADE, related_name='teacher_assignments', null=True, blank=True)
+    assignment_type = models.CharField(max_length=20, choices=ASSIGNMENT_TYPE_CHOICES, default='SUBJECT')
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        unique_together = ('teacher', 'academic_year', 'grade_level', 'section', 'subject')
         ordering = ['-created_at']
-        indexes = [models.Index(fields=['teacher', 'is_active']), models.Index(fields=['academic_year', 'grade_level'])]
+        constraints = [
+            models.UniqueConstraint(
+                fields=['teacher', 'academic_year', 'grade_level', 'section', 'subject'],
+                name='unique_active_subject_teacher_assignment',
+            ),
+            models.UniqueConstraint(
+                fields=['academic_year', 'section', 'assignment_type'],
+                name='unique_active_section_adviser_assignment',
+            ),
+            models.CheckConstraint(
+                condition=(models.Q(assignment_type='ADVISER', subject__isnull=True) | models.Q(assignment_type='SUBJECT', subject__isnull=False)),
+                name='assignment_subject_matches_type',
+            ),
+        ]
+        indexes = [models.Index(fields=['teacher', 'is_active', 'assignment_type']), models.Index(fields=['academic_year', 'grade_level'])]
 
     def __str__(self):
-        return f"{self.teacher} - {self.section} - {self.subject}"
+        role = 'Class Adviser' if self.assignment_type == 'ADVISER' else str(self.subject)
+        return f"{self.teacher} - {self.section} - {role}"
 
 
 class Enrollment(models.Model):

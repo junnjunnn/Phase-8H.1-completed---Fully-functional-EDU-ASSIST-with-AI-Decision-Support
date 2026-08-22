@@ -3,7 +3,7 @@ from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.response import Response
 from django.db import transaction
-from django.db.models import Exists, OuterRef
+from django.db.models import Exists, OuterRef, Q
 from rest_framework.filters import OrderingFilter, SearchFilter
 from django_filters.rest_framework import DjangoFilterBackend
 
@@ -213,15 +213,40 @@ class TeacherAssignmentViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin,
             return queryset.filter(teacher=self.request.user)
         return queryset
 
+    def create(self, request, *args, **kwargs):
+        payload = request.data.copy()
+        subjects = payload.pop('subjects', None)
+        if subjects is None:
+            return super().create(request, *args, **kwargs)
+        if not isinstance(subjects, list) or not subjects:
+            raise ValidationError({'subjects': 'Select at least one subject.'})
+        if payload.get('assignment_type', 'SUBJECT') != 'SUBJECT':
+            raise ValidationError({'subjects': 'Class Adviser assignments cannot include subjects.'})
+
+        created = []
+        with transaction.atomic():
+            for subject_id in subjects:
+                subject_payload = payload.copy()
+                subject_payload['subject'] = subject_id
+                serializer = self.get_serializer(data=subject_payload)
+                serializer.is_valid(raise_exception=True)
+                created.append(serializer.save())
+
+        response_serializer = self.get_serializer(created, many=True)
+        return Response(response_serializer.data, status=201)
+
     @action(detail=False, methods=['get'], url_path='my-context')
     def my_context(self, request):
         if get_user_scope(request.user) != 'teacher':
             return Response({'detail': 'This context is available to teachers.'}, status=403)
 
         assignments = list(self.get_queryset().filter(is_active=True))
+        adviser_assignment_sections = TeacherAssignment.objects.filter(
+            teacher=request.user, assignment_type='ADVISER', is_active=True,
+        ).values('section_id')
         advisory_sections = Section.objects.select_related('grade_level', 'academic_year', 'adviser').filter(
-            adviser=request.user
-        ).order_by('academic_year__start_date', 'grade_level__order', 'name')
+            Q(adviser=request.user) | Q(pk__in=adviser_assignment_sections)
+        ).distinct().order_by('academic_year__start_date', 'grade_level__order', 'name')
         subject_assignments = self.get_serializer(assignments, many=True).data
         advisory = []
         for section in advisory_sections:
@@ -278,6 +303,24 @@ class EnrollmentViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins
 
     def get_queryset(self):
         return get_authorized_enrollment_queryset(self.request.user, super().get_queryset())
+
+    def create(self, request, *args, **kwargs):
+        students = request.data.get('students')
+        if students is None:
+            return super().create(request, *args, **kwargs)
+        if not isinstance(students, list) or not students:
+            raise ValidationError({'students': 'Select at least one student.'})
+        payload = request.data.copy()
+        payload.pop('students', None)
+        created = []
+        with transaction.atomic():
+            for student_id in students:
+                student_payload = payload.copy()
+                student_payload['student'] = student_id
+                serializer = self.get_serializer(data=student_payload)
+                serializer.is_valid(raise_exception=True)
+                created.append(serializer.save())
+        return Response(self.get_serializer(created, many=True).data, status=201)
 
     def perform_create(self, serializer):
         instance = serializer.save()

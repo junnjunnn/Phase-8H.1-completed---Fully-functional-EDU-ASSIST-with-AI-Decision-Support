@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Navigate, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { ErrorBanner } from '../../components/feedback/ErrorBanner'
+import { PasswordInput } from '../../components/common/PasswordInput'
 
 export function Login() {
   const { isAuthenticated, loading, login } = useAuth()
@@ -59,10 +60,9 @@ export function Login() {
         />
 
         <label htmlFor="password">Password</label>
-        <input
+        <PasswordInput
           id="password"
           name="password"
-          type="password"
           value={password}
           onChange={(event) => setPassword(event.target.value)}
           autoComplete="current-password"

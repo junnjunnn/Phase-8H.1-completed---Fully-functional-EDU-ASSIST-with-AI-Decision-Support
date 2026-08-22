@@ -40,11 +40,10 @@ class AuthenticationAPITests(APITestCase):
         response = self.client.get('/api/students/')
         self.assertEqual(response.status_code, 401)
 
-    def test_authenticated_but_unauthorized_staff_cannot_access_restricted_user_list(self):
+    def test_authenticated_teacher_cannot_access_restricted_user_list(self):
         self.client.force_authenticate(user=self.user)
         response = self.client.get('/api/auth/users/')
-        # Allow access to the users list for authenticated staff roles
-        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.status_code, 403)
 
     def test_superadmin_can_manage_users(self):
         superadmin = self.user_model.objects.create_user(username='superadmin_test', password='Pass1234!')

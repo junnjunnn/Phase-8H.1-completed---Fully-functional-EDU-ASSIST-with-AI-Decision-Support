@@ -30,15 +30,15 @@ class UserListPermissionTests(APITestCase):
         resp = self.client.get('/api/auth/users/')
         self.assertEqual(resp.status_code, 200)
 
-    def test_teacher_get_users_allowed(self):
+    def test_teacher_cannot_get_users(self):
         self.client.force_authenticate(user=self.teacher)
         resp = self.client.get('/api/auth/users/')
-        self.assertEqual(resp.status_code, 200)
+        self.assertIn(resp.status_code, (403, 401))
 
-    def test_guidance_get_users_allowed(self):
+    def test_guidance_cannot_get_users(self):
         self.client.force_authenticate(user=self.guidance)
         resp = self.client.get('/api/auth/users/')
-        self.assertEqual(resp.status_code, 200)
+        self.assertIn(resp.status_code, (403, 401))
 
     def test_anonymous_cannot_get_users(self):
         resp = self.client.get('/api/auth/users/')
