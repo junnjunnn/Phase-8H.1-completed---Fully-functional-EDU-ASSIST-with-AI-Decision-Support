@@ -14,7 +14,7 @@
 .sidebar {
   background: linear-gradient(180deg, #102c5f 0%, var(--color-primary-dark) 100%);
   color: #f8fbff;
-  padding: 0.8rem 0.7rem;
+  padding: var(--space-6);
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
@@ -1696,6 +1696,34 @@
     color: var(--color-text-secondary);
   }
 
+  .users-filters {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-3);
+    margin-left: auto;
+  }
+
+  .users-filters label {
+    display: grid;
+    gap: 0.25rem;
+    min-width: 150px;
+  }
+
+  .users-filters label span {
+    color: var(--color-text-secondary);
+    font-size: var(--font-size-caption);
+    font-weight: var(--font-weight-semibold);
+  }
+
+  .users-filters select {
+    min-height: 40px;
+    padding: 0.5rem 0.7rem;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-small);
+    background: var(--color-surface);
+    color: var(--color-text-primary);
+  }
+
   .users-table-card {
     border: 1px solid var(--color-border);
     border-radius: var(--radius-large);
@@ -2455,6 +2483,18 @@
   border: 1px solid var(--color-border);
   border-radius: var(--radius-small);
   background: var(--color-surface);
+}
+
+.subjects-page .subject-grade-level-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.subjects-page .subject-grade-level-actions > span {
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-small);
 }
 
 .subjects-page .subject-identifier-field {

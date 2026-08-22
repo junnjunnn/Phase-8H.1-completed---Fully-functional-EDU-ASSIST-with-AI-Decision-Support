@@ -16,8 +16,8 @@ import { activateUser, createUser, deactivateUser, getUsers, resetUserPassword, 
 import { PasswordInput } from '../../components/common/PasswordInput'
 
 const roleOptions = [
-  { value: 'SUPER_ADMIN', label: 'Administrator' },
-  { value: 'SCHOOL_ADMIN', label: 'Administrator' },
+  { value: 'SUPER_ADMIN', label: 'Super Administrator' },
+  { value: 'SCHOOL_ADMIN', label: 'School Administrator' },
   { value: 'REGISTRAR', label: 'Registrar' },
   { value: 'TEACHER', label: 'Teacher' },
   { value: 'GUIDANCE', label: 'Guidance' },
@@ -35,6 +35,17 @@ function getRoleBadgeClass(role) {
     return 'badge badge--success'
   }
   return 'badge badge--warning'
+}
+
+function getRoleLabel(role) {
+  const labels = {
+    SUPER_ADMIN: 'Administrator',
+    SCHOOL_ADMIN: 'Administrator',
+    REGISTRAR: 'Registrar',
+    TEACHER: 'Teacher',
+    GUIDANCE: 'Guidance',
+  }
+  return labels[String(role || '').toUpperCase()] || 'Other staff'
 }
 
 function getStatusBadgeClass(isActive) {
@@ -59,6 +70,8 @@ export function UsersPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [search, setSearch] = useState('')
+  const [roleFilter, setRoleFilter] = useState('all')
+  const [statusFilter, setStatusFilter] = useState('all')
   const [showCreate, setShowCreate] = useState(false)
   const [showReset, setShowReset] = useState(false)
   const [selectedUser, setSelectedUser] = useState(null)
@@ -100,14 +113,15 @@ export function UsersPage() {
 
   const filteredUsers = useMemo(() => {
     const term = search.trim().toLowerCase()
-    if (!term) {
-      return users
-    }
     return users.filter((entry) => {
       const fullName = `${entry.first_name || ''} ${entry.last_name || ''}`.trim().toLowerCase()
-      return [entry.username, entry.email, fullName, entry.profile?.role_name, entry.is_active ? 'active' : 'inactive'].some((value) => value?.toString().toLowerCase().includes(term))
+      const role = entry.role_name || entry.profile?.role_name || 'TEACHER'
+      const matchesRole = roleFilter === 'all' || role === roleFilter
+      const matchesStatus = statusFilter === 'all' || (statusFilter === 'active' ? entry.is_active : !entry.is_active)
+      const matchesSearch = !term || [entry.username, entry.email, fullName, role, entry.is_active ? 'active' : 'inactive'].some((value) => value?.toString().toLowerCase().includes(term))
+      return matchesRole && matchesStatus && matchesSearch
     })
-  }, [users, search])
+  }, [users, search, roleFilter, statusFilter])
 
   const resetForm = () => {
     setForm({
@@ -292,6 +306,23 @@ export function UsersPage() {
           <div className="users-meta">
             <p>{filteredUsers.length} user{filteredUsers.length === 1 ? '' : 's'} found</p>
           </div>
+          <div className="users-filters">
+            <label>
+              <span>Role</span>
+              <select value={roleFilter} onChange={(event) => setRoleFilter(event.target.value)} aria-label="Filter users by role">
+                <option value="all">All roles</option>
+                {roleOptions.filter((option, index, options) => options.findIndex((item) => item.value === option.value) === index).map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+              </select>
+            </label>
+            <label>
+              <span>Status</span>
+              <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} aria-label="Filter users by status">
+                <option value="all">All statuses</option>
+                <option value="active">Active</option>
+                <option value="inactive">Inactive</option>
+              </select>
+            </label>
+          </div>
         </div>
 
         {loading ? (
@@ -332,7 +363,7 @@ export function UsersPage() {
                     </td>
                     <td data-label="Username">{entry.username}</td>
                     <td data-label="Email">{entry.email || '—'}</td>
-                    <td data-label="Role"><span className={getRoleBadgeClass(entry.role_name || entry.profile?.role_name)}>{entry.role_name || entry.profile?.role_name || 'Teacher'}</span></td>
+                    <td data-label="Role"><span className={getRoleBadgeClass(entry.role_name || entry.profile?.role_name)}>{getRoleLabel(entry.role_name || entry.profile?.role_name)}</span></td>
                     <td data-label="Status"><span className={getStatusBadgeClass(entry.is_active)}>{entry.is_active ? 'Active' : 'Inactive'}</span></td>
                     <td data-label="Date created">{entry.date_joined ? new Date(entry.date_joined).toLocaleDateString() : '—'}</td>
                     <td data-label="Actions">

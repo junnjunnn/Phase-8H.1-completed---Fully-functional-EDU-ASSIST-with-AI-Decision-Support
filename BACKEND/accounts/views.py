@@ -140,6 +140,15 @@ class UserListCreateView(generics.ListCreateAPIView):
             return UserCreateSerializer
         return UserSerializer
 
+    def get_queryset(self):
+        queryset = super().get_queryset().select_related('profile')
+        if self.request.query_params.get('active_only') == 'true':
+            queryset = queryset.filter(is_active=True)
+        role_name = self.request.query_params.get('role_name')
+        if role_name:
+            queryset = queryset.filter(profile__role_name=role_name)
+        return queryset
+
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)

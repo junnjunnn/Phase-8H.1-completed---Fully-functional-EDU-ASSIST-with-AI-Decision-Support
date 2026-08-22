@@ -83,7 +83,6 @@ export function SidebarNav({ collapsed, onToggleCollapse }) {
             <div className="brand-info">
               <h2>EDU ASSIST</h2>
               <p>Amigo School of Calinan</p>
-              <p className="brand-subtitle">Educational analytics for student success</p>
             </div>
           ) : null}
         </div>

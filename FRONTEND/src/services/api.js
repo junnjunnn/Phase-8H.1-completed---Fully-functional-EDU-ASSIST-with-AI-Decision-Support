@@ -70,8 +70,10 @@ apiClient.interceptors.response.use(
   async (error) => {
     const originalRequest = error.config
     const status = error.response?.status
+    const requestUrl = originalRequest?.url || ''
+    const isAuthenticationRequest = requestUrl.endsWith('/auth/login/') || requestUrl.endsWith('/auth/token/refresh/')
 
-    if (status === 401 && originalRequest && !originalRequest._retry) {
+    if (status === 401 && originalRequest && !originalRequest._retry && !isAuthenticationRequest) {
       if (isRefreshing) {
         return refreshPromise.then(() => apiClient(originalRequest))
       }

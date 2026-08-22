@@ -59,6 +59,12 @@ class GradeLevelViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins
             return [permissions.IsAuthenticated(), IsSchoolAdmin()]
         return [permissions.IsAuthenticated(), IsAcademicReferenceAccessAllowed()]
 
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        if self.request.query_params.get('active_only') == 'true':
+            queryset = queryset.filter(is_active=True)
+        return queryset
+
     def perform_create(self, serializer):
         instance = serializer.save()
         AuditLog.objects.create(
@@ -92,6 +98,8 @@ class SectionViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins.Cr
 
     def get_queryset(self):
         queryset = super().get_queryset()
+        if self.request.query_params.get('active_only') == 'true':
+            queryset = queryset.filter(is_active=True, grade_level__is_active=True, academic_year__is_active=True)
         if get_user_scope(self.request.user) == 'teacher':
             assigned_sections = self.request.user.profile.assigned_sections.values_list('pk', flat=True)
             return queryset.filter(pk__in=assigned_sections).distinct()

@@ -51,10 +51,10 @@ export function TeacherAssignmentsPage() {
       try {
         const [assignmentData, teacherData, yearData, gradeData, sectionData, subjectData] = await Promise.all([
           apiClient.get('/teacher-assignments/'),
-          getUserProfiles(),
+          getUserProfiles({ active_only: 'true', role_name: 'TEACHER' }),
           getAcademicYears(),
-          getGradeLevels(),
-          getSections(),
+          getGradeLevels({ active_only: 'true' }),
+          getSections({ active_only: 'true' }),
           getSubjects(),
         ])
         if (!active) return
@@ -173,6 +173,15 @@ export function TeacherAssignmentsPage() {
   }
 
   function startEdit(assignment) {
+    setGradeLevels((current) => current.some((grade) => String(grade.id) === String(assignment.grade_level))
+      ? current
+      : [...current, { id: assignment.grade_level, name: assignment.grade_level_name || 'Archived grade level', is_active: false }])
+    setSections((current) => current.some((section) => String(section.id) === String(assignment.section))
+      ? current
+      : [...current, { id: assignment.section, name: assignment.section_name || 'Archived section', grade_level: assignment.grade_level, academic_year: assignment.academic_year, is_active: false }])
+    setTeachers((current) => current.some((teacher) => String(teacher.id) === String(assignment.teacher))
+      ? current
+      : [...current, { id: assignment.teacher, username: assignment.teacher_name || 'Historical teacher', is_active: false, role_name: 'TEACHER' }])
     setForm({
       id: assignment.id,
       teacher: assignment.teacher || '',
@@ -211,8 +220,11 @@ export function TeacherAssignmentsPage() {
   const visibleSections = sections.filter((section) => {
     const matchesYear = !form.academic_year || String(section.academic_year) === String(form.academic_year)
     const matchesGrade = !form.grade_level || String(section.grade_level) === String(form.grade_level)
-    return matchesYear && matchesGrade
+    const isCurrentHistoricalSection = form.id && String(section.id) === String(form.section)
+    return (section.is_active !== false || isCurrentHistoricalSection) && matchesYear && matchesGrade
   })
+  const selectableGradeLevels = gradeLevels.filter((grade) => grade.is_active !== false || (form.id && String(grade.id) === String(form.grade_level)))
+  const selectableTeachers = teachers.filter((teacher) => teacher.is_active !== false || (form.id && String(teacher.id) === String(form.teacher)))
   const visibleSubjects = subjects.filter((subject) => !form.grade_level || (subject.grade_levels || [subject.grade_level]).map(String).includes(String(form.grade_level)))
 
   return (
@@ -250,7 +262,7 @@ export function TeacherAssignmentsPage() {
             <span>Teacher</span>
             <select value={form.teacher} onChange={(event) => setForm({ ...form, teacher: event.target.value })} required>
               <option value="">Select teacher</option>
-              {teachers.filter((teacher) => teacher.profile?.role_name === 'TEACHER' || teacher.role_name === 'TEACHER').map((teacher) => {
+              {selectableTeachers.filter((teacher) => teacher.profile?.role_name === 'TEACHER' || teacher.role_name === 'TEACHER').map((teacher) => {
                 const displayName = `${(teacher.first_name || '').trim()} ${(teacher.last_name || '').trim()}`.trim() || teacher.username || 'Unknown'
                 return (<option key={teacher.id} value={teacher.id}>{displayName}</option>)
               })}
@@ -278,7 +290,7 @@ export function TeacherAssignmentsPage() {
             <span>Grade level</span>
             <select value={form.grade_level} onChange={(event) => setForm({ ...form, grade_level: event.target.value, section: '', subjects: [] })} required>
               <option value="">Select</option>
-              {gradeLevels.map((grade) => <option key={grade.id} value={grade.id}>{grade.name}</option>)}
+              {selectableGradeLevels.map((grade) => <option key={grade.id} value={grade.id}>{grade.name}{grade.is_active === false ? ' (Archived)' : ''}</option>)}
             </select>
           </label>
           <label>
@@ -323,7 +335,7 @@ export function TeacherAssignmentsPage() {
             <span>Teacher</span>
             <select value={teacherFilter} onChange={(event) => setTeacherFilter(event.target.value)}>
               <option value="">All teachers</option>
-              {teachers.filter((teacher) => teacher.profile?.role_name === 'TEACHER' || teacher.role_name === 'TEACHER').map((teacher) => {
+              {selectableTeachers.filter((teacher) => teacher.profile?.role_name === 'TEACHER' || teacher.role_name === 'TEACHER').map((teacher) => {
                 const displayName = `${(teacher.first_name || '').trim()} ${(teacher.last_name || '').trim()}`.trim() || teacher.username || 'Unknown'
                 return (<option key={teacher.id} value={teacher.id}>{displayName}</option>)
               })}

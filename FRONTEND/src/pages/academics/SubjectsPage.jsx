@@ -149,6 +149,18 @@ export function SubjectsPage() {
     setForm({ id: '', code: '', name: '', category: 'Learning Area', academic_division: '', grade_level: '', grade_levels: [], strand: '', is_active: true })
   }
 
+  function selectAllGradeLevels() {
+    setForm((current) => ({
+      ...current,
+      grade_level: resolvedGradeLevels[0]?.id || '',
+      grade_levels: resolvedGradeLevels.map((grade) => grade.id),
+    }))
+  }
+
+  function clearGradeLevels() {
+    setForm((current) => ({ ...current, grade_level: '', grade_levels: [] }))
+  }
+
   async function toggleStatus(subject) {
     setError('')
     try {
@@ -203,6 +215,11 @@ export function SubjectsPage() {
           </label>
           <div className="form-field">
             <span className="form-field__label">Applicable grade levels</span>
+            <div className="subject-grade-level-actions">
+              <button type="button" className="action-button action-button--neutral" onClick={selectAllGradeLevels}>Select all</button>
+              <button type="button" className="action-button action-button--neutral" onClick={clearGradeLevels}>Clear selection</button>
+              <span>{form.grade_levels.length} selected</span>
+            </div>
             <div className="selection-summary" aria-live="polite">
               {resolvedGradeLevels.length ? resolvedGradeLevels.map((grade) => <label key={grade.id}><input type="checkbox" checked={form.grade_levels.map(String).includes(String(grade.id))} onChange={(event) => setForm({ ...form, grade_level: event.target.checked ? (form.grade_level || grade.id) : form.grade_level, grade_levels: event.target.checked ? [...new Set([...form.grade_levels, grade.id])] : form.grade_levels.filter((id) => String(id) !== String(grade.id)) })} /> {grade.name}</label>) : <span>Select an academic division</span>}
             </div>

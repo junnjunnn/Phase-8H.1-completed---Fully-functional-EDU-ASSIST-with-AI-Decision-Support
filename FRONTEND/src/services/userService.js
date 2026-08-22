@@ -11,8 +11,8 @@ export async function getUserById(id) {
 }
 
 
-export async function getUsers() {
-  const response = await apiClient.get('/auth/users/')
+export async function getUsers(params = {}) {
+  const response = await apiClient.get('/auth/users/', { params })
   const data = response.data
   if (Array.isArray(data)) {
     return data

@@ -1,6 +1,7 @@
 /* eslint-disable react-refresh/only-export-components */
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import { getCurrentUser, login as loginRequest, logout as logoutRequest } from '../services/authService'
+import { getStoredTokens } from '../services/api'
 
 const AuthContext = createContext(null)
 
@@ -27,6 +28,14 @@ export function AuthProvider({ children }) {
     let isMounted = true
 
     async function initializeAuth() {
+      const { access, refresh } = getStoredTokens()
+      if (!access && !refresh) {
+        if (isMounted) {
+          setLoading(false)
+        }
+        return
+      }
+
       try {
         const profile = await refreshUser()
         if (isMounted) {
