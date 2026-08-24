@@ -12,6 +12,22 @@ function valueOrFallback(value) {
   return value == null || value === '' ? 'N/A' : value
 }
 
+function behaviorSummaryValue(student) {
+  if (!student) {
+    return 'No record'
+  }
+
+  if (!student.behavior_records) {
+    return 'No record'
+  }
+
+  if (student.behavior_average == null) {
+    return `${student.behavior_records} records`
+  }
+
+  return student.behavior_average
+}
+
 function riskClass(level) {
   const normalized = String(level || '').toLowerCase()
   if (normalized === 'high') return 'badge badge--high'
@@ -93,7 +109,7 @@ export function MyAdvisoryClassPage() {
             <div className="section-header"><div><p className="eyebrow">Current roster</p><h2 id="advisory-roster-title">Students in this advisory class</h2></div><span className="badge badge--info">{students.length} shown</span></div>
             {loading ? <div className="table-skeleton-grid"><div className="table-skeleton-card" /></div> : null}
             {!loading && !students.length ? <EmptyState title="No active students are currently enrolled" message={search ? 'No authorized students matched this search.' : 'No active students are currently enrolled in this advisory section.'} /> : null}
-            {!loading && students.length ? <div className="table-card advisory-roster-table"><table><thead><tr><th>Student</th><th>Grade / section</th><th>Status</th><th>General average</th><th>Attendance</th><th>Behavior</th><th>Risk</th><th>Intervention</th><th>Action</th></tr></thead><tbody>{students.map((student) => <tr key={student.id}><td><Link to={`/students/${student.id}`}>{student.name}</Link><small>LRN: {valueOrFallback(student.lrn)}</small></td><td>{student.grade} · {student.section}</td><td>{student.enrollment_status}</td><td>{valueOrFallback(student.general_average)}</td><td>{student.attendance_percentage == null ? 'No record' : `${student.attendance_percentage}%`}<small>{student.school_days == null ? '' : `${student.days_present}/${student.school_days} days · ${student.times_tardy} tardy`}</small></td><td>{valueOrFallback(student.behavior_average)}<small>{student.behavior_records ? `${student.behavior_records} records` : 'No record'}</small></td><td>{student.risk_level ? <><span className={riskClass(student.risk_level)}>{student.risk_level}</span><small>{student.risk_probability == null ? 'Probability N/A' : `${Math.round(student.risk_probability * 100)}% probability`}</small></> : 'No prediction'}</td><td>{student.intervention ? student.intervention_statuses.join(', ') : 'No active intervention'}{student.follow_up ? <small>Follow-up due</small> : null}</td><td><Link className="action-button action-button--secondary" to={`/students/${student.id}`}>View Student</Link></td></tr>)}</tbody></table></div> : null}
+            {!loading && students.length ? <div className="table-card advisory-roster-table"><table><thead><tr><th>Student</th><th>Grade / section</th><th>Status</th><th>General average</th><th>Attendance</th><th>Behavior</th><th>Risk</th><th>Intervention</th><th>Action</th></tr></thead><tbody>{students.map((student) => <tr key={student.id}><td><Link to={`/students/${student.id}`}>{student.name}</Link><small>LRN: {valueOrFallback(student.lrn)}</small></td><td>{student.grade} · {student.section}</td><td>{student.enrollment_status}</td><td>{valueOrFallback(student.general_average)}</td><td>{student.attendance_percentage == null ? 'No record' : `${student.attendance_percentage}%`}<small>{student.school_days == null ? '' : `${student.days_present}/${student.school_days} days · ${student.times_tardy} tardy`}</small></td><td>{behaviorSummaryValue(student)}<small>{student.behavior_records ? (student.behavior_average == null ? 'Assessment records stored' : `${student.behavior_records} records`) : 'No record'}</small></td><td>{student.risk_level ? <><span className={riskClass(student.risk_level)}>{student.risk_level}</span><small>{student.risk_probability == null ? 'Probability N/A' : `${Math.round(student.risk_probability * 100)}% probability`}</small></> : 'No prediction'}</td><td>{student.intervention ? student.intervention_statuses.join(', ') : 'No active intervention'}{student.follow_up ? <small>Follow-up due</small> : null}</td><td><Link className="action-button action-button--secondary" to={`/students/${student.id}`}>View Student</Link></td></tr>)}</tbody></table></div> : null}
           </section>
           <p className="support-copy">AI predictions are decision-support information and should be interpreted using professional judgment.</p>
         </>

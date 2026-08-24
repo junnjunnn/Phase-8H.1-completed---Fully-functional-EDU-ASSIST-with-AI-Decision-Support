@@ -77,6 +77,23 @@ class BehavioralAssessmentSerializer(serializers.ModelSerializer):
         
         return value
 
+    def validate_core_value(self, value):
+        """Ensure that only active (canonical) core values can be used for new behavioral assessments."""
+        if not value.is_active:
+            raise serializers.ValidationError(
+                f'Core value "{value.name}" is not active and cannot be used for new behavioral assessments. '
+                f'Select a canonical DepEd core value: Maka-Diyos, Makatao, Maka-Kalikasan, or Makabansa.'
+            )
+        return value
+
+    def validate_behavior_indicator(self, value):
+        """Ensure that only active behavior indicators can be used for new behavioral assessments."""
+        if not value.is_active:
+            raise serializers.ValidationError(
+                f'Behavior indicator "{value.name}" is not active and cannot be used for new behavioral assessments.'
+            )
+        return value
+
     def validate(self, attrs):
         enrollment = attrs.get('enrollment') or getattr(self.instance, 'enrollment', None)
         academic_year = attrs.get('academic_year') or getattr(self.instance, 'academic_year', None)

@@ -100,6 +100,41 @@
       "Worsened"
     ]
   ],
+  "value_aliases": {
+    "section": {
+      "Onyx": "Moonstone",
+      "Moonstone": "Moonstone",
+      "A": "A",
+      "B": "B",
+      "C": "C",
+      "D": "D"
+    },
+    "behavior_core_value": {
+      "Respect": "Makatao (Love for Fellowmen)",
+      "Discipline": "Makatao (Love for Fellowmen)",
+      "Maka-Diyos (Love for God)": "Maka-Diyos (Love for God)",
+      "Makatao (Love for Fellowmen)": "Makatao (Love for Fellowmen)",
+      "Maka-Kalikasan (Love for Nature)": "Maka-Kalikasan (Love for Nature)",
+      "Makabansa (Love for Country)": "Makabansa (Love for Country)"
+    },
+    "behavior_indicator": {
+      "Respectful Behavior": "Demonstrate contributions toward solidarity",
+      "Shows respect": "Demonstrate contributions toward solidarity",
+      "Expresses one's spiritual beliefs while respecting the spiritual beliefs of others": "Expresses one's spiritual beliefs while respecting the spiritual beliefs of others",
+      "Shows adherence to ethical principles by upholding truth": "Shows adherence to ethical principles by upholding truth",
+      "Is sensitive to individual, social, and cultural differences": "Is sensitive to individual, social, and cultural differences",
+      "Demonstrate contributions toward solidarity": "Demonstrate contributions toward solidarity",
+      "Cares for the environment and utilizes resources wisely, judiciously, and economically": "Cares for the environment and utilizes resources wisely, judiciously, and economically",
+      "Demonstrates pride in being a Filipino; exercises the rights and responsibilities of a Filipino Citizen": "Demonstrates pride in being a Filipino; exercises the rights and responsibilities of a Filipino Citizen",
+      "Demonstrates appropriate behavior in carrying out activities in the school, community, and country": "Demonstrates appropriate behavior in carrying out activities in the school, community, and country"
+    },
+    "behavior_teacher_rating": {
+      "Always Observed": "AO",
+      "Sometimes Observed": "SO",
+      "Rarely Observed": "RO",
+      "Not Observed": "NO"
+    }
+  },
   "subject_feature_map": {
     "Mathematics": "mathematics_grade",
     "Mathematics 9": "mathematics_grade",
@@ -113,6 +148,17 @@
     "MAPEH": "mapeh_grade",
     "TLE": "tle_grade",
     "EDUCATION": "education_grade"
+  },
+  "subject_aliases": {
+    "English - Writing": "english_grade",
+    "English - Reading": "english_grade",
+    "English - Language": "english_grade",
+    "Computer": "education_grade",
+    "Nihongo": "education_grade",
+    "Values Education": "esp_grade",
+    "EPP / HELE": "tle_grade",
+    "MAPE": "mapeh_grade",
+    "HeKaSi": "araling_panlipunan_grade"
   },
   "unknown_category_policy": "reject",
   "encoded_feature_count": 71

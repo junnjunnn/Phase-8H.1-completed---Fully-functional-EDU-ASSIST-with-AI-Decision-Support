@@ -153,8 +153,10 @@ class PredictionsAPITests(TestCase):
             _, feature_values = PredictionService().build_feature_vector(self.student_a.id)
             self.assertEqual(feature_values['behavior_teacher_rating'], code)
 
-    def test_regenerating_prediction_reuses_existing_enrollment_record(self):
+    def test_generate_prediction_creates_a_new_prediction_record_for_updated_data(self):
         self.client.force_authenticate(user=self.superadmin)
+        before_count = RiskPrediction.objects.filter(enrollment=self.enrollment_a).count()
+
         self._create_compatible_behavior(self.enrollment_a)
         subject = Subject.objects.create(code='MATH_REGEN', name='Mathematics', category='Core', grade_level=self.grade_level)
         AcademicRecord.objects.create(
@@ -166,12 +168,19 @@ class PredictionsAPITests(TestCase):
             grade=65,
             final_grade=65,
         )
+
         first = self.client.post(f'/api/predictions/predict/{self.student_a.id}/')
         second = self.client.post(f'/api/predictions/predict/{self.student_a.id}/')
+
         self.assertEqual(first.status_code, 200)
         self.assertEqual(second.status_code, 200)
-        self.assertEqual(first.data['prediction_id'], second.data['prediction_id'])
-        self.assertEqual(RiskPrediction.objects.filter(enrollment=self.enrollment_a).count(), 1)
+        self.assertNotEqual(first.data['prediction_id'], second.data['prediction_id'])
+        self.assertEqual(RiskPrediction.objects.filter(enrollment=self.enrollment_a).count(), before_count + 2)
+
+        first_prediction = RiskPrediction.objects.filter(enrollment=self.enrollment_a).order_by('prediction_date').first()
+        second_prediction = RiskPrediction.objects.filter(enrollment=self.enrollment_a).order_by('prediction_date').last()
+        self.assertLess(first_prediction.prediction_date, second_prediction.prediction_date)
+        self.assertEqual(second.data['prediction_id'], second_prediction.id)
 
     def test_teacher_cannot_generate_prediction_for_unrelated_student(self):
         self.client.force_authenticate(user=self.teacher)
@@ -334,6 +343,81 @@ class PredictionsAPITests(TestCase):
         self.assertIn('Top Factors:', prediction.explanation)
         self.assertGreaterEqual(PredictionFactor.objects.filter(prediction=prediction).count(), 1)
 
+    def test_prediction_explanation_uses_model_estimate_language(self):
+        self.client.force_authenticate(user=self.superadmin)
+        student = Student.objects.create(first_name='Mina', last_name='Mendez', gender='Female', student_status='active')
+        enrollment = Enrollment.objects.create(student=student, academic_year=self.academic_year, grade_level=self.grade_level, section=self.section_b, enrollment_status='active')
+        self._create_compatible_behavior(enrollment)
+        subject = Subject.objects.create(code='MATH_MODEL', name='Mathematics', category='Core', grade_level=self.grade_level)
+        AcademicRecord.objects.create(
+            enrollment=enrollment,
+            subject=subject,
+            academic_year=self.academic_year,
+            grading_period_type='Quarter',
+            quarter=1,
+            grade=62,
+            final_grade=62,
+        )
+
+        response = self.client.post(f'/api/predictions/predict/{student.id}/')
+        self.assertEqual(response.status_code, 200)
+
+        prediction = RiskPrediction.objects.filter(enrollment=enrollment).order_by('-prediction_date').first()
+        explanation = prediction.explanation.lower()
+        self.assertIn('ai risk prediction', explanation)
+        self.assertIn('model found patterns', explanation)
+        self.assertIn('not a diagnosis', explanation)
+        self.assertIn('teacher review focus', explanation)
+
+    def test_prediction_factors_avoid_causal_claims(self):
+        self.client.force_authenticate(user=self.superadmin)
+        student = Student.objects.create(first_name='Noel', last_name='Nora', gender='Male', student_status='active')
+        enrollment = Enrollment.objects.create(student=student, academic_year=self.academic_year, grade_level=self.grade_level, section=self.section_b, enrollment_status='active')
+        self._create_compatible_behavior(enrollment)
+        subject = Subject.objects.create(code='ENG_FACTOR', name='English', category='Core', grade_level=self.grade_level)
+        AcademicRecord.objects.create(
+            enrollment=enrollment,
+            subject=subject,
+            academic_year=self.academic_year,
+            grading_period_type='Quarter',
+            quarter=1,
+            grade=50,
+            final_grade=50,
+        )
+
+        response = self.client.post(f'/api/predictions/predict/{student.id}/')
+        self.assertEqual(response.status_code, 200)
+
+        prediction = RiskPrediction.objects.filter(enrollment=enrollment).order_by('-prediction_date').first()
+        factor = PredictionFactor.objects.filter(prediction=prediction).order_by('id').first()
+        self.assertIsNotNone(factor)
+        text = factor.explanation_text.lower()
+        self.assertIn('considered by the model', text)
+        self.assertNotIn('caused', text)
+        self.assertNotIn('global feature importance', text)
+
+    def test_prediction_service_binary_classes_remain_hardcoded(self):
+        self.client.force_authenticate(user=self.superadmin)
+        student = Student.objects.create(first_name='Binary', last_name='Model', gender='Female', student_status='active')
+        enrollment = Enrollment.objects.create(student=student, academic_year=self.academic_year, grade_level=self.grade_level, section=self.section_b, enrollment_status='active')
+        self._create_compatible_behavior(enrollment)
+        subject = Subject.objects.create(code='MATH_BINARY', name='Mathematics', category='Core', grade_level=self.grade_level)
+        AcademicRecord.objects.create(
+            enrollment=enrollment,
+            subject=subject,
+            academic_year=self.academic_year,
+            grading_period_type='Quarter',
+            quarter=1,
+            grade=80,
+            final_grade=80,
+        )
+
+        result = PredictionService().predict_for_student(student.id)
+        self.assertIn(result['prediction'], ['At Risk', 'Not At Risk'])
+        self.assertGreaterEqual(result['probability'], 0)
+        self.assertLessEqual(result['probability'], 1)
+        self.assertNotIn(result['prediction'], ['Low', 'Moderate', 'High'])
+
     def test_predict_student_endpoint_creates_prediction_factors_with_details(self):
         self.client.force_authenticate(user=self.superadmin)
         student = Student.objects.create(first_name='Dina', last_name='Dawson', gender='Female', student_status='active')
@@ -390,6 +474,83 @@ class PredictionsAPITests(TestCase):
 
         refreshed_factors = list(PredictionFactor.objects.filter(prediction=prediction).values('feature_name', 'feature_value', 'contribution', 'direction', 'explanation_text'))
         self.assertEqual(factor_snapshot, refreshed_factors)
+
+    def test_current_subject_and_section_aliases_map_to_model_contract(self):
+        student = Student.objects.create(first_name='Edizon', last_name='Alias', gender='Male', student_status='active')
+        section = Section.objects.create(name='Onyx', grade_level=self.grade_level, academic_year=self.academic_year)
+        enrollment = Enrollment.objects.create(student=student, academic_year=self.academic_year, grade_level=self.grade_level, section=section, enrollment_status='active')
+        self._create_compatible_behavior(enrollment)
+
+        aliases = [
+            ('English - Writing', 'english_grade'),
+            ('English - Reading', 'english_grade'),
+            ('English - Language', 'english_grade'),
+            ('Computer', 'education_grade'),
+            ('Nihongo', 'education_grade'),
+            ('Values Education', 'esp_grade'),
+            ('EPP / HELE', 'tle_grade'),
+            ('MAPE', 'mapeh_grade'),
+            ('HeKaSi', 'araling_panlipunan_grade'),
+        ]
+        for subject_name, feature_key in aliases:
+            subject = Subject.objects.create(code=f'ALIAS_{subject_name[:12].upper()}', name=subject_name, category='Learning Area', grade_level=self.grade_level)
+            AcademicRecord.objects.create(
+                enrollment=enrollment,
+                subject=subject,
+                academic_year=self.academic_year,
+                grading_period_type='Quarter',
+                quarter=1,
+                grade=99,
+                final_grade=99,
+            )
+
+        frame, feature_values = PredictionService().build_feature_vector(student.id)
+
+        self.assertEqual(feature_values['section'], 'Moonstone')
+        self.assertEqual(feature_values['english_grade'], 99.0)
+        self.assertEqual(feature_values['education_grade'], 99.0)
+        self.assertEqual(feature_values['esp_grade'], 99.0)
+        self.assertEqual(feature_values['tle_grade'], 99.0)
+        self.assertEqual(feature_values['mapeh_grade'], 99.0)
+        self.assertEqual(feature_values['araling_panlipunan_grade'], 99.0)
+        self.assertFalse(any('not represented in the current model vocabulary' in diagnostic for diagnostic in feature_values['contract_diagnostics']))
+        self.assertEqual(frame.iloc[0]['section_Moonstone'], 1.0)
+
+    def test_legacy_behavior_values_are_mapped_to_current_canonical_values(self):
+        student = Student.objects.create(first_name='Legacy', last_name='Behavior', gender='Female', student_status='active')
+        section = Section.objects.create(name='Legacy-A', grade_level=self.grade_level, academic_year=self.academic_year)
+        enrollment = Enrollment.objects.create(student=student, academic_year=self.academic_year, grade_level=self.grade_level, section=section, enrollment_status='active')
+
+        core_value = CoreValue.objects.create(name='Respect')
+        indicator = BehaviorIndicator.objects.create(name='Respectful Behavior', core_value=core_value)
+        rating = BehavioralRating.objects.create(code='NO', label='Not Observed')
+        BehavioralAssessment.objects.create(
+            enrollment=enrollment,
+            academic_year=self.academic_year,
+            grading_period_type='Quarter',
+            quarter=1,
+            core_value=core_value,
+            behavior_indicator=indicator,
+            rating=rating,
+        )
+
+        subject = Subject.objects.create(code='LEGACY_MATH', name='Mathematics', category='Learning Area', grade_level=self.grade_level)
+        AcademicRecord.objects.create(
+            enrollment=enrollment,
+            subject=subject,
+            academic_year=self.academic_year,
+            grading_period_type='Quarter',
+            quarter=1,
+            grade=85,
+            final_grade=85,
+        )
+
+        frame, feature_values = PredictionService().build_feature_vector(student.id)
+
+        self.assertEqual(feature_values['behavior_core_value'], 'Makatao (Love for Fellowmen)')
+        self.assertEqual(feature_values['behavior_indicator'], 'Demonstrate contributions toward solidarity')
+        self.assertEqual(frame.iloc[0]['behavior_core_value_Makatao (Love for Fellowmen)'], 1.0)
+        self.assertEqual(frame.iloc[0]['behavior_indicator_Demonstrate contributions toward solidarity'], 1.0)
 
     def _create_compatible_behavior(self, enrollment, code='AO'):
         core_value = CoreValue.objects.get_or_create(name='Maka-Diyos (Love for God)')[0]

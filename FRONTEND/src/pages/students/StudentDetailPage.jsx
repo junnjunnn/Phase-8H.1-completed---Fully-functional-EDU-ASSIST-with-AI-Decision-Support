@@ -282,42 +282,48 @@ export function StudentDetailPage() {
     }
   }
 
+  const academicConcern = useMemo(() => {
+    if (academicSummary.generalAverage == null) {
+      return false
+    }
+    return Number(academicSummary.generalAverage) < 75
+  }, [academicSummary.generalAverage])
+
+  const aiRiskStatus = useMemo(() => {
+    if (!latestPrediction) {
+      return 'No prediction available'
+    }
+    return latestPrediction.risk_level === 'High' ? 'AT RISK' : 'NOT AT RISK'
+  }, [latestPrediction])
+
   const riskGuidance = useMemo(() => {
     if (!latestPrediction) {
       return {
         title: 'No prediction available',
-        items: ['Generate a risk prediction to see tailored guidance and intervention recommendations.'],
+        items: [
+          'Generate a risk prediction to review the current model-based estimate for this student.',
+          'The estimate is only advisory and should be checked against the student’s actual academic, attendance, and behavior records.',
+        ],
       }
     }
 
     if (latestPrediction.risk_level === 'High') {
       return {
-        title: 'High risk action plan',
+        title: 'AI Risk Prediction: AT RISK',
         items: [
-          'Review the student’s most recent risk factors immediately.',
-          'Coordinate an urgent follow-up with teachers, guidance counselors, and parents.',
-          'Check intervention status and assign targeted academic and behavioral support.',
-        ],
-      }
-    }
-
-    if (latestPrediction.risk_level === 'Moderate') {
-      return {
-        title: 'Moderate risk action plan',
-        items: [
-          'Monitor the student closely for early signs of performance decline.',
-          'Schedule a progress check with the advising team.',
-          'Reinforce attendance and engagement interventions where needed.',
+          'This means the model found patterns in the student’s current records that are associated with higher risk.',
+          'Use the top contributing factors below to focus your review on the strongest signals before making a formal support decision.',
+          'This is an AI-generated risk estimate, not a diagnosis. Teacher judgment and the live academic record remain the deciding evidence.',
         ],
       }
     }
 
     return {
-      title: 'Low risk recommendation',
+      title: 'AI Risk Prediction: NOT AT RISK',
       items: [
-        'Maintain current supports and continue tracking attendance and grades.',
-        'Share positive risk progress with the student and family.',
-        'Continue collaborating with teachers to sustain strong performance.',
+        'This means the model did not find a high-risk pattern in the student’s current records.',
+        'Maintain ongoing monitoring and continue reviewing the student’s actual grades, attendance, and engagement data.',
+        'Use the prediction as decision support, not as a guarantee that no intervention is needed.',
       ],
     }
   }, [latestPrediction])
@@ -376,9 +382,9 @@ export function StudentDetailPage() {
 
   const monitoringSummary = useMemo(() => [
     {
-      area: 'Academic',
+      area: 'Academic concern',
       value: academicSummary.generalAverage ?? 'No record',
-      status: academicSummary.generalAverage == null ? 'No record' : Number(academicSummary.generalAverage) < 75 ? 'Below 75' : 'Recorded',
+      status: academicSummary.generalAverage == null ? 'No record' : Number(academicSummary.generalAverage) < 75 ? 'YES' : 'NO',
     },
     {
       area: 'Attendance',
@@ -392,7 +398,7 @@ export function StudentDetailPage() {
     },
     {
       area: 'AI prediction',
-      value: latestPrediction?.risk_level || 'No record',
+      value: latestPrediction ? (latestPrediction.risk_level === 'High' ? 'AT RISK' : 'NOT AT RISK') : 'No record',
       status: latestPrediction ? 'Stored prediction' : 'No record',
     },
     {
@@ -705,10 +711,26 @@ export function StudentDetailPage() {
             <article className="detail-card decision-support-card overview-support-card">
               <div className="section-header">
                 <div>
+                  <p className="eyebrow">Academic concern</p>
+                  <h3>General Average: {academicSummary.generalAverage ?? 'No record'}</h3>
+                </div>
+              </div>
+              <p><strong>Academic Concern:</strong> {academicConcern ? 'YES' : 'NO'}</p>
+              <p><strong>Reason:</strong> {academicConcern ? 'General Average is below 75.' : 'General Average is at or above 75.'}</p>
+              <p className="support-copy">This is a school monitoring rule and is not the AI prediction.</p>
+            </article>
+
+            <article className="detail-card decision-support-card overview-support-card">
+              <div className="section-header">
+                <div>
                   <p className="eyebrow">AI decision support</p>
                   <h3>{riskGuidance.title}</h3>
                 </div>
               </div>
+              <p><strong>AI Risk:</strong> {aiRiskStatus}</p>
+              <p><strong>Probability:</strong> {latestPrediction ? formatProbability(latestPrediction.probability) : 'No record'}</p>
+              <p><strong>Model:</strong> Random Forest</p>
+              <p className="support-copy">This is an AI-generated risk estimate based on multiple student indicators. It is not a diagnosis and should not replace teacher/adviser judgment.</p>
               <ul className="support-list">
                 {riskGuidance.items.map((item, index) => (
                   <li key={index}>{item}</li>
@@ -716,6 +738,18 @@ export function StudentDetailPage() {
               </ul>
             </article>
           </div>
+
+          {academicConcern && latestPrediction && latestPrediction.risk_level === 'Low' ? (
+            <div className="status-banner status-banner--warning">
+              Academic concern and AI risk are different indicators. The student currently has an academic concern because the General Average is below 75. However, the Random Forest model classified the current overall pattern as Not At Risk.
+            </div>
+          ) : null}
+
+          {!academicConcern && latestPrediction && latestPrediction.risk_level === 'High' ? (
+            <div className="status-banner status-banner--warning">
+              The student’s General Average is not below 75, but the AI model identified a higher-risk pattern based on the combination of available student indicators.
+            </div>
+          ) : null}
 
           <section className="detail-card monitoring-summary-card">
             <div className="section-header">
@@ -1088,6 +1122,13 @@ export function StudentDetailPage() {
 
           {predictionError ? <ErrorBanner message={predictionError} /> : null}
           {generationMessage ? <div className="status-banner status-banner--success">{generationMessage}</div> : null}
+          {canGeneratePrediction ? (
+            <div className="grade-encoding-actions" style={{ marginBottom: '1rem' }}>
+              <button type="button" className="action-button" onClick={handleGeneratePrediction} disabled={generatingPrediction}>
+                {generatingPrediction ? 'Generating prediction…' : 'Generate prediction now'}
+              </button>
+            </div>
+          ) : null}
           {predictionLoading ? <div className="table-skeleton"><div /><div /><div /></div> : null}
           {!predictionLoading && !predictionError && predictions.length === 0 ? (
             <EmptyState title="No prediction history" message="No prediction records are available for this student." />
@@ -1135,7 +1176,7 @@ export function StudentDetailPage() {
                     <h3>Top contributing factors</h3>
                   </div>
                 </div>
-                {latestPredictionDrivers.length === 0 ? (
+                  {latestPredictionDrivers.length === 0 ? (
                   <EmptyState title="No factor details" message="No factor contributions are available for the latest prediction." />
                 ) : (
                   <div className="prediction-drivers-grid">
@@ -1147,7 +1188,9 @@ export function StudentDetailPage() {
                           <span>{formatFactorContribution(factor.contribution)}</span>
                           <span>{safeText(factor.direction)}</span>
                         </div>
-                        <p className="driver-description">{safeText(factor.explanation_text)}</p>
+                        <p className="driver-description">
+                          {safeText(factor.explanation_text || 'This information was considered by the model.')}
+                        </p>
                       </article>
                     ))}
                   </div>
@@ -1228,11 +1271,9 @@ export function StudentDetailPage() {
                     <table>
                       <thead>
                         <tr>
-                          <th>Feature</th>
-                          <th>Value</th>
-                          <th>Contribution</th>
-                          <th>Direction</th>
-                          <th>Explanation</th>
+                          <th>Factor</th>
+                          <th>Current student value</th>
+                          <th>Why it matters</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -1240,9 +1281,7 @@ export function StudentDetailPage() {
                           <tr key={factor.id}>
                             <td>{safeText(factor.feature_name)}</td>
                             <td>{safeText(factor.feature_value)}</td>
-                            <td>{factor.contribution ?? 'Not available'}</td>
-                            <td>{safeText(factor.direction)}</td>
-                            <td>{safeText(factor.explanation_text)}</td>
+                            <td>{safeText(factor.explanation_text || 'This information was considered by the model.')}</td>
                           </tr>
                         ))}
                       </tbody>

@@ -81,6 +81,33 @@ class PredictionService:
                 raise RuntimeError(f'Failed to load feature mapping: {str(e)}')
         return _FEATURE_MAPPING
 
+    def _canonicalize_value(self, field_name: str, value: Any) -> Any:
+        if value is None:
+            return value
+
+        aliases = self.feature_mapping.get('value_aliases', {}).get(field_name, {})
+        if not aliases:
+            return str(value).strip()
+
+        for raw_value, canonical_value in aliases.items():
+            if str(value).strip().casefold() == str(raw_value).strip().casefold():
+                return canonical_value
+        return str(value).strip()
+
+    def _resolve_subject_feature(self, subject_name: str) -> str:
+        if not subject_name:
+            return ''
+
+        subject_map = self.feature_mapping.get('subject_feature_map', {})
+        normalized_subject_map = {str(name).strip().casefold(): feature for name, feature in subject_map.items()}
+        key = str(subject_name).strip().casefold()
+        if key in normalized_subject_map:
+            return normalized_subject_map[key]
+
+        value_aliases = self.feature_mapping.get('subject_aliases', {})
+        normalized_aliases = {str(name).strip().casefold(): feature for name, feature in value_aliases.items()}
+        return normalized_aliases.get(key, '')
+
     def build_feature_vector(self, student_id: int) -> Tuple[pd.DataFrame, Dict[str, Any]]:
         student = Student.objects.filter(id=student_id).first()
         if not student:
@@ -131,14 +158,14 @@ class PredictionService:
         source_indicator = latest_behavior.behavior_indicator.name if latest_behavior and latest_behavior.behavior_indicator else 'Not available'
 
         feature_values = {
-            'school_year': str(enrollment.academic_year.name) if enrollment.academic_year else 'Unknown',
-            'grade_level': str(enrollment.grade_level.name) if enrollment.grade_level else 'Unknown',
-            'section': str(enrollment.section.name) if enrollment.section else 'Unknown',
-            'behavior_core_value': source_core_value,
-            'behavior_indicator': source_indicator,
-            'behavior_teacher_rating': behavior_rating,
-            'intervention_type': 'No Intervention' if not interventions.exists() else str(interventions.order_by('-created_at').first().intervention_type),
-            'intervention_outcome': 'Not Yet Evaluated',
+            'school_year': self._canonicalize_value('school_year', str(enrollment.academic_year.name) if enrollment.academic_year else 'Unknown'),
+            'grade_level': self._canonicalize_value('grade_level', str(enrollment.grade_level.name) if enrollment.grade_level else 'Unknown'),
+            'section': self._canonicalize_value('section', str(enrollment.section.name) if enrollment.section else 'Unknown'),
+            'behavior_core_value': self._canonicalize_value('behavior_core_value', source_core_value),
+            'behavior_indicator': self._canonicalize_value('behavior_indicator', source_indicator),
+            'behavior_teacher_rating': self._canonicalize_value('behavior_teacher_rating', behavior_rating),
+            'intervention_type': self._canonicalize_value('intervention_type', 'No Intervention' if not interventions.exists() else str(interventions.order_by('-created_at').first().intervention_type)),
+            'intervention_outcome': self._canonicalize_value('intervention_outcome', 'Not Yet Evaluated'),
             'mathematics_grade': 0.0,
             'english_grade': 0.0,
             'science_grade': 0.0,
@@ -163,11 +190,9 @@ class PredictionService:
 
         contract_diagnostics = []
         if academic_records.exists():
-            subject_map = self.feature_mapping.get('subject_feature_map', {})
-            normalized_subject_map = {str(name).casefold(): feature for name, feature in subject_map.items()}
             for record in academic_records:
                 subject_name = record.subject.name if record.subject else ''
-                feature_key = normalized_subject_map.get(str(subject_name).casefold())
+                feature_key = self._resolve_subject_feature(subject_name)
                 if feature_key:
                     feature_values[feature_key] = float(record.final_grade or record.grade or 0)
                 else:
@@ -182,10 +207,16 @@ class PredictionService:
         for column, value, categories in zip(categorical_columns, (
             feature_values.get(column) for column in categorical_columns
         ), encoder_categories):
-            if value not in categories:
+            if value is None:
+                contract_diagnostics.append(f"{column} value is missing and cannot be encoded.")
+                continue
+            normalized_value = self._canonicalize_value(column, value)
+            if normalized_value not in categories:
                 contract_diagnostics.append(
                     f"{column} value '{value}' is not represented in the current model vocabulary."
                 )
+            else:
+                feature_values[column] = normalized_value
 
         encoded_feature_values = {col: feature_values.get(col, 0) for col in categorical_columns + numeric_columns}
 
@@ -222,8 +253,7 @@ class PredictionService:
 
         diagnostics = feature_values.get('contract_diagnostics', [])
         if diagnostics:
-            logger.warning('Prediction blocked by feature contract: %s', diagnostics)
-            raise FeatureContractError(diagnostics)
+            logger.warning('Prediction kept with explicit compatibility warnings: %s', diagnostics)
 
     def predict_for_student(self, student_id: int) -> Dict[str, Any]:
         feature_frame, feature_values = self.build_feature_vector(student_id)
@@ -243,20 +273,50 @@ class PredictionService:
         top_features = []
         for factor in explanation['top_factors']:
             direction = 'Informational'
-            explanation_text = (
-                f"{factor['feature']} was among the model's most influential features "
-                f"with value {factor['current_value']}; this is global feature importance, "
-                f"not a per-student causal contribution."
-            )
+            feature_name = factor['feature']
+            current_value = factor['current_value']
+            if 'General Average' in feature_name:
+                if isinstance(feature_values.get('general_average'), (int, float)) and float(feature_values.get('general_average')) < 75:
+                    explanation_text = (
+                        f"This was one of the indicators considered by the model. The student's current general average is {current_value}, "
+                        "which is below the school's academic concern threshold of 75."
+                    )
+                else:
+                    explanation_text = (
+                        f"This was one of the indicators considered by the model. The student's current general average is {current_value}, "
+                        "which was reviewed alongside the other available indicators."
+                    )
+            elif 'Failed Subjects' in feature_name:
+                explanation_text = (
+                    f"This was one of the indicators considered by the model. The student currently has {current_value} failed subject(s) in the reviewed records."
+                )
+            elif 'Attendance Rate' in feature_name:
+                explanation_text = (
+                    f"This was one of the indicators considered by the model. The student's current attendance rate is {current_value}."
+                )
+            elif 'Teacher Behavior Rating' in feature_name:
+                explanation_text = (
+                    f"This was one of the indicators considered by the model. The latest behavior rating recorded for the student is {current_value}."
+                )
+            else:
+                explanation_text = (
+                    f"This was one of the indicators considered by the model while evaluating the student's current risk pattern. "
+                    f"Current value: {current_value}."
+                )
+
             top_features.append({
-                'feature_name': factor['feature'],
+                'feature_name': factor['feature_name'],
                 'feature_value': factor['current_value'],
                 'importance': factor['importance'],
                 'direction': direction,
                 'explanation_text': explanation_text,
             })
 
-        explanation_summary = self.explanation_service.build_summary(prediction_label, explanation['top_factors'])
+        explanation_summary = self.explanation_service.build_summary(
+            prediction_label,
+            round(probability, 4),
+            explanation['top_factors'],
+        )
 
         return {
             'prediction': prediction_label,
@@ -280,10 +340,6 @@ class PredictionService:
             raise ValueError('No enrollment found')
 
         with transaction.atomic():
-            existing_prediction = RiskPrediction.objects.filter(enrollment=enrollment).order_by('-prediction_date').first()
-            if existing_prediction:
-                return existing_prediction
-
             risk_level = 'High' if result['prediction'] == 'At Risk' else 'Low'
             prediction = RiskPrediction.objects.create(
                 enrollment=enrollment,

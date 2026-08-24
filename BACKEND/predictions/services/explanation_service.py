@@ -84,10 +84,25 @@ class ExplanationService:
             return 'Moderate Influence'
         return 'Low Influence'
 
-    def build_summary(self, prediction: str, top_factors: List[Dict[str, Any]]) -> str:
-        lines = [f'Prediction: {prediction}', '', 'Top Factors:']
+    def build_summary(self, prediction: str, probability: float, top_factors: List[Dict[str, Any]]) -> str:
+        probability_pct = probability * 100 if isinstance(probability, (int, float)) else 0
+        confidence_text = f'{probability_pct:.1f}%' if probability_pct else 'low confidence'
+        status_text = 'AI risk prediction: ' + prediction
+        lines = [
+            f'Prediction: {status_text} ({confidence_text})',
+            '',
+            'This means the model found patterns in the student\'s current records that are associated with a higher or lower overall risk profile.',
+            'It is not a diagnosis and should be reviewed alongside teacher observations, grades, attendance, and support records.',
+            '',
+            'Top Factors:',
+            'These are the indicators considered by the model:',
+        ]
         for factor in top_factors:
             lines.append(f"• {factor['feature']} ({factor['current_value']})")
+        if not top_factors:
+            lines.append('• No model feature crossed the reporting threshold for this prediction.')
+        lines.append('')
+        lines.append('Teacher review focus: confirm the actual academic concern and the support plan before making a formal intervention decision.')
         return '\n'.join(lines)
 
     def build_explanation(self, feature_frame, feature_values: Dict[str, Any], prediction: str, probability: float, prediction_date: str) -> Dict[str, Any]:

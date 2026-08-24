@@ -25,6 +25,14 @@ class CoreValueViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins.
     filter_backends = [DjangoFilterBackend]
     filterset_fields = ['is_active']
 
+    def get_queryset(self):
+        """Filter to active core values by default unless explicitly requesting all."""
+        qs = super().get_queryset()
+        # If is_active filter is not explicitly set, default to active core values only
+        if 'is_active' not in self.request.query_params:
+            qs = qs.filter(is_active=True)
+        return qs
+
     def get_permissions(self):
         if self.request.method in ['POST', 'PUT', 'PATCH']:
             return [permissions.IsAuthenticated(), IsSchoolAdmin()]
@@ -38,6 +46,14 @@ class BehaviorIndicatorViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin,
     filter_backends = [DjangoFilterBackend]
     filterset_fields = ['core_value', 'is_active']
 
+    def get_queryset(self):
+        """Filter to active indicators by default unless explicitly requesting all."""
+        qs = super().get_queryset()
+        # If is_active filter is not explicitly set, default to active indicators only
+        if 'is_active' not in self.request.query_params:
+            qs = qs.filter(is_active=True)
+        return qs
+
     def get_permissions(self):
         if self.request.method in ['POST', 'PUT', 'PATCH']:
             return [permissions.IsAuthenticated(), IsSchoolAdmin()]
@@ -50,6 +66,14 @@ class BehavioralRatingViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, 
     permission_classes = [permissions.IsAuthenticated, IsAuthorizedStaff]
     filter_backends = [DjangoFilterBackend]
     filterset_fields = ['is_active']
+
+    def get_queryset(self):
+        """Filter to active ratings by default unless explicitly requesting all."""
+        qs = super().get_queryset()
+        # If is_active filter is not explicitly set, default to active ratings only
+        if 'is_active' not in self.request.query_params:
+            qs = qs.filter(is_active=True)
+        return qs
 
     def get_permissions(self):
         if self.request.method in ['POST', 'PUT', 'PATCH']:
