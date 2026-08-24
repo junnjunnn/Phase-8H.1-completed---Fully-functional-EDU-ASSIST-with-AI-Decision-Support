@@ -45,6 +45,50 @@ def teacher_assignment_queryset(user: object, active_only: bool = True):
     return queryset
 
 
+def get_adviser_sections(user: object):
+    """Return the active sections assigned to the teacher as a class adviser."""
+    from academics.models import Section, TeacherAssignment
+
+    if not user or not getattr(user, 'is_authenticated', False):
+        return Section.objects.none()
+
+    if get_user_scope(user) != 'teacher':
+        return Section.objects.none()
+
+    adviser_assignments = TeacherAssignment.objects.filter(
+        teacher=user,
+        assignment_type='ADVISER',
+        is_active=True,
+    ).values('section_id')
+
+    return Section.objects.filter(
+        is_active=True,
+        grade_level__is_active=True,
+        academic_year__is_active=True,
+    ).filter(
+        models.Q(adviser=user) | models.Q(pk__in=adviser_assignments)
+    ).distinct()
+
+
+def get_adviser_students(user: object, queryset: QuerySet | None = None) -> QuerySet:
+    """Return only students enrolled in active sections assigned to the adviser."""
+    from students.models import Student
+
+    if queryset is None:
+        queryset = Student.objects.all()
+
+    if not user or not getattr(user, 'is_authenticated', False):
+        return queryset.none()
+
+    if get_user_scope(user) != 'teacher':
+        return queryset.none()
+
+    sections = get_adviser_sections(user)
+    if not sections.exists():
+        return queryset.none()
+    return queryset.filter(enrollments__section__in=sections).filter(enrollments__enrollment_status='active').distinct()
+
+
 def teacher_section_queryset(user: object):
     """Return sections where the teacher teaches or is the adviser."""
     from academics.models import Section
@@ -63,6 +107,10 @@ def authorized_students_queryset(user: object, queryset: QuerySet) -> QuerySet:
     if scope in {'schoolwide', 'registrar'}:
         return queryset
     if scope == 'teacher':
+        adviser_sections = get_adviser_sections(user)
+        if adviser_sections.exists():
+            return queryset.filter(enrollments__section__in=adviser_sections).filter(enrollments__enrollment_status='active').distinct()
+
         profile = _get_profile(user)
         if not profile:
             return queryset.none()
@@ -84,10 +132,8 @@ def authorized_enrollment_queryset(user: object, queryset: QuerySet, enrollment_
     if scope in {'schoolwide', 'registrar'}:
         return queryset
     if scope == 'teacher':
-        profile = _get_profile(user)
-        if not profile:
-            return queryset.none()
-        sections = teacher_section_queryset(user)
+        adviser_sections = get_adviser_sections(user)
+        sections = adviser_sections if adviser_sections.exists() else teacher_section_queryset(user)
         # Determine if the queryset is already Enrollment-like (has 'section' field)
         model_fields = {f.name for f in queryset.model._meta.get_fields()}
         # If enrollment_field refers to a related lookup like 'prediction__enrollment',

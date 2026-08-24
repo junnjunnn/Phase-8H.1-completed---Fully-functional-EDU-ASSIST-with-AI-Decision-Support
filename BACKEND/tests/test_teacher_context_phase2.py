@@ -68,6 +68,13 @@ class TeacherContextPhase2Tests(TestCase):
             academic_year=self.year,
             grade_level=self.grade,
             section=self.advisory,
+            assignment_type='ADVISER',
+        )
+        TeacherAssignment.objects.create(
+            teacher=self.teacher,
+            academic_year=self.year,
+            grade_level=self.grade,
+            section=self.advisory,
             subject=self.math,
         )
         self.authenticate()
@@ -77,6 +84,21 @@ class TeacherContextPhase2Tests(TestCase):
         self.assertEqual(len(response.data['subject_assignments']), 2)
         dual_role = next(item for item in response.data['subject_assignments'] if item['section_name'] == 'Rizal')
         self.assertEqual(dual_role['role'], 'Adviser and Subject Teacher')
+
+    def test_adviser_assignment_without_subject_is_excluded_from_subject_assignments(self):
+        TeacherAssignment.objects.create(
+            teacher=self.teacher,
+            academic_year=self.year,
+            grade_level=self.grade,
+            section=self.advisory,
+            assignment_type='ADVISER',
+        )
+        self.authenticate()
+        response = self.client.get('/api/teacher-assignments/my-context/')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual([item['assignment_type'] for item in response.data['subject_assignments']], ['SUBJECT'])
+        self.assertTrue(all(item.get('subject') for item in response.data['subject_assignments']))
+        self.assertEqual([item['section_name'] for item in response.data['advisory_classes']], ['Rizal'])
 
     def test_teacher_report_rejects_unassigned_subject_scope(self):
         self.authenticate()

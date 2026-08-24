@@ -3772,6 +3772,57 @@
   }
 }
 
+.advisory-roster-toolbar {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) minmax(260px, 1.5fr);
+  gap: 1rem;
+  align-items: end;
+}
+
+.advisory-roster-toolbar label {
+  display: grid;
+  gap: 0.4rem;
+  color: var(--color-text-secondary);
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.advisory-roster-toolbar select,
+.advisory-roster-toolbar input {
+  min-height: 2.65rem;
+}
+
+.advisory-roster-table {
+  overflow-x: auto;
+}
+
+.advisory-roster-table table {
+  min-width: 900px;
+}
+
+.advisory-roster-table td small,
+.advisory-roster-table th small {
+  display: block;
+  color: var(--color-text-secondary);
+  font-size: 0.75rem;
+  margin-top: 0.2rem;
+}
+
+.advisory-roster-table .badge {
+  display: inline-block;
+  margin-bottom: 0.2rem;
+}
+
+@media (max-width: 768px) {
+  .advisory-roster-toolbar {
+    grid-template-columns: 1fr;
+  }
+
+  .advisory-roster-table {
+    margin-inline: -0.25rem;
+  }
+}
+
 .dashboard-page {
   display: grid;
   gap: var(--space-5);

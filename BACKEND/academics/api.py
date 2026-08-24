@@ -170,6 +170,15 @@ class SubjectViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins.Cr
             return [permissions.IsAuthenticated(), IsSchoolAdmin()]
         return [permissions.IsAuthenticated(), IsAcademicReferenceAccessAllowed()]
 
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        if self.request.query_params.get('active_only') == 'true':
+            queryset = queryset.filter(is_active=True)
+        grade_level = self.request.query_params.get('grade_level')
+        if grade_level:
+            queryset = queryset.filter(Q(grade_levels__id=grade_level) | Q(grade_level_id=grade_level)).distinct()
+        return queryset
+
     @action(detail=False, methods=['get'], url_path='academic-divisions')
     def academic_divisions(self, request):
         return Response([
@@ -248,11 +257,15 @@ class TeacherAssignmentViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin,
         if get_user_scope(request.user) != 'teacher':
             return Response({'detail': 'This context is available to teachers.'}, status=403)
 
-        assignments = list(self.get_queryset().filter(is_active=True))
+        assignments = list(self.get_queryset().filter(is_active=True, assignment_type='SUBJECT'))
         adviser_assignment_sections = TeacherAssignment.objects.filter(
             teacher=request.user, assignment_type='ADVISER', is_active=True,
         ).values('section_id')
         advisory_sections = Section.objects.select_related('grade_level', 'academic_year', 'adviser').filter(
+            is_active=True,
+            grade_level__is_active=True,
+            academic_year__is_active=True,
+        ).filter(
             Q(adviser=request.user) | Q(pk__in=adviser_assignment_sections)
         ).distinct().order_by('academic_year__start_date', 'grade_level__order', 'name')
         subject_assignments = self.get_serializer(assignments, many=True).data
@@ -390,9 +403,38 @@ class AcademicRecordViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mi
         qs = get_authorized_enrollment_queryset(self.request.user, super().get_queryset(), enrollment_field='enrollment')
         scope = get_user_scope(self.request.user)
         if scope == 'teacher':
-            active_assignments = teacher_assignment_queryset(self.request.user)
-            if active_assignments.exists():
-                matching_assignment = active_assignments.filter(
+            # Check if teacher is a section adviser
+            adviser_assignments = teacher_assignment_queryset(self.request.user).filter(assignment_type='ADVISER')
+            has_adviser_role = adviser_assignments.exists()
+            
+            # Get the teacher's subject assignments
+            active_subject_assignments = teacher_assignment_queryset(self.request.user).filter(assignment_type='SUBJECT')
+            has_subject_assignments = active_subject_assignments.exists()
+            
+            # Build the filter based on adviser and subject roles
+            if has_adviser_role:
+                # Adviser can see all records for students in their advised sections
+                advised_section_ids = adviser_assignments.values_list('section_id', flat=True)
+                
+                if has_subject_assignments:
+                    # Teacher with both adviser and subject roles
+                    matching_assignment = active_subject_assignments.filter(
+                        academic_year_id=OuterRef('academic_year_id'),
+                        grade_level_id=OuterRef('enrollment__grade_level_id'),
+                        section_id=OuterRef('enrollment__section_id'),
+                        subject_id=OuterRef('subject_id'),
+                    )
+                    qs = qs.annotate(has_teacher_assignment=Exists(matching_assignment))
+                    qs = qs.filter(
+                        Q(enrollment__section_id__in=advised_section_ids) |
+                        Q(has_teacher_assignment=True)
+                    )
+                else:
+                    # Adviser with no subject assignments - just show all records for advised sections
+                    qs = qs.filter(enrollment__section_id__in=advised_section_ids)
+            elif has_subject_assignments:
+                # Teacher without adviser role - only show records for their subject assignments
+                matching_assignment = active_subject_assignments.filter(
                     academic_year_id=OuterRef('academic_year_id'),
                     grade_level_id=OuterRef('enrollment__grade_level_id'),
                     section_id=OuterRef('enrollment__section_id'),

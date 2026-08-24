@@ -8,6 +8,7 @@ export const navigationItems = [
   { label: 'Teacher Assignments', path: '/teacher-assignments', roles: ['SUPER_ADMIN', 'SCHOOL_ADMIN'] },
   { label: 'Enrollment', path: '/enrollment', roles: ['SUPER_ADMIN', 'SCHOOL_ADMIN', 'REGISTRAR'] },
   { label: 'My Classes', path: '/my-classes', roles: ['TEACHER'] },
+  { label: 'My Advisory Class', path: '/my-advisory-class', roles: ['TEACHER'] },
   { label: 'Grade Encoding', path: '/academics/encode', roles: ['SUPER_ADMIN', 'SCHOOL_ADMIN', 'TEACHER'] },
   { label: 'Attendance', path: '/attendance', roles: ['SUPER_ADMIN', 'SCHOOL_ADMIN', 'TEACHER', 'GUIDANCE'] },
   { label: 'Behavior', path: '/behavior', roles: ['SUPER_ADMIN', 'SCHOOL_ADMIN', 'TEACHER', 'GUIDANCE'] },

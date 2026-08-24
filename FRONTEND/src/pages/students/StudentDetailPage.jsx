@@ -59,27 +59,6 @@ function formatFactorContribution(value) {
   return `${prefix}${contribution.toFixed(2)}`
 }
 
-function getBehaviorClassification(average) {
-  const numericAverage = Number(average)
-  if (Number.isNaN(numericAverage)) {
-    return 'Pending'
-  }
-
-  if (numericAverage >= 4.5) {
-    return 'Outstanding'
-  }
-  if (numericAverage >= 4.0) {
-    return 'Very Good'
-  }
-  if (numericAverage >= 3.0) {
-    return 'Good'
-  }
-  if (numericAverage >= 2.0) {
-    return 'Needs Improvement'
-  }
-  return 'At Risk'
-}
-
 export function StudentDetailPage() {
   const { id } = useParams()
 
@@ -120,6 +99,7 @@ export function StudentDetailPage() {
   const [selectedIntervention, setSelectedIntervention] = useState(null)
 
   const [activeTab, setActiveTab] = useState('overview')
+  const [academicPeriod, setAcademicPeriod] = useState('')
 
   const [studentSummary, setStudentSummary] = useState({
     academicCount: 0,
@@ -187,8 +167,16 @@ export function StudentDetailPage() {
       setPredictionFactorError('')
 
       try {
+        const [periodType, periodNumber] = academicPeriod ? academicPeriod.split(':') : ['', '']
+        const academicParams = {
+          ordering: '-created_at',
+          ...(periodType ? {
+            grading_period_type: periodType,
+            ...(periodType === 'Quarter' ? { quarter: periodNumber } : { semester: periodNumber }),
+          } : {}),
+        }
         const [academicData, attendanceData, behaviorData, interventionData, predictionData, predictionFactorData] = await Promise.all([
-          getStudentRelatedAcademicRecords(id, { ordering: '-created_at' }),
+          getStudentRelatedAcademicRecords(id, academicParams),
           getStudentRelatedAttendanceRecords(id, { ordering: '-created_at' }),
           getStudentRelatedBehavioralAssessments(id, { ordering: '-assessment_date' }),
           getStudentRelatedInterventions(id, { ordering: '-created_at' }),
@@ -249,7 +237,7 @@ export function StudentDetailPage() {
     return () => {
       active = false
     }
-  }, [id])
+  }, [academicPeriod, id])
 
   const latestPrediction = useMemo(() => {
     if (!predictions.length) {
@@ -350,9 +338,69 @@ export function StudentDetailPage() {
     return (numericScores.reduce((sum, value) => sum + value, 0) / numericScores.length).toFixed(2)
   }, [behaviorRecords])
 
-  const behaviorClassification = useMemo(() => {
-    return behaviorAverage ? getBehaviorClassification(behaviorAverage) : 'Pending'
-  }, [behaviorAverage])
+  const academicSummary = useMemo(() => {
+    const grades = academicRecords
+      .map((record) => Number(record.final_grade))
+      .filter((value) => !Number.isNaN(value))
+    const failedSubjects = new Set(
+      academicRecords
+        .filter((record) => record.final_grade != null && Number(record.final_grade) < 75)
+        .map((record) => record.subject_name || record.subject)
+        .filter(Boolean),
+    )
+
+    return {
+      generalAverage: grades.length ? (grades.reduce((sum, grade) => sum + grade, 0) / grades.length).toFixed(2) : null,
+      failedSubjects: failedSubjects.size,
+      lowestGrade: grades.length ? Math.min(...grades).toFixed(2) : null,
+    }
+  }, [academicRecords])
+
+  const attendanceSummary = useMemo(() => {
+    if (!attendanceRecords.length) {
+      return { schoolDays: null, daysPresent: null, absences: null, timesTardy: null, percentage: null }
+    }
+
+    const totals = attendanceRecords.reduce((summary, record) => ({
+      schoolDays: summary.schoolDays + Number(record.school_days || 0),
+      daysPresent: summary.daysPresent + Number(record.days_present || 0),
+      absences: summary.absences + Number(record.absences || 0),
+      timesTardy: summary.timesTardy + Number(record.times_tardy || 0),
+    }), { schoolDays: 0, daysPresent: 0, absences: 0, timesTardy: 0 })
+
+    return {
+      ...totals,
+      percentage: totals.schoolDays ? ((totals.daysPresent / totals.schoolDays) * 100).toFixed(2) : null,
+    }
+  }, [attendanceRecords])
+
+  const monitoringSummary = useMemo(() => [
+    {
+      area: 'Academic',
+      value: academicSummary.generalAverage ?? 'No record',
+      status: academicSummary.generalAverage == null ? 'No record' : Number(academicSummary.generalAverage) < 75 ? 'Below 75' : 'Recorded',
+    },
+    {
+      area: 'Attendance',
+      value: attendanceSummary.percentage == null ? 'No record' : `${attendanceSummary.percentage}%`,
+      status: attendanceSummary.percentage == null ? 'No record' : 'Recorded',
+    },
+    {
+      area: 'Behavior',
+      value: behaviorRecords.length ? `${behaviorRecords.length} assessments` : 'No record',
+      status: behaviorRecords.length ? 'Recorded' : 'No record',
+    },
+    {
+      area: 'AI prediction',
+      value: latestPrediction?.risk_level || 'No record',
+      status: latestPrediction ? 'Stored prediction' : 'No record',
+    },
+    {
+      area: 'Intervention',
+      value: interventions.length ? `${interventions.length} records` : 'No record',
+      status: interventions.length ? 'Recorded' : 'No record',
+    },
+  ], [academicSummary, attendanceSummary, behaviorRecords.length, interventions.length, latestPrediction])
 
   const currentRole = user?.role_name || user?.role || user?.profile?.role_name || 'NONE'
   const canGeneratePrediction = ['SUPER_ADMIN', 'SCHOOL_ADMIN', 'TEACHER'].includes(currentRole)
@@ -386,7 +434,8 @@ export function StudentDetailPage() {
       }))
       setGenerationMessage('Prediction generated successfully. Refreshing the latest scores.')
     } catch (err) {
-      setPredictionError(getApiErrorMessage(err))
+      const diagnostics = err.response?.data?.diagnostics
+      setPredictionError(diagnostics?.length ? `${getApiErrorMessage(err)} ${diagnostics.join(' ')}` : getApiErrorMessage(err))
     } finally {
       setGeneratingPrediction(false)
     }
@@ -399,10 +448,11 @@ export function StudentDetailPage() {
 
     const latest = enrollments[0]
     return {
-      gradeLevel: latest.grade_level || null,
-      section: latest.section || null,
-      strand: latest.strand || null,
-      academicYear: latest.academic_year || null,
+      gradeLevel: latest.grade_level_name || latest.grade_level || null,
+      schoolLevel: latest.school_level || null,
+      section: latest.section_name || latest.section || null,
+      strand: latest.strand_name || latest.strand || null,
+      academicYear: latest.academic_year_name || latest.academic_year || null,
       status: latest.enrollment_status || null,
     }
   }, [enrollments])
@@ -484,6 +534,14 @@ export function StudentDetailPage() {
               <div>
                 <p><strong>Academic year</strong></p>
                 <p>{safeText(enrollmentSummary?.academicYear)}</p>
+              </div>
+              <div>
+                <p><strong>School level</strong></p>
+                <p>{safeText(enrollmentSummary?.schoolLevel)}</p>
+              </div>
+              <div>
+                <p><strong>Strand</strong></p>
+                <p>{safeText(enrollmentSummary?.strand)}</p>
               </div>
             </div>
           </div>
@@ -659,6 +717,25 @@ export function StudentDetailPage() {
             </article>
           </div>
 
+          <section className="detail-card monitoring-summary-card">
+            <div className="section-header">
+              <div>
+                <p className="eyebrow">Integrated monitoring</p>
+                <h3>Student monitoring summary</h3>
+              </div>
+              <span className="badge badge--info">Trend classification unavailable</span>
+            </div>
+            <div className="table-card">
+              <table>
+                <thead><tr><th>Area</th><th>Current information</th><th>Status</th></tr></thead>
+                <tbody>
+                  {monitoringSummary.map((item) => <tr key={item.area}><td>{item.area}</td><td>{item.value}</td><td>{item.status}</td></tr>)}
+                </tbody>
+              </table>
+            </div>
+            <p className="support-copy">Historical records are shown in the tabs below. No overall improving, stable, or declining label is assigned without a supported calculation.</p>
+          </section>
+
           <div className="overview-data-grid">
             <article className="detail-card">
               <div className="section-header">
@@ -707,7 +784,16 @@ export function StudentDetailPage() {
                   ) : null}
                 </>
               ) : (
-                <EmptyState title="No prediction records" message="No prediction data is available for this student." />
+                <>
+                  <EmptyState title="No prediction records" message={predictionError || 'No stored prediction is available for this student.'} />
+                  {canGeneratePrediction ? (
+                    <div className="grade-encoding-actions">
+                      <button type="button" className="action-button action-button--secondary" onClick={handleGeneratePrediction} disabled={generatingPrediction}>
+                        {generatingPrediction ? 'Generating prediction…' : 'Generate prediction now'}
+                      </button>
+                    </div>
+                  ) : null}
+                </>
               )}
             </article>
 
@@ -719,6 +805,24 @@ export function StudentDetailPage() {
                 </div>
               </div>
               <div className="student-indicators">
+                <div className="indicator-card">
+                  <p className="stat-label">General average</p>
+                  <p className="stat-value">{academicSummary.generalAverage ?? 'No record'}</p>
+                  {academicSummary.generalAverage != null && Number(academicSummary.generalAverage) < 75 ? <small>Below 75</small> : null}
+                </div>
+                <div className="indicator-card">
+                  <p className="stat-label">Failed subjects</p>
+                  <p className="stat-value">{academicRecords.length ? academicSummary.failedSubjects : 'No record'}</p>
+                </div>
+                <div className="indicator-card">
+                  <p className="stat-label">Lowest grade</p>
+                  <p className="stat-value">{academicSummary.lowestGrade ?? 'No record'}</p>
+                </div>
+                <div className="indicator-card">
+                  <p className="stat-label">Attendance</p>
+                  <p className="stat-value">{attendanceSummary.percentage == null ? 'No record' : `${attendanceSummary.percentage}%`}</p>
+                  {attendanceSummary.schoolDays != null ? <small>{attendanceSummary.daysPresent}/{attendanceSummary.schoolDays} days · {attendanceSummary.absences} absent · {attendanceSummary.timesTardy} tardy</small> : null}
+                </div>
                 <div className="indicator-card">
                   <p className="stat-label">Academic items</p>
                   <p className="stat-value">{studentSummary.academicCount}</p>
@@ -748,6 +852,7 @@ export function StudentDetailPage() {
               <p className="eyebrow">Academics</p>
               <h3>Academic performance</h3>
             </div>
+              <label>Academic period<select value={academicPeriod} onChange={(event) => setAcademicPeriod(event.target.value)}><option value="">All</option><option value="Quarter:1">Quarter 1</option><option value="Quarter:2">Quarter 2</option><option value="Quarter:3">Quarter 3</option><option value="Quarter:4">Quarter 4</option><option value="Semester:1">Semester 1</option><option value="Semester:2">Semester 2</option></select></label>
           </div>
 
           {academicError ? <ErrorBanner message={academicError} /> : null}
@@ -762,8 +867,10 @@ export function StudentDetailPage() {
                 <thead>
                   <tr>
                     <th>Subject</th>
-                    <th>Quarter</th>
+                    <th>Teacher</th>
+                    <th>Period</th>
                     <th>Grade</th>
+                    <th>Final grade</th>
                     <th>Remarks</th>
                     <th>Academic year</th>
                   </tr>
@@ -771,11 +878,13 @@ export function StudentDetailPage() {
                 <tbody>
                   {academicRecords.map((record) => (
                     <tr key={record.id}>
-                      <td><span className="badge badge--subject">{safeText(record.subject)}</span></td>
-                      <td><span className="badge badge--period">{safeText(record.quarter ? `Quarter ${record.quarter}` : record.semester ? `Semester ${record.semester}` : '—')}</span></td>
+                      <td><span className="badge badge--subject">{safeText(record.subject_name || record.subject)}</span></td>
+                      <td>{safeText(record.encoded_by_name)}</td>
+                      <td><span className="badge badge--period">{safeText(record.quarter ? `Quarter ${record.quarter}` : record.semester ? `Semester ${record.semester}` : record.grading_period_type)}</span></td>
                       <td>{record.grade ?? 'Not available'}</td>
+                      <td>{record.final_grade ?? 'Not available'}</td>
                       <td>{safeText(record.remarks)}</td>
-                      <td>{safeText(record.academic_year)}</td>
+                      <td>{safeText(record.academic_year_name || record.academic_year)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -862,8 +971,8 @@ export function StudentDetailPage() {
                   <p className="stat-value">{behaviorAverage ?? '—'}</p>
                 </article>
                 <article className="detail-card">
-                  <p className="stat-label">Classification</p>
-                  <p className="stat-value">{behaviorClassification}</p>
+                  <p className="stat-label">Recorded assessments</p>
+                  <p className="stat-value">{behaviorRecords.length}</p>
                 </article>
                 <article className="detail-card">
                   <p className="stat-label">Latest period</p>

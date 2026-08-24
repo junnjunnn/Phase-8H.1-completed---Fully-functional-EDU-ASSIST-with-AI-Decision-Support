@@ -1,5 +1,6 @@
 from django.conf import settings
 from django.contrib.auth import get_user_model
+from django.core.management import call_command
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 
@@ -190,25 +191,11 @@ class Command(BaseCommand):
             PredictionFactor.objects.filter(prediction__enrollment__student__lrn__in=demo_student_lrns).delete()
             RiskPrediction.objects.filter(enrollment__student__lrn__in=demo_student_lrns).delete()
 
-            discipline, _ = CoreValue.objects.get_or_create(
-                name='Discipline',
-                defaults={'description': 'Demonstrates consistency with school rules and policies.', 'is_active': True},
-            )
-            respect, _ = CoreValue.objects.get_or_create(
-                name='Respect',
-                defaults={'description': 'Demonstrates respect toward teachers and peers.', 'is_active': True},
-            )
-
-            compliance_indicator, _ = BehaviorIndicator.objects.get_or_create(
-                core_value=discipline,
-                name='Compliance with school rules',
-                defaults={'description': 'Observation of compliance with school policies and classroom expectations.', 'is_active': True},
-            )
-            respectful_indicator, _ = BehaviorIndicator.objects.get_or_create(
-                core_value=respect,
-                name='Respectful Behavior',
-                defaults={'description': 'Observation of respectful interactions with adults and peers.', 'is_active': True},
-            )
+            call_command('sync_deped_behavior', stdout=self.stdout)
+            maka_diyos = CoreValue.objects.get(name='Maka-Diyos (Love for God)')
+            makatao = CoreValue.objects.get(name='Makatao (Love for Fellowmen)')
+            maka_diyos_indicator = maka_diyos.indicators.order_by('id').first()
+            makatao_indicator = makatao.indicators.order_by('id').first()
 
             rating_codes = [
                 {'code': 'AO', 'label': 'Always Observe', 'description': 'Teacher observed this behavior consistently.'},
@@ -286,32 +273,32 @@ class Command(BaseCommand):
             behavioral_assessments = [
                 {
                     'student_lrn': '999900000001',
-                    'core_value': discipline,
-                    'behavior_indicator': compliance_indicator,
+                    'core_value': maka_diyos,
+                    'behavior_indicator': maka_diyos_indicator,
                     'rating': ratings['AO'],
                     'assessment_date': '2025-10-10',
                     'remarks': 'Always follows school rules and classroom expectations.',
                 },
                 {
                     'student_lrn': '999900000002',
-                    'core_value': respect,
-                    'behavior_indicator': respectful_indicator,
+                    'core_value': makatao,
+                    'behavior_indicator': makatao_indicator,
                     'rating': ratings['SO'],
                     'assessment_date': '2025-10-12',
                     'remarks': 'Sometimes respectful; needs occasional reminders.',
                 },
                 {
                     'student_lrn': '999900000003',
-                    'core_value': discipline,
-                    'behavior_indicator': compliance_indicator,
+                    'core_value': maka_diyos,
+                    'behavior_indicator': maka_diyos_indicator,
                     'rating': ratings['RO'],
                     'assessment_date': '2025-10-14',
                     'remarks': 'Rarely follows school rules without adult support.',
                 },
                 {
                     'student_lrn': '999900000004',
-                    'core_value': respect,
-                    'behavior_indicator': respectful_indicator,
+                    'core_value': makatao,
+                    'behavior_indicator': makatao_indicator,
                     'rating': ratings['NO'],
                     'assessment_date': '2025-10-16',
                     'remarks': 'Not observed exhibiting respectful interactions this quarter.',

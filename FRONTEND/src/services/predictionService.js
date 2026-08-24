@@ -15,6 +15,11 @@ export async function getDashboardSummary(params = {}) {
   return response.data
 }
 
+export async function getAdviserDashboard(params = {}) {
+  const response = await apiClient.get('/adviser-dashboard/', { params })
+  return response.data
+}
+
 export async function generatePrediction(studentId) {
   const response = await apiClient.post(`/predictions/predict/${studentId}/`)
   return response.data

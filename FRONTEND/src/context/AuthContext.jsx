@@ -1,7 +1,7 @@
 /* eslint-disable react-refresh/only-export-components */
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import { getCurrentUser, login as loginRequest, logout as logoutRequest } from '../services/authService'
-import { getStoredTokens } from '../services/api'
+import { clearStoredTokens, getStoredTokens } from '../services/api'
 
 const AuthContext = createContext(null)
 
@@ -18,6 +18,7 @@ export function AuthProvider({ children }) {
       return profile
     } catch (err) {
       // Ensure errors are logged but do not leak an unused identifier
+      clearStoredTokens()
       setUser(null)
       setIsAuthenticated(false)
       throw err

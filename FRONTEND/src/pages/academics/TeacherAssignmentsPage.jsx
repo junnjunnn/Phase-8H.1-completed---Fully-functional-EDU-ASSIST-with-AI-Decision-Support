@@ -26,6 +26,7 @@ export function TeacherAssignmentsPage() {
   const [gradeLevels, setGradeLevels] = useState([])
   const [sections, setSections] = useState([])
   const [subjects, setSubjects] = useState([])
+  const [historicalSubject, setHistoricalSubject] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [search, setSearch] = useState('')
@@ -55,7 +56,7 @@ export function TeacherAssignmentsPage() {
           getAcademicYears(),
           getGradeLevels({ active_only: 'true' }),
           getSections({ active_only: 'true' }),
-          getSubjects(),
+          Promise.resolve([]),
         ])
         if (!active) return
 
@@ -87,11 +88,16 @@ export function TeacherAssignmentsPage() {
 
     async function reloadSubjects() {
       try {
-        const subjectData = await getSubjects()
+        const subjectData = form.grade_level
+          ? await getSubjects({ active_only: 'true', grade_level: form.grade_level })
+          : []
         if (!active) {
           return
         }
-        setSubjects(normalizeListResponse(subjectData).items)
+        const items = normalizeListResponse(subjectData).items
+        setSubjects(historicalSubject && !items.some((subject) => String(subject.id) === String(historicalSubject.id))
+          ? [...items, historicalSubject]
+          : items)
       } catch {
         // Keep the existing subject list if the refresh fails.
       }
@@ -101,12 +107,13 @@ export function TeacherAssignmentsPage() {
       reloadSubjects()
     }
 
+    reloadSubjects()
     subscribeSubjectsUpdated(handleSubjectsUpdated)
     return () => {
       active = false
       unsubscribeSubjectsUpdated(handleSubjectsUpdated)
     }
-  }, [])
+  }, [form.grade_level, historicalSubject])
 
   useEffect(() => {
     // Defer resetting page to avoid synchronous setState in effect
@@ -164,6 +171,7 @@ export function TeacherAssignmentsPage() {
       }
       const refreshed = await apiClient.get('/teacher-assignments/')
       setAssignments(normalizeListResponse(refreshed.data).items)
+      setHistoricalSubject(null)
       setForm({ id: '', assignment_type: 'SUBJECT', teacher: '', academic_year: '', grade_level: '', section: '', subjects: [], is_active: true })
     } catch (err) {
       setFormError(getApiErrorMessage(err))
@@ -182,6 +190,9 @@ export function TeacherAssignmentsPage() {
     setTeachers((current) => current.some((teacher) => String(teacher.id) === String(assignment.teacher))
       ? current
       : [...current, { id: assignment.teacher, username: assignment.teacher_name || 'Historical teacher', is_active: false, role_name: 'TEACHER' }])
+    setHistoricalSubject(assignment.subject
+      ? { id: assignment.subject, name: assignment.subject_name || 'Archived subject', is_active: false, grade_levels: [assignment.grade_level] }
+      : null)
     setForm({
       id: assignment.id,
       teacher: assignment.teacher || '',
@@ -195,6 +206,7 @@ export function TeacherAssignmentsPage() {
   }
 
   function cancelEdit() {
+    setHistoricalSubject(null)
     setForm({ id: '', assignment_type: 'SUBJECT', teacher: '', academic_year: '', grade_level: '', section: '', subjects: [], is_active: true })
   }
 
@@ -225,7 +237,11 @@ export function TeacherAssignmentsPage() {
   })
   const selectableGradeLevels = gradeLevels.filter((grade) => grade.is_active !== false || (form.id && String(grade.id) === String(form.grade_level)))
   const selectableTeachers = teachers.filter((teacher) => teacher.is_active !== false || (form.id && String(teacher.id) === String(form.teacher)))
-  const visibleSubjects = subjects.filter((subject) => !form.grade_level || (subject.grade_levels || [subject.grade_level]).map(String).includes(String(form.grade_level)))
+  const visibleSubjects = subjects.filter((subject) => {
+    const isCurrentHistoricalSubject = form.id && String(subject.id) === String(form.subjects[0])
+    const isApplicable = (subject.grade_levels || [subject.grade_level]).map(String).includes(String(form.grade_level))
+    return form.grade_level && (subject.is_active !== false || isCurrentHistoricalSubject) && isApplicable
+  })
 
   return (
     <div className="page-stack teacher-assignments-page">
@@ -259,38 +275,30 @@ export function TeacherAssignmentsPage() {
             </select>
           </label>
           <label>
-            <span>Teacher</span>
-            <select value={form.teacher} onChange={(event) => setForm({ ...form, teacher: event.target.value })} required>
-              <option value="">Select teacher</option>
-              {selectableTeachers.filter((teacher) => teacher.profile?.role_name === 'TEACHER' || teacher.role_name === 'TEACHER').map((teacher) => {
-                const displayName = `${(teacher.first_name || '').trim()} ${(teacher.last_name || '').trim()}`.trim() || teacher.username || 'Unknown'
-                return (<option key={teacher.id} value={teacher.id}>{displayName}</option>)
-              })}
+            <span>Grade level</span>
+            <select value={form.grade_level} onChange={(event) => { setSubjects([]); setForm({ ...form, grade_level: event.target.value, section: '', subjects: [] }) }} required>
+              <option value="">Select</option>
+              {selectableGradeLevels.map((grade) => <option key={grade.id} value={grade.id}>{grade.name}{grade.is_active === false ? ' (Archived)' : ''}</option>)}
             </select>
           </label>
           {form.assignment_type === 'SUBJECT' ? <div className="form-field">
             <span className="form-field__label">Subjects</span>
+            {!form.grade_level ? <p className="small-muted">Select a grade level to view applicable subjects.</p> : null}
+            {form.grade_level && !visibleSubjects.length ? <p className="small-muted">No active subjects are available for this grade level.</p> : null}
             <div className="section-actions">
-              <button type="button" className="action-button action-button--neutral" onClick={() => setForm({ ...form, subjects: visibleSubjects.map((subject) => subject.id) })}>Select all</button>
-              <button type="button" className="action-button action-button--neutral" onClick={() => setForm({ ...form, subjects: [] })}>Clear selection</button>
+              <button type="button" className="action-button action-button--neutral" onClick={() => setForm({ ...form, subjects: visibleSubjects.map((subject) => subject.id) })} disabled={!form.grade_level || !visibleSubjects.length}>Select all</button>
+              <button type="button" className="action-button action-button--neutral" onClick={() => setForm({ ...form, subjects: [] })} disabled={!form.grade_level}>Clear selection</button>
               <span>{form.subjects.length} selected</span>
             </div>
             <div className="selection-summary">
-              {visibleSubjects.map((subject) => <label key={subject.id}><input type="checkbox" checked={form.subjects.map(String).includes(String(subject.id))} onChange={(event) => setForm({ ...form, subjects: event.target.checked ? [...new Set([...form.subjects, subject.id])] : form.subjects.filter((id) => String(id) !== String(subject.id)) })} /> {subject.name}</label>)}
+              {visibleSubjects.map((subject) => <label key={subject.id}><input type="checkbox" checked={form.subjects.map(String).includes(String(subject.id))} onChange={(event) => setForm({ ...form, subjects: event.target.checked ? [...new Set([...form.subjects, subject.id])] : form.subjects.filter((id) => String(id) !== String(subject.id)) })} /> {subject.name}{subject.is_active === false ? ' (Archived)' : ''}</label>)}
             </div>
           </div> : null}
           <label>
             <span>Academic year</span>
-            <select value={form.academic_year} onChange={(event) => setForm({ ...form, academic_year: event.target.value, grade_level: '', section: '', subjects: [] })} required>
+            <select value={form.academic_year} onChange={(event) => setForm({ ...form, academic_year: event.target.value, section: '' })} required>
               <option value="">Select</option>
               {academicYears.map((year) => <option key={year.id} value={year.id}>{year.name}</option>)}
-            </select>
-          </label>
-          <label>
-            <span>Grade level</span>
-            <select value={form.grade_level} onChange={(event) => setForm({ ...form, grade_level: event.target.value, section: '', subjects: [] })} required>
-              <option value="">Select</option>
-              {selectableGradeLevels.map((grade) => <option key={grade.id} value={grade.id}>{grade.name}{grade.is_active === false ? ' (Archived)' : ''}</option>)}
             </select>
           </label>
           <label>
@@ -298,6 +306,18 @@ export function TeacherAssignmentsPage() {
             <select value={form.section} onChange={(event) => setForm({ ...form, section: event.target.value })} required>
               <option value="">Select</option>
               {visibleSections.map((section) => <option key={section.id} value={section.id}>{section.name}</option>)}
+            </select>
+            {!form.academic_year || !form.grade_level ? <small className="small-muted">Select an academic year and grade level to view sections.</small> : null}
+            {form.academic_year && form.grade_level && !visibleSections.length ? <small className="small-muted">No active sections are available for the selected academic year and grade level.</small> : null}
+          </label>
+          <label>
+            <span>Teacher</span>
+            <select value={form.teacher} onChange={(event) => setForm({ ...form, teacher: event.target.value })} required>
+              <option value="">Select teacher</option>
+              {selectableTeachers.filter((teacher) => teacher.profile?.role_name === 'TEACHER' || teacher.role_name === 'TEACHER').map((teacher) => {
+                const displayName = `${(teacher.first_name || '').trim()} ${(teacher.last_name || '').trim()}`.trim() || teacher.username || 'Unknown'
+                return (<option key={teacher.id} value={teacher.id}>{displayName}{teacher.is_active === false ? ' (Archived)' : ''}</option>)
+              })}
             </select>
           </label>
           <label>

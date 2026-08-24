@@ -102,7 +102,14 @@ export function BehaviorEncodingPage() {
     entries.forEach((entry) => {
       const key = `${entry.academic_year}-${entry.section}`
       const existing = options.get(key)
-      options.set(key, { ...entry, role: existing ? 'Adviser and Subject Teacher' : entry.role })
+      const roles = new Set(existing?.roles || [])
+      if (entry.role === 'Adviser' || entry.assignment_type === 'ADVISER') {
+        roles.add('Adviser')
+      }
+      if (entry.assignment_type === 'SUBJECT' || entry.role === 'Subject Teacher') {
+        roles.add('Subject Teacher')
+      }
+      options.set(key, { ...existing, ...entry, roles, role: [...roles].join(' and ') })
     })
     return [...options.values()]
   }, [teacherContext])

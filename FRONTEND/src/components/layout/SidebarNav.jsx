@@ -12,14 +12,15 @@ import {
   UserGroupIcon,
 } from '@heroicons/react/24/outline'
 import { NavLink } from 'react-router-dom'
-import { useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useAuth } from '../../context/AuthContext'
 import { navigationItems } from '../../config/navigation'
+import { getTeacherContext } from '../../services/academicsService'
 
 const sectionConfig = [
   { key: 'main', label: 'Main', items: ['Dashboard'] },
   { key: 'academic-management', label: 'Academic Management', items: ['Academic Years', 'Grade Levels', 'Sections', 'Subjects', 'Teacher Assignments'] },
-  { key: 'student-management', label: 'Student Management', items: ['My Classes', 'Students', 'Enrollment'] },
+  { key: 'student-management', label: 'Student Management', items: ['My Classes', 'My Advisory Class', 'Students', 'Enrollment'] },
   { key: 'academic-records', label: 'Academic Records', items: ['Grade Encoding', 'Attendance', 'Behavior'] },
   { key: 'ai', label: 'AI Decision Support', items: ['Predictions', 'Interventions', 'Reports'] },
   { key: 'admin', label: 'Administration', items: ['User Management', 'Audit Logs'] },
@@ -46,11 +47,29 @@ const iconMap = {
   'Audit Logs': ShieldCheckIcon,
   Profile: UserGroupIcon,
   'My Classes': AcademicCapIcon,
+  'My Advisory Class': UserGroupIcon,
   Settings: Cog6ToothIcon,
 }
 
 export function SidebarNav({ collapsed, onToggleCollapse }) {
   const { user } = useAuth()
+  const [isAdviser, setIsAdviser] = useState(false)
+
+  useEffect(() => {
+    let active = true
+    const role = (user?.role_name || user?.role || '').toUpperCase()
+    if (role !== 'TEACHER') return () => { active = false }
+
+    getTeacherContext()
+      .then((context) => {
+        if (active) setIsAdviser((context.advisory_classes || []).length > 0)
+      })
+      .catch(() => {
+        if (active) setIsAdviser(false)
+      })
+
+    return () => { active = false }
+  }, [user?.role, user?.role_name])
 
   const visibleItems = useMemo(() => navigationItems.filter((item) => {
     const role = (user?.role_name || user?.role || user?.profile?.role_name || 'NONE').toUpperCase()
@@ -99,7 +118,7 @@ export function SidebarNav({ collapsed, onToggleCollapse }) {
                   <li key={item.label}>
                     <NavLink to={item.path} className={({ isActive: active }) => (active ? 'nav-link active' : 'nav-link')} end={item.path === '/dashboard'}>
                       <span className="nav-link-icon" aria-hidden="true"><Icon className="icon" /></span>
-                      {!collapsed ? <span>{item.label}</span> : null}
+                      {!collapsed ? <span>{isAdviser && item.label === 'Dashboard' ? 'Adviser Dashboard' : item.label}</span> : null}
                     </NavLink>
                   </li>
                 )

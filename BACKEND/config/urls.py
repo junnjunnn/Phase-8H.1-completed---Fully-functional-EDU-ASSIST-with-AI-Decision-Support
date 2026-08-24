@@ -20,7 +20,7 @@ from academics.api import (
     AcademicRecordViewSet,
 )
 from attendance.api import AttendanceRecordViewSet
-from predictions.api import DashboardViewSet
+from predictions.api import AdviserDashboardViewSet, DashboardViewSet
 from reports.api import ReportsViewSet
 from audit.api import AuditLogViewSet
 from behavior.api import (
@@ -52,6 +52,7 @@ router.register('interventions', InterventionViewSet, basename='intervention')
 router.register('risk-predictions', RiskPredictionViewSet, basename='risk-prediction')
 router.register('prediction-factors', PredictionFactorViewSet, basename='prediction-factor')
 router.register('dashboard-summary', DashboardViewSet, basename='dashboard-summary')
+router.register('adviser-dashboard', AdviserDashboardViewSet, basename='adviser-dashboard')
 router.register('reports', ReportsViewSet, basename='report')
 router.register('audit-logs', AuditLogViewSet, basename='audit-log')
 

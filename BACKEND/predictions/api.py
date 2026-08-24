@@ -1,4 +1,5 @@
-from django.db.models import Case, Count, IntegerField, Q, When
+from django.db.models import Avg, Case, Count, IntegerField, Q, Sum, When
+from django.utils import timezone
 from rest_framework import mixins, permissions, viewsets
 from rest_framework.filters import OrderingFilter, SearchFilter
 from rest_framework.response import Response
@@ -7,8 +8,8 @@ from django_filters.rest_framework import DjangoFilterBackend
 from accounts.permissions import IsAuthorizedStaff
 from common.audit import AuditMixin
 from common.drf_filters import RoleScopedViewsetMixin
-from common.authorization import authorized_students_queryset, authorized_enrollment_queryset
-from academics.models import AcademicRecord
+from common.authorization import authorized_students_queryset, authorized_enrollment_queryset, get_adviser_sections, get_user_scope, teacher_assignment_queryset
+from academics.models import AcademicRecord, Enrollment
 from behavior.models import BehavioralAssessment
 from interventions.models import Intervention
 from students.models import Student
@@ -161,4 +162,172 @@ class DashboardViewSet(viewsets.ViewSet):
             'attention_students': attention_students,
             'recent_completed_interventions': recent_completed_interventions,
             'recent_prediction_activity': recent_prediction_activity,
+        })
+
+
+class AdviserDashboardViewSet(viewsets.ViewSet):
+    permission_classes = [permissions.IsAuthenticated, IsAuthorizedStaff]
+
+    def list(self, request):
+        sections = get_adviser_sections(request.user)
+        selected_section = request.query_params.get('section')
+        search = request.query_params.get('search', '').strip()
+        if selected_section:
+            sections = sections.filter(pk=selected_section)
+            if not sections.exists():
+                return Response({'detail': 'The selected section is not assigned to this adviser.'}, status=404)
+        if not sections.exists():
+            if get_user_scope(request.user) != 'teacher' or teacher_assignment_queryset(request.user).filter(assignment_type='SUBJECT').exists():
+                return Response({'detail': 'This dashboard is available only to advisers.'}, status=403)
+            return Response({
+                'sections': [],
+                'summary': {
+                    'total_students': 0,
+                    'active_students': 0,
+                    'academic_concerns': 0,
+                    'active_interventions': 0,
+                    'follow_up_required': 0,
+                    'students_requiring_attention': 0,
+                },
+                'risk_distribution': {},
+                'students_requiring_attention': [],
+                'students': [],
+                'disclaimer': 'AI-generated risk information is a decision-support indicator and should be interpreted using professional judgment.',
+            })
+
+        enrollments = (
+            Enrollment.objects
+            .filter(section__in=sections, enrollment_status='active')
+            .filter(
+                Q(student__first_name__icontains=search)
+                | Q(student__middle_name__icontains=search)
+                | Q(student__last_name__icontains=search)
+                | Q(student__lrn__icontains=search)
+            ) if search else Enrollment.objects.filter(section__in=sections, enrollment_status='active')
+        ).select_related('student', 'grade_level', 'section', 'section__academic_year', 'section__strand')
+        enrollments = enrollments.order_by('student__last_name', 'student__first_name')
+        today = timezone.localdate()
+        risk_distribution = {}
+        academic_concerns = 0
+        intervention_student_ids = set()
+        follow_up_student_ids = set()
+        attendance_record_count = 0
+        behavior_record_count = 0
+        class_averages = []
+        total_school_days = 0
+        total_days_present = 0
+        attention_students = []
+        roster_students = []
+
+        for enrollment in enrollments:
+            academic_records = list(enrollment.academic_records.filter(final_grade__isnull=False).values_list('final_grade', flat=True))
+            average = round(float(sum(academic_records) / len(academic_records)), 2) if academic_records else None
+            academic_concern = average is not None and average < 75
+            if average is not None:
+                class_averages.append(average)
+
+            attendance = enrollment.attendance_records.aggregate(
+                school_days=Sum('school_days'),
+                present=Sum('days_present'),
+                absences=Sum('absences'),
+                tardy=Sum('times_tardy'),
+            )
+            school_days = int(attendance['school_days'] or 0)
+            attendance_percentage = round((int(attendance['present'] or 0) / school_days) * 100, 2) if school_days else None
+            attendance_record_count += enrollment.attendance_records.count()
+            total_school_days += school_days
+            total_days_present += int(attendance['present'] or 0)
+
+            behavior = enrollment.behavioral_assessments.aggregate(
+                average_score=Avg('numeric_score'),
+            )
+            behavior_average = round(float(behavior['average_score']), 2) if behavior['average_score'] is not None else None
+            behavior_record_count += enrollment.behavioral_assessments.count()
+
+            prediction = enrollment.risk_predictions.order_by('-prediction_date').values(
+                'id', 'risk_level', 'probability', 'prediction_date', 'explanation',
+            ).first()
+            prediction_factors = []
+            if prediction:
+                prediction_factors = list(PredictionFactor.objects.filter(prediction_id=prediction['id']).values(
+                    'feature_name', 'feature_value', 'direction', 'explanation_text',
+                ))
+            if prediction:
+                risk_distribution[prediction['risk_level']] = risk_distribution.get(prediction['risk_level'], 0) + 1
+
+            interventions = list(enrollment.interventions.filter(status__in=['planned', 'in_progress', 'paused']).values('status', 'end_date'))
+            has_follow_up = any(item['end_date'] and item['end_date'] <= today for item in interventions)
+
+            concerns = []
+            if academic_concern:
+                concerns.append('Academic average below 75')
+                academic_concerns += 1
+            if prediction and prediction['risk_level'] in {'High', 'Moderate'}:
+                concerns.append(f"{prediction['risk_level']} risk prediction")
+            if interventions:
+                concerns.append('Active intervention')
+                intervention_student_ids.add(enrollment.student_id)
+            if has_follow_up:
+                concerns.append('Follow-up due')
+                follow_up_student_ids.add(enrollment.student_id)
+
+            student_data = {
+                    'id': enrollment.student_id,
+                    'name': f'{enrollment.student.first_name} {enrollment.student.last_name}'.strip(),
+                    'lrn': enrollment.student.lrn,
+                    'grade': enrollment.grade_level.name,
+                    'section': enrollment.section.name if enrollment.section else 'Unassigned',
+                    'academic_year': enrollment.section.academic_year.name if enrollment.section else None,
+                    'school_level': enrollment.grade_level.school_level,
+                    'strand': enrollment.section.strand.name if enrollment.section and enrollment.section.strand else None,
+                    'enrollment_status': enrollment.enrollment_status,
+                    'general_average': average,
+                    'attendance_percentage': attendance_percentage,
+                    'school_days': school_days or None,
+                    'days_present': int(attendance['present'] or 0) if school_days else None,
+                    'times_tardy': int(attendance['tardy'] or 0) if school_days else None,
+                    'behavior_average': behavior_average,
+                    'behavior_records': enrollment.behavioral_assessments.count(),
+                    'risk_level': prediction['risk_level'] if prediction else None,
+                    'risk_probability': float(prediction['probability']) if prediction else None,
+                    'risk_explanation': prediction['explanation'] if prediction else None,
+                    'risk_factors': prediction_factors,
+                    'intervention': bool(interventions),
+                    'intervention_statuses': [item['status'] for item in interventions],
+                    'follow_up': has_follow_up,
+                    'concerns': concerns,
+            }
+            roster_students.append(student_data)
+            if concerns:
+                attention_students.append(student_data)
+
+        attention_students.sort(key=lambda item: (-len(item['concerns']), item['name']))
+        return Response({
+            'sections': list(sections.values('id', 'name', 'grade_level__name', 'grade_level__school_level', 'academic_year__name', 'strand__name')),
+            'summary': {
+                'total_students': enrollments.count(),
+                'active_students': enrollments.count(),
+                'academic_concerns': academic_concerns,
+                'class_general_average': round(sum(class_averages) / len(class_averages), 2) if class_averages else None,
+                'attendance_rate': round((total_days_present / total_school_days) * 100, 2) if total_school_days else None,
+                'attendance_concerns': None,
+                'behavioral_concerns': None,
+                'active_interventions': len(intervention_student_ids),
+                'follow_up_required': len(follow_up_student_ids),
+                'students_requiring_attention': len(attention_students),
+                'students_with_attendance_records': len({enrollment.student_id for enrollment in enrollments if enrollment.attendance_records.exists()}),
+                'students_with_behavior_records': len({enrollment.student_id for enrollment in enrollments if enrollment.behavioral_assessments.exists()}),
+            },
+            'attendance_summary': {
+                'students_with_records': len({enrollment.student_id for enrollment in enrollments if enrollment.attendance_records.exists()}),
+                'record_count': attendance_record_count,
+            },
+            'behavior_summary': {
+                'students_with_records': len({enrollment.student_id for enrollment in enrollments if enrollment.behavioral_assessments.exists()}),
+                'record_count': behavior_record_count,
+            },
+            'risk_distribution': risk_distribution,
+            'students': roster_students,
+            'students_requiring_attention': attention_students,
+            'disclaimer': 'AI-generated risk information is a decision-support indicator and should be interpreted using professional judgment.',
         })

@@ -3,7 +3,7 @@ import { AppLayout } from '../components/layout/AppLayout'
 import { ProtectedRoute } from './ProtectedRoute'
 import { RoleRoute } from './RoleRoute'
 import { Login } from '../pages/auth/Login'
-import { Dashboard } from '../pages/dashboard/Dashboard'
+import { DashboardResolver } from '../pages/dashboard/DashboardResolver'
 import { StudentsPage } from '../pages/students/StudentsPage'
 import { StudentDetailPage } from '../pages/students/StudentDetailPage'
 import { EnrollmentPage } from '../pages/students/EnrollmentPage'
@@ -15,6 +15,7 @@ import { SectionsPage } from '../pages/academics/SectionsPage'
 import { SubjectsPage } from '../pages/academics/SubjectsPage'
 import { GradeEncodingPage } from '../pages/academics/GradeEncodingPage'
 import { MyClassesPage } from '../pages/academics/MyClassesPage'
+import { MyAdvisoryClassPage } from '../pages/academics/MyAdvisoryClassPage'
 import { TeacherAssignmentsPage } from '../pages/academics/TeacherAssignmentsPage'
 import { AttendancePage } from '../pages/attendance/AttendancePage'
 import { AttendanceEncodingPage } from '../pages/attendance/AttendanceEncodingPage'
@@ -37,13 +38,14 @@ export function AppRoutes() {
         <Route element={<AppLayout />}>
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
           <Route element={<RoleRoute allowedRoles={['SUPER_ADMIN', 'SCHOOL_ADMIN', 'TEACHER', 'GUIDANCE']} />}>
-            <Route path="/dashboard" element={<Dashboard />} />
+            <Route path="/dashboard" element={<DashboardResolver />} />
           </Route>
           <Route path="/students" element={<StudentsPage />} />
           <Route path="/students/:id" element={<StudentDetailPage />} />
           <Route path="/academics" element={<AcademicsPage />} />
           <Route element={<RoleRoute allowedRoles={['TEACHER']} />}>
             <Route path="/my-classes" element={<MyClassesPage />} />
+            <Route path="/my-advisory-class" element={<MyAdvisoryClassPage />} />
           </Route>
           <Route element={<RoleRoute allowedRoles={['SUPER_ADMIN', 'SCHOOL_ADMIN', 'REGISTRAR']} />}>
             <Route path="/academic-structure" element={<AcademicStructurePage />} />

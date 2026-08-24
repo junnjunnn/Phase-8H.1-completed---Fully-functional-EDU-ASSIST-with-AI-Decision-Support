@@ -380,8 +380,22 @@ class TeacherAssignmentSerializer(serializers.ModelSerializer):
         subject = attrs.get('subject') or getattr(self.instance, 'subject', None)
         assignment_type = attrs.get('assignment_type') or getattr(self.instance, 'assignment_type', 'SUBJECT')
 
+        def is_unchanged(field_name, value):
+            return bool(self.instance and value and getattr(self.instance, f'{field_name}_id', None) == value.id)
+
+        if teacher and not teacher.is_active and not is_unchanged('teacher', teacher):
+            raise serializers.ValidationError({'teacher': 'The selected teacher account is inactive.'})
+        if academic_year and not academic_year.is_active and not is_unchanged('academic_year', academic_year):
+            raise serializers.ValidationError({'academic_year': 'Cannot create an assignment in an archived academic year.'})
+        if grade_level and not grade_level.is_active and not is_unchanged('grade_level', grade_level):
+            raise serializers.ValidationError({'grade_level': 'Cannot create an assignment with an archived grade level.'})
+        if section and not section.is_active and not is_unchanged('section', section):
+            raise serializers.ValidationError({'section': 'Cannot create an assignment with an archived section.'})
+
         if section and grade_level and section.grade_level_id != grade_level.id:
             raise serializers.ValidationError({'section': 'The selected section does not belong to the selected grade level.'})
+        if section and academic_year and section.academic_year_id != academic_year.id:
+            raise serializers.ValidationError({'section': 'The selected section does not belong to the selected academic year.'})
 
         if not teacher:
             raise serializers.ValidationError({'teacher': 'Teacher is required.'})
@@ -395,6 +409,9 @@ class TeacherAssignmentSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({'subject': 'Subject is required.'})
         if assignment_type == 'ADVISER' and subject:
             raise serializers.ValidationError({'subject': 'Class Adviser assignments cannot include a subject.'})
+
+        if assignment_type == 'SUBJECT' and subject and not subject.is_active and not is_unchanged('subject', subject):
+            raise serializers.ValidationError({'subject': 'The selected subject is inactive.'})
 
         if assignment_type == 'SUBJECT':
             subject_grades = list(subject.grade_levels.values_list('pk', flat=True))
@@ -427,10 +444,15 @@ class TeacherAssignmentSerializer(serializers.ModelSerializer):
 
 class EnrollmentSerializer(serializers.ModelSerializer):
     student_name = serializers.SerializerMethodField()
+    academic_year_name = serializers.SerializerMethodField()
+    grade_level_name = serializers.SerializerMethodField()
+    school_level = serializers.SerializerMethodField()
+    section_name = serializers.SerializerMethodField()
+    strand_name = serializers.SerializerMethodField()
 
     class Meta:
         model = Enrollment
-        fields = ['id', 'student', 'student_name', 'academic_year', 'grade_level', 'section', 'strand', 'enrollment_status', 'enrollment_date']
+        fields = ['id', 'student', 'student_name', 'academic_year', 'academic_year_name', 'grade_level', 'grade_level_name', 'school_level', 'section', 'section_name', 'strand', 'strand_name', 'enrollment_status', 'enrollment_date']
         extra_kwargs = {
             'academic_year': {'required': True},
             'grade_level': {'required': True},
@@ -440,6 +462,21 @@ class EnrollmentSerializer(serializers.ModelSerializer):
 
     def get_student_name(self, obj):
         return str(obj.student) if obj.student else None
+
+    def get_academic_year_name(self, obj):
+        return obj.academic_year.name if obj.academic_year else None
+
+    def get_grade_level_name(self, obj):
+        return obj.grade_level.name if obj.grade_level else None
+
+    def get_school_level(self, obj):
+        return obj.grade_level.school_level if obj.grade_level else None
+
+    def get_section_name(self, obj):
+        return obj.section.name if obj.section else None
+
+    def get_strand_name(self, obj):
+        return obj.strand.name if obj.strand else None
 
     def validate(self, attrs):
         student = attrs.get('student') or getattr(self.instance, 'student', None)
@@ -498,9 +535,25 @@ class EnrollmentSerializer(serializers.ModelSerializer):
 
 
 class AcademicRecordSerializer(serializers.ModelSerializer):
+    subject_name = serializers.SerializerMethodField()
+    academic_year_name = serializers.SerializerMethodField()
+    encoded_by_name = serializers.SerializerMethodField()
+
     class Meta:
         model = AcademicRecord
-        fields = ['id', 'enrollment', 'subject', 'academic_year', 'grading_period_type', 'quarter', 'semester', 'grade', 'final_grade', 'remarks', 'encoded_by']
+        fields = ['id', 'enrollment', 'subject', 'subject_name', 'academic_year', 'academic_year_name', 'grading_period_type', 'quarter', 'semester', 'grade', 'final_grade', 'remarks', 'encoded_by', 'encoded_by_name']
+
+    def get_subject_name(self, obj):
+        return obj.subject.name if obj.subject else None
+
+    def get_academic_year_name(self, obj):
+        return obj.academic_year.name if obj.academic_year else None
+
+    def get_encoded_by_name(self, obj):
+        if not obj.encoded_by:
+            return None
+        full_name = f'{obj.encoded_by.first_name or ""} {obj.encoded_by.last_name or ""}'.strip()
+        return full_name or obj.encoded_by.username
 
     def validate_enrollment(self, value):
         """Verify that the user has authorization to access this enrollment."""
