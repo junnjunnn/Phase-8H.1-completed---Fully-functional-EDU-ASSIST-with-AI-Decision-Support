@@ -19,7 +19,7 @@ from academics.api import (
     EnrollmentViewSet,
     AcademicRecordViewSet,
 )
-from attendance.api import AttendanceRecordViewSet
+from attendance.api import AttendanceRecordViewSet, RecurringSchoolCalendarEventViewSet, SchoolCalendarDayViewSet
 from predictions.api import AdviserDashboardViewSet, DashboardViewSet
 from reports.api import ReportsViewSet
 from audit.api import AuditLogViewSet
@@ -44,6 +44,8 @@ router.register('teacher-assignments', TeacherAssignmentViewSet, basename='teach
 router.register('enrollments', EnrollmentViewSet, basename='enrollment')
 router.register('academic-records', AcademicRecordViewSet, basename='academic-record')
 router.register('attendance-records', AttendanceRecordViewSet, basename='attendance-record')
+router.register('school-calendar-days', SchoolCalendarDayViewSet, basename='school-calendar-day')
+router.register('recurring-school-calendar-events', RecurringSchoolCalendarEventViewSet, basename='recurring-school-calendar-event')
 router.register('core-values', CoreValueViewSet, basename='core-value')
 router.register('behavior-indicators', BehaviorIndicatorViewSet, basename='behavior-indicator')
 router.register('behavioral-ratings', BehavioralRatingViewSet, basename='behavioral-rating')

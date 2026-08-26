@@ -1,8 +1,9 @@
 from django.test import TestCase
 from django.contrib.auth import get_user_model
 
-from academics.models import AcademicYear, GradeLevel, Section
-from students.models import Student, Enrollment
+from accounts.models import UserProfile
+from academics.models import AcademicYear, GradeLevel, Section, Enrollment
+from students.models import Student
 from common.authorization import get_user_scope, authorized_students_queryset, authorized_enrollment_queryset
 
 User = get_user_model()
@@ -26,17 +27,20 @@ class AuthorizationTests(TestCase):
 
         # Users
         self.admin = User.objects.create_user(username='admin', password='pass')
+        UserProfile.objects.get_or_create(user=self.admin)
         self.admin_profile = self.admin.profile
         self.admin_profile.role_name = 'SCHOOL_ADMIN'
         self.admin_profile.save()
 
         self.teacher = User.objects.create_user(username='teacher', password='pass')
+        UserProfile.objects.get_or_create(user=self.teacher)
         self.teacher_profile = self.teacher.profile
         self.teacher_profile.role_name = 'TEACHER'
         self.teacher_profile.save()
         self.teacher_profile.assigned_sections.add(self.section_a)
 
         self.guidance = User.objects.create_user(username='guidance', password='pass')
+        UserProfile.objects.get_or_create(user=self.guidance)
         self.guidance_profile = self.guidance.profile
         self.guidance_profile.role_name = 'GUIDANCE'
         self.guidance_profile.save()

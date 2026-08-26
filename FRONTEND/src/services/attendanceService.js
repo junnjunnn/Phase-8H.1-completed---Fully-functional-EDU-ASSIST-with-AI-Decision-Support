@@ -14,3 +14,58 @@ export async function updateAttendanceRecord(id, payload) {
   const response = await apiClient.patch(`/attendance-records/${id}/`, payload)
   return response.data
 }
+
+export async function getSchoolCalendarDays(params = {}) {
+  const response = await apiClient.get('/school-calendar-days/', { params })
+  return response.data
+}
+
+export async function createSchoolCalendarDay(payload) {
+  const response = await apiClient.post('/school-calendar-days/', payload)
+  return response.data
+}
+
+export async function updateSchoolCalendarDay(id, payload) {
+  const response = await apiClient.patch(`/school-calendar-days/${id}/`, payload)
+  return response.data
+}
+
+export async function publishSchoolCalendarDay(id) {
+  const response = await apiClient.post(`/school-calendar-days/${id}/publish/`)
+  return response.data
+}
+
+export async function cancelSchoolCalendarDay(id, cancellationReason) {
+  const response = await apiClient.post(`/school-calendar-days/${id}/cancel/`, { cancellation_reason: cancellationReason })
+  return response.data
+}
+
+export async function importPhilippineHolidays(academicYearId) {
+  const response = await apiClient.post('/school-calendar-days/import-philippine-holidays/', { academic_year: academicYearId })
+  return response.data
+}
+
+export async function getRecurringSchoolCalendarEvents(params = {}) {
+  const response = await apiClient.get('/recurring-school-calendar-events/', { params })
+  return response.data
+}
+
+export async function createRecurringSchoolCalendarEvent(payload) {
+  const response = await apiClient.post('/recurring-school-calendar-events/', payload)
+  return response.data
+}
+
+export async function updateRecurringSchoolCalendarEvent(id, payload) {
+  const response = await apiClient.patch(`/recurring-school-calendar-events/${id}/`, payload)
+  return response.data
+}
+
+export async function generateRecurringSchoolCalendarEvent(id) {
+  const response = await apiClient.post(`/recurring-school-calendar-events/${id}/generate/`)
+  return response.data
+}
+
+export async function deactivateRecurringSchoolCalendarEvent(id) {
+  const response = await apiClient.post(`/recurring-school-calendar-events/${id}/deactivate/`)
+  return response.data
+}

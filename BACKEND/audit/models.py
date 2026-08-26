@@ -18,6 +18,9 @@ class AuditLog(models.Model):
         ('EXPORT_REPORT', 'EXPORT_REPORT'),
         ('PREDICTION_GENERATED', 'PREDICTION_GENERATED'),
         ('INTERVENTION_CREATED', 'INTERVENTION_CREATED'),
+        ('APPROVED', 'APPROVED'),
+        ('PUBLISHED', 'PUBLISHED'),
+        ('CANCELLED', 'CANCELLED'),
     ]
     user = models.ForeignKey(get_user_model(), null=True, blank=True, on_delete=models.SET_NULL, related_name='audit_logs')
     action = models.CharField(max_length=30, choices=ACTION_CHOICES)

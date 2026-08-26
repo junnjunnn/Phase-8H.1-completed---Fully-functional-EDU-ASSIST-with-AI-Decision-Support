@@ -19,7 +19,7 @@ import { getTeacherContext } from '../../services/academicsService'
 
 const sectionConfig = [
   { key: 'main', label: 'Main', items: ['Dashboard'] },
-  { key: 'academic-management', label: 'Academic Management', items: ['Academic Years', 'Grade Levels', 'Sections', 'Subjects', 'Teacher Assignments'] },
+  { key: 'academic-management', label: 'Academic Management', items: ['Academic Years', 'Grade Levels', 'Sections', 'Subjects', 'Teacher Assignments', 'School Calendar'] },
   { key: 'student-management', label: 'Student Management', items: ['My Classes', 'My Advisory Class', 'Students', 'Enrollment'] },
   { key: 'academic-records', label: 'Academic Records', items: ['Grade Encoding', 'Attendance', 'Behavior'] },
   { key: 'ai', label: 'AI Decision Support', items: ['Predictions', 'Interventions', 'Reports'] },
@@ -37,6 +37,7 @@ const iconMap = {
   Predictions: SparklesIcon,
   Reports: ChartBarIcon,
   'User Management': UserGroupIcon,
+  'School Calendar': CalendarDaysIcon,
   'Academic Years': ClipboardDocumentListIcon,
   'Grade Levels': ClipboardDocumentListIcon,
   'Sections': ClipboardDocumentListIcon,

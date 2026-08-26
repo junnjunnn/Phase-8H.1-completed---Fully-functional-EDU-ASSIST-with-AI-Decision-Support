@@ -19,6 +19,7 @@ import { MyAdvisoryClassPage } from '../pages/academics/MyAdvisoryClassPage'
 import { TeacherAssignmentsPage } from '../pages/academics/TeacherAssignmentsPage'
 import { AttendancePage } from '../pages/attendance/AttendancePage'
 import { AttendanceEncodingPage } from '../pages/attendance/AttendanceEncodingPage'
+import { SchoolCalendarPage } from '../pages/attendance/SchoolCalendarPage'
 import { BehaviorPage } from '../pages/behavior/BehaviorPage'
 import { BehaviorEncodingPage } from '../pages/behavior/BehaviorEncodingPage'
 import { InterventionsPage } from '../pages/interventions/InterventionsPage'
@@ -59,6 +60,7 @@ export function AppRoutes() {
           <Route path="/academics/encode" element={<GradeEncodingPage />} />
           <Route path="/attendance" element={<AttendancePage />} />
           <Route path="/attendance/encode" element={<AttendanceEncodingPage />} />
+          <Route path="/attendance/calendar" element={<SchoolCalendarPage />} />
           <Route path="/behavior" element={<BehaviorPage />} />
           <Route path="/behavior/encode" element={<BehaviorEncodingPage />} />
           <Route path="/interventions" element={<InterventionsPage />} />

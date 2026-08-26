@@ -282,6 +282,24 @@ export function StudentDetailPage() {
     }
   }
 
+  const academicSummary = useMemo(() => {
+    const grades = academicRecords
+      .map((record) => Number(record.final_grade))
+      .filter((value) => !Number.isNaN(value))
+    const failedSubjects = new Set(
+      academicRecords
+        .filter((record) => record.final_grade != null && Number(record.final_grade) < 75)
+        .map((record) => record.subject_name || record.subject)
+        .filter(Boolean),
+    )
+
+    return {
+      generalAverage: grades.length ? (grades.reduce((sum, grade) => sum + grade, 0) / grades.length).toFixed(2) : null,
+      failedSubjects: failedSubjects.size,
+      lowestGrade: grades.length ? Math.min(...grades).toFixed(2) : null,
+    }
+  }, [academicRecords])
+
   const academicConcern = useMemo(() => {
     if (academicSummary.generalAverage == null) {
       return false
@@ -343,24 +361,6 @@ export function StudentDetailPage() {
 
     return (numericScores.reduce((sum, value) => sum + value, 0) / numericScores.length).toFixed(2)
   }, [behaviorRecords])
-
-  const academicSummary = useMemo(() => {
-    const grades = academicRecords
-      .map((record) => Number(record.final_grade))
-      .filter((value) => !Number.isNaN(value))
-    const failedSubjects = new Set(
-      academicRecords
-        .filter((record) => record.final_grade != null && Number(record.final_grade) < 75)
-        .map((record) => record.subject_name || record.subject)
-        .filter(Boolean),
-    )
-
-    return {
-      generalAverage: grades.length ? (grades.reduce((sum, grade) => sum + grade, 0) / grades.length).toFixed(2) : null,
-      failedSubjects: failedSubjects.size,
-      lowestGrade: grades.length ? Math.min(...grades).toFixed(2) : null,
-    }
-  }, [academicRecords])
 
   const attendanceSummary = useMemo(() => {
     if (!attendanceRecords.length) {
@@ -810,7 +810,7 @@ export function StudentDetailPage() {
                   {canGeneratePrediction ? (
                     <div className="grade-encoding-actions" style={{ marginTop: '1rem' }}>
                       <button type="button" className="action-button action-button--secondary" onClick={handleGeneratePrediction} disabled={generatingPrediction}>
-                        {generatingPrediction ? 'Generating prediction…' : 'Generate prediction now'}
+                        {generatingPrediction ? 'Generating Prediction…' : 'Generate Prediction'}
                       </button>
                       {generationMessage ? <span className="status-text">{generationMessage}</span> : null}
                       {predictionError ? <ErrorBanner message={predictionError} /> : null}
@@ -823,7 +823,7 @@ export function StudentDetailPage() {
                   {canGeneratePrediction ? (
                     <div className="grade-encoding-actions">
                       <button type="button" className="action-button action-button--secondary" onClick={handleGeneratePrediction} disabled={generatingPrediction}>
-                        {generatingPrediction ? 'Generating prediction…' : 'Generate prediction now'}
+                        {generatingPrediction ? 'Generating Prediction…' : 'Generate Prediction'}
                       </button>
                     </div>
                   ) : null}
@@ -1125,7 +1125,7 @@ export function StudentDetailPage() {
           {canGeneratePrediction ? (
             <div className="grade-encoding-actions" style={{ marginBottom: '1rem' }}>
               <button type="button" className="action-button" onClick={handleGeneratePrediction} disabled={generatingPrediction}>
-                {generatingPrediction ? 'Generating prediction…' : 'Generate prediction now'}
+                {generatingPrediction ? 'Generating Prediction…' : 'Generate Prediction'}
               </button>
             </div>
           ) : null}

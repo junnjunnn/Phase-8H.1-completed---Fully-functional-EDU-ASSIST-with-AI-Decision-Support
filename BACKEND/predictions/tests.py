@@ -187,6 +187,35 @@ class PredictionsAPITests(TestCase):
         response = self.client.post(f'/api/predictions/predict/{self.student_b.id}/')
         self.assertEqual(response.status_code, 403)
 
+    def test_latest_prediction_and_factors_reflect_the_newest_generated_record(self):
+        self.client.force_authenticate(user=self.superadmin)
+        self._create_compatible_behavior(self.enrollment_a)
+        subject = Subject.objects.create(code='MATH_LATEST', name='Mathematics', category='Core', grade_level=self.grade_level)
+        AcademicRecord.objects.create(
+            enrollment=self.enrollment_a,
+            subject=subject,
+            academic_year=self.academic_year,
+            grading_period_type='Quarter',
+            quarter=1,
+            grade=80,
+            final_grade=80,
+        )
+
+        first = self.client.post(f'/api/predictions/predict/{self.student_a.id}/')
+        second = self.client.post(f'/api/predictions/predict/{self.student_a.id}/')
+
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(second.status_code, 200)
+
+        newest_prediction = RiskPrediction.objects.filter(enrollment=self.enrollment_a).order_by('-prediction_date').first()
+        newest_factors = list(PredictionFactor.objects.filter(prediction=newest_prediction).values_list('id', flat=True))
+
+        response = self.client.get('/api/prediction-factors/', {'prediction': newest_prediction.id, 'ordering': 'feature_name'})
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data['results'])
+        self.assertEqual({item['id'] for item in response.data['results']}, set(newest_factors))
+        self.assertTrue(all(item['prediction'] == newest_prediction.id for item in response.data['results']))
+
     def test_behavior_feature_vector_keeps_trained_model_shape(self):
         service = PredictionService()
         frame, _ = service.build_feature_vector(self.student_a.id)
