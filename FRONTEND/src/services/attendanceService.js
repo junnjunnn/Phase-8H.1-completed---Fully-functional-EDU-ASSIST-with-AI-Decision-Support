@@ -30,6 +30,26 @@ export async function updateSchoolCalendarDay(id, payload) {
   return response.data
 }
 
+export async function checkSchoolCalendarConflicts(payload) {
+  const response = await apiClient.post('/school-calendar-days/check-conflicts/', payload)
+  return response.data
+}
+
+export async function submitSchoolCalendarDayForApproval(id) {
+  const response = await apiClient.post(`/school-calendar-days/${id}/submit-for-approval/`)
+  return response.data
+}
+
+export async function approveSchoolCalendarDay(id, approvalNotes = '') {
+  const response = await apiClient.post(`/school-calendar-days/${id}/approve/`, { approval_notes: approvalNotes })
+  return response.data
+}
+
+export async function rejectSchoolCalendarDay(id, rejectionReason) {
+  const response = await apiClient.post(`/school-calendar-days/${id}/reject/`, { rejection_reason: rejectionReason })
+  return response.data
+}
+
 export async function publishSchoolCalendarDay(id) {
   const response = await apiClient.post(`/school-calendar-days/${id}/publish/`)
   return response.data

@@ -4,53 +4,54 @@ from rest_framework import serializers
 from common.authorization import authorized_enrollment_queryset
 from academics.models import Enrollment
 from .models import AttendanceRecord, RecurringSchoolCalendarEvent, SchoolCalendarDay
+from .conflicts import detect_conflicts, serialize_conflicts
 
 
 class SchoolCalendarDaySerializer(serializers.ModelSerializer):
     attendance_expected_display = serializers.SerializerMethodField()
     conflict_warning = serializers.SerializerMethodField()
+    conflicts = serializers.SerializerMethodField()
 
     class Meta:
         model = SchoolCalendarDay
         fields = [
-            'id', 'academic_year', 'calendar_date', 'day_type', 'title', 'remarks',
+            'id', 'academic_year', 'calendar_date', 'end_date', 'day_type', 'event_type', 'title', 'remarks',
             'attendance_expected', 'classes_suspended', 'scope_type', 'holiday_category',
             'holiday_source', 'section', 'created_by', 'created_at', 'updated_at',
             'affected_grade_level', 'affected_department', 'start_time', 'end_time',
             'reason', 'suspension_type', 'announcement', 'authorized_by', 'published_at',
-            'location', 'organizer', 'target_participants', 'status', 'cancellation_reason', 'recurrence',
+            'submitted_by', 'submitted_at', 'approved_by', 'approved_at', 'rejected_by', 'rejected_at',
+            'rejection_reason', 'approval_notes', 'location', 'organizer', 'target_participants', 'status', 'cancellation_reason', 'recurrence',
             'examination_type', 'examination_period', 'subject', 'instructor',
-            'attendance_expected_display', 'conflict_warning'
+            'attendance_expected_display', 'conflict_warning', 'conflicts'
         ]
-        read_only_fields = ['created_by', 'created_at', 'updated_at', 'authorized_by', 'published_at']
+        read_only_fields = ['created_by', 'created_at', 'updated_at', 'authorized_by', 'published_at', 'submitted_by', 'submitted_at', 'approved_by', 'approved_at', 'rejected_by', 'rejected_at']
 
     def get_attendance_expected_display(self, obj):
         return 'Yes' if obj.attendance_expected else 'No'
 
     def get_conflict_warning(self, obj):
-        if not obj.location or not obj.start_time or not obj.end_time:
-            return ''
-        conflicts = SchoolCalendarDay.objects.filter(
-            academic_year=obj.academic_year, calendar_date=obj.calendar_date,
-            location__iexact=obj.location,
-            start_time__lt=obj.end_time, end_time__gt=obj.start_time,
-        ).exclude(pk=obj.pk)
-        return 'Another calendar entry overlaps this location and time.' if conflicts.exists() else ''
+        return 'Potential scheduling conflict detected.' if detect_conflicts(obj) else ''
+
+    def get_conflicts(self, obj):
+        return serialize_conflicts(detect_conflicts(obj))
 
     def validate(self, attrs):
         instance = self.instance or SchoolCalendarDay(**attrs)
         if self.instance and 'status' in attrs and attrs['status'] != self.instance.status:
             allowed_transitions = {
-                'DRAFT': {'PENDING_APPROVAL', 'PUBLISHED', 'REJECTED', 'CANCELLED'},
-                'PENDING_APPROVAL': {'APPROVED', 'REJECTED', 'CANCELLED'},
+                'DRAFT': {'PENDING_APPROVAL'},
+                'PENDING_APPROVAL': {'APPROVED', 'REJECTED'},
                 'APPROVED': {'PUBLISHED', 'CANCELLED'},
                 'PUBLISHED': {'CANCELLED', 'ARCHIVED'},
-                'REJECTED': {'DRAFT', 'CANCELLED'},
+                'REJECTED': {'DRAFT'},
                 'CANCELLED': {'ARCHIVED'},
                 'ARCHIVED': set(),
             }
             if attrs['status'] not in allowed_transitions.get(self.instance.status, set()):
                 raise serializers.ValidationError({'status': 'Invalid calendar status transition.'})
+        if not self.instance and attrs.get('status') == 'PUBLISHED' and attrs.get('approved_by') is None:
+            attrs['status'] = 'APPROVED'
         instance.academic_year = attrs.get('academic_year', instance.academic_year)
         instance.calendar_date = attrs.get('calendar_date', instance.calendar_date)
         instance.day_type = attrs.get('day_type', instance.day_type)
@@ -60,9 +61,18 @@ class SchoolCalendarDaySerializer(serializers.ModelSerializer):
         instance.holiday_source = attrs.get('holiday_source', instance.holiday_source)
         instance.classes_suspended = attrs.get('classes_suspended', instance.classes_suspended)
         instance.attendance_expected = attrs.get('attendance_expected', instance.attendance_expected)
-        for field in ('affected_grade_level', 'affected_department', 'start_time', 'end_time', 'reason', 'suspension_type', 'announcement', 'location', 'organizer', 'target_participants', 'examination_type', 'examination_period', 'subject', 'instructor', 'status', 'cancellation_reason'):
+        for field in ('end_date', 'event_type', 'affected_grade_level', 'affected_department', 'start_time', 'end_time', 'reason', 'suspension_type', 'announcement', 'location', 'organizer', 'target_participants', 'examination_type', 'examination_period', 'subject', 'instructor', 'status', 'cancellation_reason', 'rejection_reason', 'approval_notes'):
             setattr(instance, field, attrs.get(field, getattr(instance, field)))
         instance.clean()
+        self._calendar_candidate = instance
+        conflicts = detect_conflicts(instance)
+        if conflicts and not self.context.get('skip_conflict_validation'):
+            blocking = [conflict for conflict in conflicts if conflict['severity'] == 'ERROR']
+            if blocking:
+                raise serializers.ValidationError({'conflicts': serialize_conflicts(blocking)})
+        if instance.day_type in {'ENROLLMENT', 'ACADEMIC_DEADLINE'}:
+            attrs['attendance_expected'] = False
+            attrs['classes_suspended'] = False
         if instance.day_type == 'EXAMINATION' and instance.instructor:
             profile = getattr(instance.instructor, 'profile', None)
             if not profile or profile.role_name != 'TEACHER':

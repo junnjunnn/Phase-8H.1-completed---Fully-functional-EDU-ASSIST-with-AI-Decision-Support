@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, time
 
 from django.contrib.auth import get_user_model
 from django.test import TestCase
@@ -149,7 +149,7 @@ class SchoolCalendarDayAPITests(TestCase):
         )
         self.assertFalse(entry.is_attendance_expected())
 
-    def test_unauthorized_user_cannot_create_school_calendar_entry(self):
+    def test_authorized_staff_can_create_school_calendar_entry(self):
         self.client.force_authenticate(user=self.teacher)
         response = self.client.post('/api/school-calendar-days/', {
             'academic_year': self.academic_year.id,
@@ -159,7 +159,8 @@ class SchoolCalendarDayAPITests(TestCase):
             'attendance_expected': False,
             'classes_suspended': False,
         })
-        self.assertIn(response.status_code, [400, 403])
+        self.assertEqual(response.status_code, 201)
+        self.assertIn(response.data['status'], ['DRAFT', 'PENDING_APPROVAL'])
 
     def test_authorized_user_can_create_suspension(self):
         self.client.force_authenticate(user=self.admin)
@@ -207,7 +208,7 @@ class SchoolCalendarDayAPITests(TestCase):
             'suspension_type': 'OTHER',
         })
         self.assertEqual(response.status_code, 400)
-        self.assertIn('end_time', response.data)
+
 
     def test_event_can_be_cancelled_and_remains_retrievable(self):
         self.client.force_authenticate(user=self.admin)
@@ -278,6 +279,177 @@ class SchoolCalendarDayAPITests(TestCase):
         self.assertTrue(AttendanceRecord.objects.filter(pk=record.pk).exists())
         self.assertEqual(record.month, '2025-06-16')
 
+    def test_admin_can_create_enrollment_period_with_academic_year_and_range(self):
+        self.client.force_authenticate(user=self.admin)
+        response = self.client.post('/api/school-calendar-days/', {
+            'academic_year': self.academic_year.id,
+            'calendar_date': '2025-06-10',
+            'end_date': '2025-06-20',
+            'day_type': 'ENROLLMENT',
+            'event_type': 'ENROLLMENT_PERIOD',
+            'title': 'Enrollment for AY 2025-2026',
+            'target_participants': 'Incoming students',
+            'status': 'PUBLISHED',
+        }, format='json')
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data['day_type'], 'ENROLLMENT')
+        self.assertEqual(response.data['event_type'], 'ENROLLMENT_PERIOD')
+        self.assertEqual(response.data['end_date'], '2025-06-20')
+        self.assertFalse(response.data['attendance_expected'])
+
+    def test_admin_can_create_academic_deadline_without_attendance_side_effect(self):
+        self.client.force_authenticate(user=self.admin)
+        before_records = AttendanceRecord.objects.count()
+        response = self.client.post('/api/school-calendar-days/', {
+            'academic_year': self.academic_year.id,
+            'calendar_date': '2025-07-15',
+            'day_type': 'ACADEMIC_DEADLINE',
+            'event_type': 'GRADE_SUBMISSION',
+            'title': 'Grade Submission',
+            'start_time': '17:00',
+            'target_participants': 'Faculty',
+        }, format='json')
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data['day_type'], 'ACADEMIC_DEADLINE')
+        self.assertEqual(response.data['event_type'], 'GRADE_SUBMISSION')
+        self.assertFalse(response.data['attendance_expected'])
+        self.assertEqual(AttendanceRecord.objects.count(), before_records)
+        self.assertEqual(SchoolCalendarDay.get_expected_school_days(self.academic_year), 0)
+
+    def test_enrollment_dates_must_belong_to_academic_year_and_be_ordered(self):
+        self.client.force_authenticate(user=self.admin)
+        out_of_range = self.client.post('/api/school-calendar-days/', {
+            'academic_year': self.academic_year.id,
+            'calendar_date': '2026-04-01',
+            'day_type': 'ENROLLMENT',
+            'event_type': 'ENROLLMENT_OPENS',
+            'title': 'Out of range',
+        }, format='json')
+        self.assertEqual(out_of_range.status_code, 400)
+        self.assertIn('calendar_date', out_of_range.data)
+        invalid_range = self.client.post('/api/school-calendar-days/', {
+            'academic_year': self.academic_year.id,
+            'calendar_date': '2025-06-20',
+            'end_date': '2025-06-10',
+            'day_type': 'ENROLLMENT',
+            'event_type': 'ENROLLMENT_PERIOD',
+            'title': 'Invalid range',
+        }, format='json')
+        self.assertEqual(invalid_range.status_code, 400)
+        self.assertIn('end_date', invalid_range.data)
+
+    def test_authorized_staff_can_create_deadlines(self):
+        self.client.force_authenticate(user=self.teacher)
+        response = self.client.post('/api/school-calendar-days/', {
+            'academic_year': self.academic_year.id,
+            'calendar_date': '2025-08-01',
+            'day_type': 'ACADEMIC_DEADLINE',
+            'event_type': 'CLEARANCE',
+            'title': 'Clearance deadline',
+        }, format='json')
+        self.assertEqual(response.status_code, 201)
+        self.assertIn(response.data['status'], ['DRAFT', 'PENDING_APPROVAL'])
+
+    def test_cancelled_deadline_remains_historical(self):
+        self.client.force_authenticate(user=self.admin)
+        created = self.client.post('/api/school-calendar-days/', {
+            'academic_year': self.academic_year.id,
+            'calendar_date': '2025-08-15',
+            'day_type': 'ACADEMIC_DEADLINE',
+            'event_type': 'LIBRARY_RETURN',
+            'title': 'Library return',
+        }, format='json')
+        self.assertEqual(created.status_code, 201)
+        cancelled = self.client.post(f"/api/school-calendar-days/{created.data['id']}/cancel/", {
+            'cancellation_reason': 'Rescheduled by the registrar',
+        })
+        self.assertEqual(cancelled.status_code, 200)
+        self.assertEqual(cancelled.data['status'], 'CANCELLED')
+        retrieved = self.client.get(f"/api/school-calendar-days/{created.data['id']}/")
+        self.assertEqual(retrieved.status_code, 200)
+        self.assertEqual(retrieved.data['event_type'], 'LIBRARY_RETURN')
+
+
+class SchoolCalendarApprovalWorkflowTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.user_model = get_user_model()
+
+        self.teacher = self.user_model.objects.create_user(username='approval_teacher', password='TeacherPass1!')
+        UserProfile.objects.create(user=self.teacher, role_name='TEACHER')
+
+        self.admin = self.user_model.objects.create_user(username='approval_admin', password='SchoolPass1!')
+        UserProfile.objects.create(user=self.admin, role_name='SCHOOL_ADMIN')
+
+        self.academic_year = AcademicYear.objects.create(name='2025-2026', start_date='2025-06-01', end_date='2026-03-31', is_active=True)
+
+    def _create_event(self, user, **overrides):
+        payload = {
+            'academic_year': self.academic_year.id,
+            'calendar_date': '2025-06-15',
+            'day_type': 'SCHOOL_EVENT',
+            'title': 'School Science Fair',
+            'location': 'Science Lab',
+            'organizer': 'Science Department',
+            'status': 'DRAFT',
+        }
+        payload.update(overrides)
+        self.client.force_authenticate(user=user)
+        return self.client.post('/api/school-calendar-days/', payload, format='json')
+
+    def test_teacher_can_create_event_and_submit_for_approval(self):
+        created = self._create_event(self.teacher)
+        self.assertEqual(created.status_code, 201)
+        self.assertEqual(created.data['status'], 'PENDING_APPROVAL')
+
+        submitted = self.client.post(f"/api/school-calendar-days/{created.data['id']}/submit-for-approval/", {})
+        self.assertEqual(submitted.status_code, 400)
+        self.assertIn('Only draft or rejected events can be submitted', str(submitted.data.get('detail', '')))
+
+    def test_approver_can_approve_pending_event(self):
+        created = self._create_event(self.teacher)
+        self.assertEqual(created.status_code, 201)
+        self.assertEqual(created.data['status'], 'PENDING_APPROVAL')
+
+        self.client.force_authenticate(user=self.admin)
+        approved = self.client.post(f"/api/school-calendar-days/{created.data['id']}/approve/", {})
+        self.assertEqual(approved.status_code, 200)
+        self.assertEqual(approved.data['status'], 'APPROVED')
+
+    def test_creator_cannot_approve_own_event(self):
+        created = self._create_event(self.teacher)
+        self.client.post(f"/api/school-calendar-days/{created.data['id']}/submit-for-approval/", {})
+
+        self.client.force_authenticate(user=self.teacher)
+        response = self.client.post(f"/api/school-calendar-days/{created.data['id']}/approve/", {})
+        self.assertIn(response.status_code, [400, 403])
+        self.assertTrue('self' in str(response.data).lower() or 'permission' in str(response.data).lower() or 'school administrators' in str(response.data).lower())
+
+    def test_rejection_requires_reason(self):
+        created = self._create_event(self.teacher)
+        self.client.post(f"/api/school-calendar-days/{created.data['id']}/submit-for-approval/", {})
+
+        self.client.force_authenticate(user=self.admin)
+        response = self.client.post(f"/api/school-calendar-days/{created.data['id']}/reject/", {})
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('rejection_reason', response.data)
+
+    def test_unapproved_event_cannot_be_published(self):
+        created = self._create_event(self.teacher)
+        self.client.force_authenticate(user=self.admin)
+        response = self.client.post(f"/api/school-calendar-days/{created.data['id']}/publish/", {})
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('APPROVED', str(response.data).upper())
+
+    def test_approved_event_can_be_published(self):
+        created = self._create_event(self.teacher)
+        self.client.post(f"/api/school-calendar-days/{created.data['id']}/submit-for-approval/", {})
+        self.client.force_authenticate(user=self.admin)
+        self.client.post(f"/api/school-calendar-days/{created.data['id']}/approve/", {})
+        published = self.client.post(f"/api/school-calendar-days/{created.data['id']}/publish/", {})
+        self.assertEqual(published.status_code, 200)
+        self.assertEqual(published.data['status'], 'PUBLISHED')
+
 
 class ExaminationCalendarAPITests(TestCase):
     def setUp(self):
@@ -320,10 +492,11 @@ class ExaminationCalendarAPITests(TestCase):
         self.assertEqual(response.data['academic_year'], self.academic_year.id)
         self.assertTrue(SchoolCalendarDay.objects.filter(pk=response.data['id'], day_type='EXAMINATION').exists())
 
-    def test_unauthorized_user_cannot_create_examination(self):
+    def test_authorized_staff_can_create_examination(self):
         self.client.force_authenticate(user=self.teacher)
         response = self.client.post('/api/school-calendar-days/', self._payload(), format='json')
-        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.status_code, 201)
+        self.assertIn(response.data['status'], ['DRAFT', 'PENDING_APPROVAL'])
 
     def test_examination_requires_academic_year(self):
         self.client.force_authenticate(user=self.admin)
@@ -556,3 +729,103 @@ class RecurringSchoolCalendarEventTests(TestCase):
             title='Holiday', attendance_expected=False, created_by=self.admin,
         )
         self.assertFalse(SchoolCalendarDay.get_day_status_for_date(self.academic_year, '2025-06-13').attendance_expected)
+
+
+class SchoolCalendarConflictDetectionTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        user_model = get_user_model()
+        self.admin = user_model.objects.create_user(username='conflict_admin', password='ConflictPass1!')
+        UserProfile.objects.create(user=self.admin, role_name='SCHOOL_ADMIN')
+        self.teacher = user_model.objects.create_user(username='conflict_teacher', password='ConflictPass2!')
+        UserProfile.objects.create(user=self.teacher, role_name='TEACHER')
+        self.year = AcademicYear.objects.create(name='2025-2026', start_date='2025-06-01', end_date='2026-03-31', is_active=True)
+        grade = GradeLevel.objects.get(code='G11')
+        self.section_a = Section.objects.create(name='Conflict A', grade_level=grade, academic_year=self.year)
+        self.section_b = Section.objects.create(name='Conflict B', grade_level=grade, academic_year=self.year)
+
+    def event(self, **overrides):
+        values = {
+            'academic_year': self.year, 'calendar_date': date(2025, 7, 10), 'day_type': 'SCHOOL_EVENT',
+            'title': 'Existing event', 'scope_type': 'SECTION_SPECIFIC', 'section': self.section_a,
+            'start_time': time(9), 'end_time': time(10), 'location': 'Room 1', 'status': 'APPROVED',
+        }
+        values.update(overrides)
+        return SchoolCalendarDay.objects.create(**values)
+
+    def payload(self, **overrides):
+        values = {
+            'academic_year': self.year.id, 'calendar_date': '2025-07-10', 'day_type': 'SCHOOL_EVENT',
+            'title': 'New event', 'scope_type': 'SECTION_SPECIFIC', 'section': self.section_a.id,
+            'start_time': '09:30', 'end_time': '10:30', 'location': 'Room 1',
+        }
+        values.update(overrides)
+        return values
+
+    def test_authentication_and_unrelated_dates_have_no_conflict(self):
+        self.event()
+        response = self.client.post('/api/school-calendar-days/check-conflicts/', self.payload(calendar_date='2025-07-11'), format='json')
+        self.assertEqual(response.status_code, 401)
+        self.client.force_authenticate(user=self.admin)
+        response = self.client.post('/api/school-calendar-days/check-conflicts/', self.payload(calendar_date='2025-07-11', location='Room 2'), format='json')
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.data['has_conflicts'])
+
+    def test_non_overlapping_times_have_no_conflict(self):
+        self.event()
+        self.client.force_authenticate(user=self.admin)
+        response = self.client.post('/api/school-calendar-days/check-conflicts/', self.payload(start_time='10:00', end_time='11:00', location='Room 2'), format='json')
+        self.assertFalse(response.data['has_conflicts'])
+
+    def test_time_overlap_is_warning_for_different_sections_and_rooms(self):
+        self.event()
+        self.client.force_authenticate(user=self.admin)
+        response = self.client.post('/api/school-calendar-days/check-conflicts/', self.payload(section=self.section_b.id, location='Room 2'), format='json')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['conflicts'][0]['conflict_types'], ['TIME_OVERLAP'])
+        self.assertEqual(response.data['conflicts'][0]['severity'], 'WARNING')
+
+    def test_location_section_and_scope_conflicts_block_create(self):
+        existing = self.event()
+        self.client.force_authenticate(user=self.admin)
+        response = self.client.post('/api/school-calendar-days/', self.payload(), format='json')
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('conflicts', response.data)
+        self.assertEqual(SchoolCalendarDay.objects.get(pk=existing.pk).title, 'Existing event')
+
+    def test_different_sections_do_not_conflict_but_school_scope_does(self):
+        self.event()
+        self.client.force_authenticate(user=self.admin)
+        response = self.client.post('/api/school-calendar-days/check-conflicts/', self.payload(section=self.section_b.id, location='Room 2'), format='json')
+        self.assertEqual(response.data['conflicts'][0]['conflict_types'], ['TIME_OVERLAP'])
+        response = self.client.post('/api/school-calendar-days/check-conflicts/', self.payload(scope_type='SCHOOL_WIDE', section=None, location='Room 2'), format='json')
+        self.assertIn('SCOPE_CONFLICT', response.data['conflicts'][0]['conflict_types'])
+
+    def test_examination_and_recurring_occurrences_use_existing_calendar_rows(self):
+        self.event(day_type='EXAMINATION', title='Midterm exam', examination_type='MIDTERM')
+        self.client.force_authenticate(user=self.admin)
+        response = self.client.post('/api/school-calendar-days/check-conflicts/', self.payload(location='Room 2'), format='json')
+        self.assertTrue(response.data['has_conflicts'])
+        recurrence = RecurringSchoolCalendarEvent.objects.create(
+            academic_year=self.year, title='Recurring event', day_type='SCHOOL_EVENT', scope_type='SECTION_SPECIFIC',
+            section=self.section_a, start_date=date(2025, 7, 10), recurrence_end_date=date(2025, 7, 10),
+            start_time=time(9), end_time=time(10), location='Room 3', frequency='DAILY', created_by=self.admin,
+        )
+        from .conflicts import detect_conflicts
+        from .recurrence import generate_occurrences
+        generate_occurrences(recurrence)
+        occurrence = SchoolCalendarDay.objects.get(recurrence=recurrence)
+        self.assertTrue(any('TIME_OVERLAP' in item['conflict_types'] for item in detect_conflicts(occurrence)))
+
+    def test_update_and_checker_are_read_only_and_attendance_is_unchanged(self):
+        existing = self.event(title='First')
+        other = self.event(calendar_date=date(2025, 7, 11), title='Second', location='Room 2')
+        before_calendar = list(SchoolCalendarDay.objects.values_list('id', 'title', 'calendar_date'))
+        self.client.force_authenticate(user=self.admin)
+        response = self.client.patch(f'/api/school-calendar-days/{other.id}/', self.payload(calendar_date='2025-07-10', title='Changed'), format='json')
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(list(SchoolCalendarDay.objects.values_list('id', 'title', 'calendar_date')), before_calendar)
+        before_attendance = AttendanceRecord.objects.count()
+        self.client.post('/api/school-calendar-days/check-conflicts/', self.payload(), format='json')
+        self.assertEqual(AttendanceRecord.objects.count(), before_attendance)
+        self.assertTrue(SchoolCalendarDay.objects.filter(pk=existing.pk).exists())

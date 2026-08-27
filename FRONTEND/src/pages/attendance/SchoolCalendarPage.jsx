@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react'
+import { useAuth } from '../../context/AuthContext'
 import { EmptyState } from '../../components/common/EmptyState'
 import { ErrorBanner } from '../../components/feedback/ErrorBanner'
 import { PageHeader } from '../../components/common/PageHeader'
 import { getAcademicYears, getGradeLevels, getSections, getSubjects } from '../../services/academicsService'
 import { getUsers } from '../../services/userService'
 import { getApiErrorMessage } from '../../services/api'
-import { createSchoolCalendarDay, getSchoolCalendarDays, importPhilippineHolidays, updateSchoolCalendarDay, publishSchoolCalendarDay, cancelSchoolCalendarDay, getRecurringSchoolCalendarEvents, createRecurringSchoolCalendarEvent, deactivateRecurringSchoolCalendarEvent } from '../../services/attendanceService'
+import { checkSchoolCalendarConflicts, createSchoolCalendarDay, getSchoolCalendarDays, importPhilippineHolidays, updateSchoolCalendarDay, submitSchoolCalendarDayForApproval, approveSchoolCalendarDay, rejectSchoolCalendarDay, publishSchoolCalendarDay, cancelSchoolCalendarDay, getRecurringSchoolCalendarEvents, createRecurringSchoolCalendarEvent, deactivateRecurringSchoolCalendarEvent } from '../../services/attendanceService'
 
 const DAY_TYPES = [
   { value: 'SCHOOL_DAY', label: 'School Day' },
@@ -16,7 +17,24 @@ const DAY_TYPES = [
   { value: 'ACTIVITY', label: 'Activity' },
   { value: 'EXAMINATION', label: 'Examination' },
   { value: 'SPECIAL_NON_CLASS_DAY', label: 'Special Non-Class Day' },
+  { value: 'ENROLLMENT', label: 'Enrollment' },
+  { value: 'ACADEMIC_DEADLINE', label: 'Academic Deadline' },
 ]
+
+const EVENT_TYPES = {
+  ENROLLMENT: [
+    ['ENROLLMENT_OPENS', 'Enrollment Opens'], ['ENROLLMENT_PERIOD', 'Enrollment Period'], ['ENROLLMENT_DEADLINE', 'Enrollment Deadline'],
+    ['LATE_ENROLLMENT', 'Late Enrollment'], ['ADDING_DROPPING', 'Adding/Dropping Period'], ['SUBJECT_REGISTRATION', 'Subject Registration'],
+    ['SCHOLARSHIP_APPLICATION', 'Scholarship Application'], ['CLEARANCE_PERIOD', 'Clearance Period'], ['STUDENT_ORIENTATION', 'Student Orientation'],
+    ['OTHER_ENROLLMENT_ACTIVITY', 'Other Enrollment Activity'],
+  ],
+  ACADEMIC_DEADLINE: [
+    ['GRADE_SUBMISSION', 'Grade Submission'], ['FACULTY_EVALUATION', 'Faculty Evaluation'], ['RESEARCH_SUBMISSION', 'Research Submission'],
+    ['THESIS_DEFENSE', 'Thesis Defense'], ['CLEARANCE', 'Clearance'], ['LIBRARY_RETURN', 'Library Return'],
+    ['SCHOLARSHIP_APPLICATION', 'Scholarship Application'], ['OJT_APPLICATION', 'OJT Application'], ['OJT_REQUIREMENTS', 'OJT Requirements'],
+    ['GRADUATION_REQUIREMENTS', 'Graduation Requirements'], ['OTHER_ACADEMIC_DEADLINE', 'Other Academic Deadline'],
+  ],
+}
 
 function normalizeListResponse(data) {
   const items = data?.results || data || []
@@ -24,6 +42,7 @@ function normalizeListResponse(data) {
 }
 
 export function SchoolCalendarPage() {
+  const { user } = useAuth()
   const [calendarEntries, setCalendarEntries] = useState([])
     const [recurringEvents, setRecurringEvents] = useState([])
   const [academicYears, setAcademicYears] = useState([])
@@ -35,12 +54,15 @@ export function SchoolCalendarPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [successMessage, setSuccessMessage] = useState('')
+  const [conflictDetails, setConflictDetails] = useState([])
   const [editingId, setEditingId] = useState(null)
   const [selectedEntry, setSelectedEntry] = useState(null)
   const [form, setForm] = useState({
     academic_year: '',
     calendar_date: '',
+    end_date: '',
     day_type: 'HOLIDAY',
+    event_type: '',
     title: '',
     remarks: '',
     attendance_expected: false,
@@ -142,6 +164,7 @@ export function SchoolCalendarPage() {
     event.preventDefault()
     setError('')
     setSuccessMessage('')
+    setConflictDetails([])
 
     try {
       const payloadAcademicYear = Number(form.academic_year || selectedAcademicYearId)
@@ -164,6 +187,14 @@ export function SchoolCalendarPage() {
         delete savePayload.recurrence_week
         delete savePayload.recurrence_month
         delete savePayload.recurrence_month_day
+        if (!editingId) {
+          const conflictResult = await checkSchoolCalendarConflicts(savePayload)
+          setConflictDetails(conflictResult.conflicts || [])
+          if ((conflictResult.conflicts || []).some((conflict) => conflict.severity === 'ERROR')) {
+            setError('This event has a definite scheduling conflict and was not saved.')
+            return
+          }
+        }
         if (editingId) await updateSchoolCalendarDay(editingId, savePayload)
         else await createSchoolCalendarDay(savePayload)
       }
@@ -174,7 +205,9 @@ export function SchoolCalendarPage() {
         ...previous,
         academic_year: String(payloadAcademicYear),
         calendar_date: '',
+        end_date: '',
         day_type: 'HOLIDAY',
+        event_type: '',
         title: '',
         remarks: '',
         attendance_expected: false,
@@ -188,6 +221,7 @@ export function SchoolCalendarPage() {
       const recurringData = await getRecurringSchoolCalendarEvents({ academic_year: payloadAcademicYear, ordering: 'start_date' })
       setRecurringEvents(normalizeListResponse(recurringData).items)
     } catch (err) {
+      setConflictDetails(err.response?.data?.conflicts || [])
       setError(getApiErrorMessage(err))
     }
   }
@@ -197,6 +231,7 @@ export function SchoolCalendarPage() {
     setSelectedEntry(entry)
     const editableFields = [
       'academic_year', 'calendar_date', 'day_type', 'title', 'remarks', 'attendance_expected',
+      'end_date', 'event_type',
       'classes_suspended', 'scope_type', 'affected_grade_level', 'section', 'affected_department',
       'start_time', 'end_time', 'reason', 'suspension_type', 'announcement', 'location',
       'organizer', 'target_participants', 'status', 'cancellation_reason',
@@ -204,6 +239,39 @@ export function SchoolCalendarPage() {
     ]
     const editableEntry = Object.fromEntries(editableFields.map((field) => [field, entry[field] ?? '']))
     setForm({ ...form, ...editableEntry, academic_year: String(entry.academic_year) })
+  }
+
+  async function submitEntryForApproval(entry) {
+    try {
+      await submitSchoolCalendarDayForApproval(entry.id)
+      setSuccessMessage('Calendar entry submitted for approval.')
+      const data = await getSchoolCalendarDays({ academic_year: selectedAcademicYearId, ordering: 'calendar_date' })
+      setCalendarEntries(normalizeListResponse(data).items)
+    } catch (err) { setError(getApiErrorMessage(err)) }
+  }
+
+  async function approveEntry(entry) {
+    const note = window.prompt('Approval notes (optional)', '') || ''
+    try {
+      await approveSchoolCalendarDay(entry.id, note.trim())
+      setSuccessMessage('Calendar entry approved.')
+      const data = await getSchoolCalendarDays({ academic_year: selectedAcademicYearId, ordering: 'calendar_date' })
+      setCalendarEntries(normalizeListResponse(data).items)
+    } catch (err) { setError(getApiErrorMessage(err)) }
+  }
+
+  async function rejectEntry(entry) {
+    const reason = window.prompt('Rejection reason is required')
+    if (!reason?.trim()) {
+      setError('Rejection reason is required.')
+      return
+    }
+    try {
+      await rejectSchoolCalendarDay(entry.id, reason.trim())
+      setSuccessMessage('Calendar entry rejected.')
+      const data = await getSchoolCalendarDays({ academic_year: selectedAcademicYearId, ordering: 'calendar_date' })
+      setCalendarEntries(normalizeListResponse(data).items)
+    } catch (err) { setError(getApiErrorMessage(err)) }
   }
 
   async function publishEntry(entry) {
@@ -263,6 +331,7 @@ export function SchoolCalendarPage() {
 
       {error ? <ErrorBanner message={error} /> : null}
       {successMessage ? <div className="status-banner status-banner--success">{successMessage}</div> : null}
+      {conflictDetails.length > 0 ? <div className="status-banner"><strong>Scheduling conflicts</strong>{conflictDetails.map((conflict) => <div key={`${conflict.event_id}-${conflict.recurrence_date || conflict.date}-${conflict.conflict_types.join('-')}`}>{conflict.severity}: {conflict.title} ({conflict.conflict_types.join(', ')}) on {conflict.recurrence_date || conflict.date}{conflict.start_time ? `, ${conflict.start_time}-${conflict.end_time || ''}` : ''}{conflict.location ? `, ${conflict.location}` : ''}</div>)}</div> : null}
 
       <section className="panel-card record-panel">
         <div className="section-header">
@@ -295,7 +364,7 @@ export function SchoolCalendarPage() {
             <label><span>Subject</span><select value={form.subject || ''} onChange={(event) => setForm({ ...form, subject: event.target.value })}><option value="">Select subject</option>{subjects.map((subject) => <option key={subject.id} value={subject.id}>{subject.code} - {subject.name}</option>)}</select></label>
             <label><span>Instructor</span><select value={form.instructor || ''} onChange={(event) => setForm({ ...form, instructor: event.target.value })}><option value="">Select instructor</option>{teachers.map((teacher) => <option key={teacher.id} value={teacher.id}>{teacher.first_name || teacher.last_name ? `${teacher.first_name || ''} ${teacher.last_name || ''}`.trim() : teacher.username}</option>)}</select></label>
           </> : null}
-          {form.day_type === 'SUSPENSION' || form.day_type === 'SCHOOL_EVENT' || form.day_type === 'ACTIVITY' || form.day_type === 'EXAMINATION' ? <>
+          {form.day_type === 'SUSPENSION' || form.day_type === 'SCHOOL_EVENT' || form.day_type === 'ACTIVITY' || form.day_type === 'EXAMINATION' || form.day_type === 'ENROLLMENT' || form.day_type === 'ACADEMIC_DEADLINE' ? <>
             <label><span>Start time</span><input type="time" value={form.start_time || ''} onChange={(event) => setForm({ ...form, start_time: event.target.value })} /></label>
             <label><span>End time</span><input type="time" value={form.end_time || ''} onChange={(event) => setForm({ ...form, end_time: event.target.value })} /></label>
             <label><span>Location</span><input value={form.location || ''} onChange={(event) => setForm({ ...form, location: event.target.value })} /></label>
@@ -310,6 +379,7 @@ export function SchoolCalendarPage() {
             <span>Date</span>
             <input type="date" value={form.calendar_date} onChange={(event) => setForm({ ...form, calendar_date: event.target.value })} required />
           </label>
+          {form.day_type === 'ENROLLMENT' ? <label><span>End date</span><input type="date" value={form.end_date || ''} min={form.calendar_date || undefined} onChange={(event) => setForm({ ...form, end_date: event.target.value })} /></label> : null}
           <label className="checkbox-field">
             <input type="checkbox" checked={form.recurrence_enabled} disabled={Boolean(editingId) || form.day_type === 'EXAMINATION'} onChange={(event) => setForm({ ...form, recurrence_enabled: event.target.checked })} />
             <span>Recurring event</span>
@@ -324,10 +394,11 @@ export function SchoolCalendarPage() {
           </> : null}
           <label>
             <span>Day type</span>
-            <select value={form.day_type} onChange={(event) => setForm({ ...form, day_type: event.target.value, attendance_expected: event.target.value === 'SCHOOL_DAY' || event.target.value === 'EXAMINATION', classes_suspended: event.target.value === 'SUSPENSION', recurrence_enabled: event.target.value === 'EXAMINATION' ? false : form.recurrence_enabled, examination_type: event.target.value === 'EXAMINATION' ? form.examination_type : '', examination_period: event.target.value === 'EXAMINATION' ? form.examination_period : '', subject: event.target.value === 'EXAMINATION' ? form.subject : '', instructor: event.target.value === 'EXAMINATION' ? form.instructor : '' })}>
+            <select value={form.day_type} onChange={(event) => setForm({ ...form, day_type: event.target.value, event_type: '', end_date: '', attendance_expected: event.target.value === 'SCHOOL_DAY' || event.target.value === 'EXAMINATION', classes_suspended: event.target.value === 'SUSPENSION', recurrence_enabled: event.target.value === 'EXAMINATION' ? false : form.recurrence_enabled, examination_type: event.target.value === 'EXAMINATION' ? form.examination_type : '', examination_period: event.target.value === 'EXAMINATION' ? form.examination_period : '', subject: event.target.value === 'EXAMINATION' ? form.subject : '', instructor: event.target.value === 'EXAMINATION' ? form.instructor : '' })}>
               {DAY_TYPES.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
             </select>
           </label>
+          {EVENT_TYPES[form.day_type] ? <label><span>{form.day_type === 'ENROLLMENT' ? 'Enrollment activity' : 'Academic deadline'}</span><select value={form.event_type} onChange={(event) => setForm({ ...form, event_type: event.target.value })} required><option value="">Select type</option>{EVENT_TYPES[form.day_type].map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label> : null}
           <label>
             <span>Scope</span>
             <select value={form.scope_type} onChange={(event) => setForm({ ...form, scope_type: event.target.value })}>
@@ -344,7 +415,7 @@ export function SchoolCalendarPage() {
             <textarea value={form.remarks} onChange={(event) => setForm({ ...form, remarks: event.target.value })} rows={3} />
           </label>
           <label className="checkbox-field">
-            <input type="checkbox" checked={form.attendance_expected} onChange={(event) => setForm({ ...form, attendance_expected: event.target.checked })} />
+            <input type="checkbox" checked={form.attendance_expected} disabled={form.day_type === 'ENROLLMENT' || form.day_type === 'ACADEMIC_DEADLINE'} onChange={(event) => setForm({ ...form, attendance_expected: event.target.checked })} />
             <span>Attendance expected</span>
           </label>
           <label className="checkbox-field">
@@ -382,6 +453,7 @@ export function SchoolCalendarPage() {
               <thead>
                 <tr>
                   <th>Date</th>
+                  <th>Academic year</th>
                   <th>Type</th>
                   <th>Title</th>
                   <th>Attendance expected</th>
@@ -393,20 +465,37 @@ export function SchoolCalendarPage() {
               <tbody>
                 {calendarEntries.map((entry) => (
                   <tr key={entry.id}>
-                    <td>{entry.calendar_date || '—'}</td>
+                    <td>{entry.end_date ? `${entry.calendar_date} to ${entry.end_date}` : entry.calendar_date || '—'}</td>
+                    <td>{academicYears.find((year) => year.id === entry.academic_year)?.name || '—'}</td>
                           <td>{entry.day_type || '—'}</td>
                     <td>{entry.title || '—'}</td>
                     <td>{entry.attendance_expected ? 'Yes' : 'No'}</td>
                     <td>{entry.classes_suspended ? 'Yes' : 'No'}</td>
                     <td>{entry.status || '—'}</td>
-                    <td><button type="button" className="table-action" onClick={() => setSelectedEntry(entry)}>View</button> <button type="button" className="table-action" onClick={() => editEntry(entry)}>Edit</button> {entry.status !== 'PUBLISHED' && entry.status !== 'CANCELLED' ? <button type="button" className="table-action" onClick={() => publishEntry(entry)}>Publish</button> : null} {entry.status !== 'CANCELLED' ? <button type="button" className="table-action" onClick={() => cancelEntry(entry)}>Cancel</button> : null}</td>
+                    <td>
+                      <button type="button" className="table-action" onClick={() => setSelectedEntry(entry)}>View</button>
+                      <button type="button" className="table-action" onClick={() => editEntry(entry)}>Edit</button>
+                      {entry.status === 'DRAFT' || entry.status === 'REJECTED' ? (
+                        <button type="button" className="table-action" onClick={() => submitEntryForApproval(entry)}>Submit for Approval</button>
+                      ) : null}
+                      {entry.status === 'PENDING_APPROVAL' && (user?.role_name === 'SCHOOL_ADMIN' || user?.role_name === 'SUPER_ADMIN') ? (
+                        <>
+                          <button type="button" className="table-action" onClick={() => approveEntry(entry)}>Approve</button>
+                          <button type="button" className="table-action" onClick={() => rejectEntry(entry)}>Reject</button>
+                        </>
+                      ) : null}
+                      {entry.status === 'APPROVED' && (user?.role_name === 'SCHOOL_ADMIN' || user?.role_name === 'SUPER_ADMIN') ? (
+                        <button type="button" className="table-action" onClick={() => publishEntry(entry)}>Publish</button>
+                      ) : null}
+                      {entry.status !== 'CANCELLED' ? <button type="button" className="table-action" onClick={() => cancelEntry(entry)}>Cancel</button> : null}
+                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
         ) : null}
-        {selectedEntry ? <div className="status-banner"><strong>{selectedEntry.day_type === 'SUSPENSION' ? 'CLASS SUSPENSION' : selectedEntry.day_type === 'EXAMINATION' ? `${selectedEntry.examination_type || 'EXAMINATION'}: ${selectedEntry.title}` : selectedEntry.title}</strong><br />{selectedEntry.calendar_date} {selectedEntry.start_time ? `${selectedEntry.start_time} - ${selectedEntry.end_time || ''}` : ''}<br />{selectedEntry.day_type === 'EXAMINATION' && selectedEntry.examination_period ? `Period: ${selectedEntry.examination_period}; ` : ''}{selectedEntry.reason || selectedEntry.remarks || 'No additional details.'}<br />Status: {selectedEntry.status || '—'}{selectedEntry.cancellation_reason ? `; Cancellation reason: ${selectedEntry.cancellation_reason}` : ''}</div> : null}
+        {selectedEntry ? <div className="status-banner"><strong>{selectedEntry.day_type === 'SUSPENSION' ? 'CLASS SUSPENSION' : selectedEntry.day_type === 'EXAMINATION' ? `${selectedEntry.examination_type || 'EXAMINATION'}: ${selectedEntry.title}` : selectedEntry.title}</strong><br />Academic year: {academicYears.find((year) => year.id === selectedEntry.academic_year)?.name || '—'}<br />{selectedEntry.calendar_date}{selectedEntry.end_date ? ` to ${selectedEntry.end_date}` : ''} {selectedEntry.start_time ? `${selectedEntry.start_time} - ${selectedEntry.end_time || ''}` : ''}<br />{selectedEntry.event_type ? `Type: ${selectedEntry.event_type}; ` : ''}{selectedEntry.day_type === 'EXAMINATION' && selectedEntry.examination_period ? `Period: ${selectedEntry.examination_period}; ` : ''}{selectedEntry.reason || selectedEntry.remarks || 'No additional details.'}<br />Status: {selectedEntry.status || '—'}{selectedEntry.rejection_reason ? `; Rejection reason: ${selectedEntry.rejection_reason}` : ''}{selectedEntry.cancellation_reason ? `; Cancellation reason: ${selectedEntry.cancellation_reason}` : ''}</div> : null}
       </section>
       {recurringEvents.length > 0 ? <section className="panel-card record-panel"><div className="section-header"><div><p className="eyebrow">Recurring definitions</p><h2>Active and historical series</h2></div></div><div className="table-card"><table className="records-table"><thead><tr><th>Event</th><th>Rule</th><th>Range</th><th>Occurrences</th><th>Status</th><th>Actions</th></tr></thead><tbody>{recurringEvents.map((event) => <tr key={event.id}><td>{event.title}</td><td>{event.frequency}</td><td>{event.start_date} to {event.recurrence_end_date}</td><td>{event.occurrence_count}</td><td>{event.active ? 'Active' : 'Inactive'}</td><td>{event.active ? <button type="button" className="table-action" onClick={() => deactivateRecurringEvent(event)}>Deactivate</button> : null}</td></tr>)}</tbody></table></div></section> : null}
     </div>

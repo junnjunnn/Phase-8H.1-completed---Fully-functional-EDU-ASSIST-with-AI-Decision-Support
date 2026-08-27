@@ -2,6 +2,7 @@ from rest_framework import mixins, permissions, viewsets
 from rest_framework.decorators import action
 from rest_framework.filters import OrderingFilter, SearchFilter
 from rest_framework.response import Response
+from django.db import transaction
 from django.utils import timezone
 from audit.models import AuditLog
 from django_filters.rest_framework import DjangoFilterBackend
@@ -13,6 +14,7 @@ from common.drf_filters import RoleScopedViewsetMixin
 from .holiday_import import PhilippineHolidayImportService
 from .models import AttendanceRecord, RecurringSchoolCalendarEvent, SchoolCalendarDay
 from .recurrence import generate_occurrences
+from .conflicts import detect_conflicts, detect_recurring_conflicts, serialize_conflicts
 from .serializers import AttendanceRecordSerializer, RecurringSchoolCalendarEventSerializer, SchoolCalendarDaySerializer
 
 
@@ -39,12 +41,28 @@ class SchoolCalendarDayViewSet(AuditMixin, mixins.ListModelMixin, mixins.Retriev
     ordering = ['calendar_date']
 
     def get_permissions(self):
-        if self.request.method in ['POST', 'PUT', 'PATCH']:
+        if self.action in {'publish', 'approve', 'reject', 'cancel', 'import_philippine_holidays'}:
             return [permissions.IsAuthenticated(), IsSchoolAdmin()]
+        if self.action in {'submit_for_approval'}:
+            return [permissions.IsAuthenticated()]
+        if self.request.method in ['POST', 'PUT', 'PATCH']:
+            return [permissions.IsAuthenticated(), IsAuthorizedStaff()]
         return [permissions.IsAuthenticated()]
 
+    @action(detail=False, methods=['post'], url_path='check-conflicts')
+    def check_conflicts(self, request):
+        serializer = self.get_serializer(data=request.data, context={**self.get_serializer_context(), 'skip_conflict_validation': True})
+        serializer.is_valid(raise_exception=True)
+        conflicts = detect_conflicts(serializer._calendar_candidate)
+        return Response({'conflicts': serialize_conflicts(conflicts), 'has_conflicts': bool(conflicts)})
+
     def perform_create(self, serializer):
-        instance = serializer.save(created_by=self.request.user)
+        status = serializer.validated_data.get('status')
+        if not IsSchoolAdmin().has_permission(self.request, self):
+            status = 'PENDING_APPROVAL'
+        elif status is None:
+            status = 'DRAFT'
+        instance = serializer.save(created_by=self.request.user, status=status or 'DRAFT')
         self._audit('CREATE', instance)
 
     def perform_update(self, serializer):
@@ -57,9 +75,63 @@ class SchoolCalendarDayViewSet(AuditMixin, mixins.ListModelMixin, mixins.Retriev
             object_type='SchoolCalendarDay', object_id=str(instance.pk),
         )
 
+    @action(detail=True, methods=['post'], url_path='submit-for-approval')
+    def submit_for_approval(self, request, pk=None):
+        instance = self.get_object()
+        allowed = {'DRAFT', 'REJECTED'}
+        if instance.status not in allowed:
+            return Response({'detail': 'Only draft or rejected events can be submitted for approval.'}, status=400)
+        if instance.created_by_id != request.user.id and not IsSchoolAdmin().has_permission(request, self):
+            return Response({'detail': 'Only the creator or a school administrator can submit this event for approval.'}, status=403)
+        instance.status = 'PENDING_APPROVAL'
+        instance.submitted_by = request.user
+        instance.submitted_at = timezone.now()
+        instance.save(update_fields=['status', 'submitted_by', 'submitted_at', 'updated_at'])
+        self._audit('SUBMITTED_FOR_APPROVAL', instance)
+        return Response(self.get_serializer(instance).data)
+
+    @action(detail=True, methods=['post'])
+    def approve(self, request, pk=None):
+        instance = self.get_object()
+        if instance.created_by_id == request.user.id:
+            return Response({'detail': 'A creator cannot approve their own event.'}, status=400)
+        if not IsSchoolAdmin().has_permission(request, self):
+            return Response({'detail': 'Only school administrators can approve calendar events.'}, status=403)
+        if instance.status != 'PENDING_APPROVAL':
+            return Response({'detail': 'Only pending approval events can be approved.'}, status=400)
+        instance.status = 'APPROVED'
+        instance.approved_by = request.user
+        instance.approved_at = timezone.now()
+        instance.approval_notes = str(request.data.get('approval_notes') or '').strip()
+        instance.save(update_fields=['status', 'approved_by', 'approved_at', 'approval_notes', 'updated_at'])
+        self._audit('APPROVED', instance)
+        return Response(self.get_serializer(instance).data)
+
+    @action(detail=True, methods=['post'])
+    def reject(self, request, pk=None):
+        instance = self.get_object()
+        if instance.created_by_id == request.user.id:
+            return Response({'detail': 'A creator cannot reject their own event.'}, status=400)
+        if not IsSchoolAdmin().has_permission(request, self):
+            return Response({'detail': 'Only school administrators can reject calendar events.'}, status=403)
+        if instance.status != 'PENDING_APPROVAL':
+            return Response({'detail': 'Only pending approval events can be rejected.'}, status=400)
+        reason = str(request.data.get('rejection_reason') or '').strip()
+        if not reason:
+            return Response({'rejection_reason': ['Rejection reason is required.']}, status=400)
+        instance.status = 'REJECTED'
+        instance.rejected_by = request.user
+        instance.rejected_at = timezone.now()
+        instance.rejection_reason = reason
+        instance.save(update_fields=['status', 'rejected_by', 'rejected_at', 'rejection_reason', 'updated_at'])
+        self._audit('REJECTED', instance)
+        return Response(self.get_serializer(instance).data)
+
     @action(detail=True, methods=['post'])
     def publish(self, request, pk=None):
         instance = self.get_object()
+        if instance.status != 'APPROVED':
+            return Response({'detail': 'Only approved events can be published.'}, status=400)
         if instance.status == 'CANCELLED':
             return Response({'detail': 'Cancelled entries cannot be published.'}, status=400)
         instance.status = 'PUBLISHED'
@@ -114,16 +186,26 @@ class RecurringSchoolCalendarEventViewSet(AuditMixin, mixins.ListModelMixin, mix
             return [permissions.IsAuthenticated(), IsSchoolAdmin()]
         return [permissions.IsAuthenticated()]
 
+    @transaction.atomic
     def perform_create(self, serializer):
         instance = serializer.save(created_by=self.request.user)
         instance.full_clean()
+        conflicts = detect_recurring_conflicts(instance)
+        if any(conflict['severity'] == 'ERROR' for conflict in conflicts):
+            from rest_framework.exceptions import ValidationError
+            raise ValidationError({'conflicts': serialize_conflicts(conflicts)})
         count = generate_occurrences(instance)
         self._audit('CREATE', instance)
         self._generated_count = count
 
+    @transaction.atomic
     def perform_update(self, serializer):
         instance = serializer.save()
         instance.full_clean()
+        conflicts = detect_recurring_conflicts(instance)
+        if any(conflict['severity'] == 'ERROR' for conflict in conflicts):
+            from rest_framework.exceptions import ValidationError
+            raise ValidationError({'conflicts': serialize_conflicts(conflicts)})
         generate_occurrences(instance)
         self._audit('UPDATE', instance)
 
