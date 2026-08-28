@@ -9,6 +9,7 @@ import {
 import { useEffect, useMemo, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
+import { getUnreadNotificationCount } from '../../services/attendanceService'
 
 function SearchBox({ onOpenSearch }) {
   return (
@@ -68,6 +69,17 @@ export function TopBar({ pageTitle, onOpenProfile, onOpenNotifications, onOpenSe
   const navigate = useNavigate()
   const [dropdownOpen, setDropdownOpen] = useState(false)
   const [notificationsEnabled, setNotificationsEnabled] = useState(() => window.localStorage.getItem('edu_assist_notifications') !== 'false')
+  const [unreadNotificationCount, setUnreadNotificationCount] = useState(0)
+
+  useEffect(() => {
+    let active = true
+    getUnreadNotificationCount().then((data) => {
+      if (active) setUnreadNotificationCount(data.count || 0)
+    }).catch(() => {
+      if (active) setUnreadNotificationCount(0)
+    })
+    return () => { active = false }
+  }, [])
 
   useEffect(() => {
     const handleNotificationPreferenceChange = (event) => setNotificationsEnabled(event.detail?.enabled !== false)
@@ -125,7 +137,7 @@ export function TopBar({ pageTitle, onOpenProfile, onOpenNotifications, onOpenSe
         </div>
         <button type="button" className="icon-button icon-button--notification" aria-label="Notifications" onClick={onOpenNotifications}>
           <BellIcon className="icon" />
-          {notificationsEnabled ? <span className="notification-badge">0</span> : null}
+          {notificationsEnabled && unreadNotificationCount > 0 ? <span className="notification-badge">{unreadNotificationCount}</span> : null}
         </button>
         <div className="profile-menu-wrapper">
           <button type="button" className="profile-chip" onClick={() => setDropdownOpen((value) => !value)} aria-expanded={dropdownOpen} aria-haspopup="menu">

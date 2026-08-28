@@ -23,6 +23,7 @@ from attendance.api import AttendanceRecordViewSet, RecurringSchoolCalendarEvent
 from predictions.api import AdviserDashboardViewSet, DashboardViewSet
 from reports.api import ReportsViewSet
 from audit.api import AuditLogViewSet
+from notifications.api import NotificationViewSet
 from behavior.api import (
     CoreValueViewSet,
     BehaviorIndicatorViewSet,
@@ -57,6 +58,7 @@ router.register('dashboard-summary', DashboardViewSet, basename='dashboard-summa
 router.register('adviser-dashboard', AdviserDashboardViewSet, basename='adviser-dashboard')
 router.register('reports', ReportsViewSet, basename='report')
 router.register('audit-logs', AuditLogViewSet, basename='audit-log')
+router.register('notifications', NotificationViewSet, basename='notification')
 
 
 @require_GET

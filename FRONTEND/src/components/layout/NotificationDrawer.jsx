@@ -1,7 +1,7 @@
 import { XMarkIcon } from '@heroicons/react/24/outline'
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { getDashboardSummary } from '../../services/predictionService'
+import { getNotifications, markNotificationRead } from '../../services/attendanceService'
 
 export function NotificationDrawer({ open, onClose }) {
   const [notifications, setNotifications] = useState([])
@@ -14,25 +14,17 @@ export function NotificationDrawer({ open, onClose }) {
       setError('')
       setLoading(true)
       try {
-        const summary = await getDashboardSummary()
+        const notificationData = await getNotifications({ ordering: '-scheduled_for' })
+        const calendarNotifications = (notificationData.results || notificationData || []).map((item) => ({
+          id: item.id,
+          type: item.title,
+          message: item.message,
+          meta: item.read_at ? 'Read' : 'Unread',
+          link: item.calendar_entry ? '/attendance/calendar' : '/dashboard',
+          read: Boolean(item.read_at),
+        }))
         if (!active) return
-        const predictionAlerts = (summary.attention_students || []).map((item) => ({
-          id: `alert-${item.id}`,
-          type: item.risk_level || 'Risk Alert',
-          message: `${item.enrollment__student__first_name || item.enrollment__student__last_name ? `${item.enrollment__student__first_name || ''} ${item.enrollment__student__last_name || ''}`.trim() : 'Student'} is at ${item.risk_level || 'risk'}`,
-          meta: `${item.probability != null ? `${Math.round(item.probability * 100)}%` : 'Unknown'} • ${item.prediction_date || 'Unknown date'}`,
-          link: '/predictions',
-        }))
-
-        const recentActivity = (summary.recent_prediction_activity || []).map((item) => ({
-          id: `recent-${item.id}`,
-          type: item.risk_level || 'Prediction',
-          message: `${item.enrollment__student__first_name || ''} ${item.enrollment__student__last_name || ''}`.trim() + ` has a new ${item.risk_level || 'prediction'}`,
-          meta: `${item.probability != null ? `${Math.round(item.probability * 100)}%` : 'Unknown'} • ${item.prediction_date || 'Unknown date'}`,
-          link: '/predictions',
-        }))
-
-        setNotifications([...predictionAlerts, ...recentActivity].slice(0, 10))
+        setNotifications(calendarNotifications.slice(0, 20))
       } catch {
         setError('Unable to load notifications at this time.')
       } finally {
@@ -79,7 +71,7 @@ export function NotificationDrawer({ open, onClose }) {
             <ul className="notification-list">
               {notifications.map((item) => (
                 <li key={item.id}>
-                  <Link to={item.link} className="notification-item" onClick={onClose}>
+                  <Link to={item.link} className={`notification-item ${item.read ? 'notification-item--read' : ''}`} onClick={async () => { if (!item.read) await markNotificationRead(item.id); onClose() }}>
                     <strong>{item.type}</strong>
                     <span>{item.message}</span>
                     <small>{item.meta}</small>

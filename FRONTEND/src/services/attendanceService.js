@@ -89,3 +89,18 @@ export async function deactivateRecurringSchoolCalendarEvent(id) {
   const response = await apiClient.post(`/recurring-school-calendar-events/${id}/deactivate/`)
   return response.data
 }
+
+export async function getNotifications(params = {}) {
+  const response = await apiClient.get('/notifications/', { params })
+  return response.data
+}
+
+export async function getUnreadNotificationCount() {
+  const response = await apiClient.get('/notifications/unread_count/')
+  return response.data
+}
+
+export async function markNotificationRead(id) {
+  const response = await apiClient.post(`/notifications/${id}/mark_read/`)
+  return response.data
+}

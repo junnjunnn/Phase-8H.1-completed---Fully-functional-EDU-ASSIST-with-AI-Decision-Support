@@ -47,6 +47,7 @@ INSTALLED_APPS = [
     'interventions',
     'analytics',
     'predictions',
+    'notifications',
     'reports',
     'audit',
 ]
