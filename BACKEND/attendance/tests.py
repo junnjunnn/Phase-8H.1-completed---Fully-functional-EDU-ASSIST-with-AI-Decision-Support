@@ -6,6 +6,7 @@ from rest_framework.test import APIClient
 
 from accounts.models import UserProfile
 from academics.models import AcademicYear, GradeLevel, Section, Enrollment, Subject
+from audit.models import AuditLog
 from students.models import Student
 from .models import AttendanceRecord, RecurringSchoolCalendarEvent, SchoolCalendarDay
 
@@ -230,6 +231,51 @@ class SchoolCalendarDayAPITests(TestCase):
         self.assertEqual(retrieved.status_code, 200)
         self.assertEqual(retrieved.data['title'], 'Foundation Day')
 
+    def test_approved_event_requires_reapproval_after_material_edit(self):
+        self.client.force_authenticate(user=self.admin)
+        created = self.client.post('/api/school-calendar-days/', {
+            'academic_year': self.academic_year.id,
+            'calendar_date': '2025-06-22',
+            'day_type': 'SCHOOL_EVENT',
+            'title': 'Approved Event',
+            'location': 'Main Hall',
+            'status': 'APPROVED',
+            'attendance_expected': True,
+        }, format='json')
+        self.assertEqual(created.status_code, 201)
+        event_id = created.data['id']
+
+        updated = self.client.patch(f'/api/school-calendar-days/{event_id}/', {
+            'title': 'Approved Event Updated',
+            'calendar_date': '2025-06-22',
+            'day_type': 'SCHOOL_EVENT',
+            'location': 'Main Hall',
+            'academic_year': self.academic_year.id,
+            'attendance_expected': True,
+        }, format='json')
+        self.assertEqual(updated.status_code, 200)
+        self.assertEqual(updated.data['status'], 'PENDING_APPROVAL')
+        self.assertEqual(SchoolCalendarDay.objects.get(pk=event_id).status, 'PENDING_APPROVAL')
+
+    def test_cancelled_events_are_excluded_from_expected_school_day_counts(self):
+        school_day = SchoolCalendarDay.objects.create(
+            academic_year=self.academic_year,
+            calendar_date='2025-06-24',
+            day_type='SCHOOL_DAY',
+            title='School Day',
+            attendance_expected=True,
+            classes_suspended=False,
+            created_by=self.admin,
+            status='PUBLISHED',
+        )
+        self.assertEqual(SchoolCalendarDay.get_expected_school_days(self.academic_year, '2025-06-01', '2025-06-30'), 1)
+
+        school_day.status = 'CANCELLED'
+        school_day.cancellation_reason = 'Weather advisory'
+        school_day.save(update_fields=['status', 'cancellation_reason', 'updated_at'])
+
+        self.assertEqual(SchoolCalendarDay.get_expected_school_days(self.academic_year, '2025-06-01', '2025-06-30'), 0)
+
     def test_school_calendar_expected_days_excludes_non_school_dates(self):
         SchoolCalendarDay.objects.create(
             academic_year=self.academic_year,
@@ -370,6 +416,96 @@ class SchoolCalendarDayAPITests(TestCase):
         self.assertEqual(retrieved.data['event_type'], 'LIBRARY_RETURN')
 
 
+class SchoolCalendarBulkOperationTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.user_model = get_user_model()
+
+        self.admin = self.user_model.objects.create_user(username='bulk_admin', password='SchoolPass1!')
+        UserProfile.objects.create(user=self.admin, role_name='SCHOOL_ADMIN')
+
+        self.teacher = self.user_model.objects.create_user(username='bulk_teacher', password='TeacherPass1!')
+        UserProfile.objects.create(user=self.teacher, role_name='TEACHER')
+
+        self.academic_year = AcademicYear.objects.create(name='2025-2026', start_date='2025-06-01', end_date='2026-03-31', is_active=True)
+
+    def test_bulk_edit_creates_school_days_for_selected_dates(self):
+        self.client.force_authenticate(user=self.admin)
+        response = self.client.post('/api/school-calendar-days/bulk-edit/', {
+            'academic_year': self.academic_year.id,
+            'selected_dates': ['2025-06-10', '2025-06-11', '2025-06-12'],
+            'day_type': 'SCHOOL_DAY',
+            'title': 'Regular School Day',
+            'attendance_expected': True,
+            'classes_suspended': False,
+            'scope_type': 'SCHOOL_WIDE',
+            'status': 'DRAFT',
+        }, format='json')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['successfully_processed_dates'], ['2025-06-10', '2025-06-11', '2025-06-12'])
+        self.assertEqual(SchoolCalendarDay.objects.filter(academic_year=self.academic_year, day_type='SCHOOL_DAY').count(), 3)
+        self.assertTrue(SchoolCalendarDay.objects.filter(academic_year=self.academic_year, calendar_date='2025-06-10', attendance_expected=True).exists())
+
+    def test_bulk_edit_skips_existing_dates_by_default(self):
+        existing = SchoolCalendarDay.objects.create(
+            academic_year=self.academic_year,
+            calendar_date='2025-06-11',
+            day_type='HOLIDAY',
+            title='Existing Holiday',
+            attendance_expected=False,
+            classes_suspended=False,
+            created_by=self.admin,
+            status='PUBLISHED',
+        )
+
+        self.client.force_authenticate(user=self.admin)
+        response = self.client.post('/api/school-calendar-days/bulk-edit/', {
+            'academic_year': self.academic_year.id,
+            'selected_dates': ['2025-06-10', '2025-06-11', '2025-06-12'],
+            'day_type': 'SCHOOL_DAY',
+            'title': 'Regular School Day',
+            'attendance_expected': True,
+            'classes_suspended': False,
+            'scope_type': 'SCHOOL_WIDE',
+            'existing_behavior': 'skip',
+        }, format='json')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['successfully_processed_dates'], ['2025-06-10', '2025-06-12'])
+        self.assertEqual(response.data['skipped_existing_dates'], ['2025-06-11'])
+        self.assertEqual(SchoolCalendarDay.objects.filter(pk=existing.pk).first().day_type, 'HOLIDAY')
+
+    def test_bulk_edit_replaces_existing_dates_when_explicit(self):
+        existing = SchoolCalendarDay.objects.create(
+            academic_year=self.academic_year,
+            calendar_date='2025-06-11',
+            day_type='HOLIDAY',
+            title='Existing Holiday',
+            attendance_expected=False,
+            classes_suspended=False,
+            created_by=self.admin,
+            status='PUBLISHED',
+        )
+
+        self.client.force_authenticate(user=self.admin)
+        response = self.client.post('/api/school-calendar-days/bulk-edit/', {
+            'academic_year': self.academic_year.id,
+            'selected_dates': ['2025-06-11'],
+            'day_type': 'SCHOOL_DAY',
+            'title': 'Regular School Day',
+            'attendance_expected': True,
+            'classes_suspended': False,
+            'scope_type': 'SCHOOL_WIDE',
+            'existing_behavior': 'replace',
+        }, format='json')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['successfully_processed_dates'], ['2025-06-11'])
+        self.assertEqual(SchoolCalendarDay.objects.get(pk=existing.pk).day_type, 'SCHOOL_DAY')
+        self.assertTrue(SchoolCalendarDay.objects.get(pk=existing.pk).attendance_expected)
+
+
 class SchoolCalendarApprovalWorkflowTests(TestCase):
     def setUp(self):
         self.client = APIClient()
@@ -449,6 +585,98 @@ class SchoolCalendarApprovalWorkflowTests(TestCase):
         published = self.client.post(f"/api/school-calendar-days/{created.data['id']}/publish/", {})
         self.assertEqual(published.status_code, 200)
         self.assertEqual(published.data['status'], 'PUBLISHED')
+
+
+class SchoolCalendarAuditTrailTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.user_model = get_user_model()
+        self.admin = self.user_model.objects.create_user(username='calendar_audit_admin', password='SchoolPass1!')
+        UserProfile.objects.create(user=self.admin, role_name='SCHOOL_ADMIN')
+        self.teacher = self.user_model.objects.create_user(username='calendar_audit_teacher', password='TeacherPass1!')
+        UserProfile.objects.create(user=self.teacher, role_name='TEACHER')
+        self.academic_year = AcademicYear.objects.create(name='2025-2026', start_date='2025-06-01', end_date='2026-03-31', is_active=True)
+
+    def test_calendar_create_and_update_create_audit_entries_with_change_details(self):
+        self.client.force_authenticate(user=self.teacher)
+        created = self.client.post('/api/school-calendar-days/', {
+            'academic_year': self.academic_year.id,
+            'calendar_date': '2025-06-25',
+            'day_type': 'SCHOOL_EVENT',
+            'title': 'Leadership Seminar',
+            'location': 'Main Hall',
+            'status': 'DRAFT',
+        }, format='json')
+        self.assertEqual(created.status_code, 201)
+        event_id = created.data['id']
+        create_log = AuditLog.objects.filter(module='attendance', object_type='SchoolCalendarDay', object_id=str(event_id), action='CREATE').first()
+        self.assertIsNotNone(create_log)
+        self.assertEqual(create_log.object_name, 'Leadership Seminar')
+        self.assertEqual(create_log.object_date.isoformat(), '2025-06-25')
+
+        self.client.patch(f'/api/school-calendar-days/{event_id}/', {
+            'title': 'Leadership Seminar Updated',
+            'location': 'Conference Room',
+            'attendance_expected': True,
+        }, format='json')
+        update_log = AuditLog.objects.filter(module='attendance', object_type='SchoolCalendarDay', object_id=str(event_id), action='UPDATE').order_by('-timestamp').first()
+        self.assertIsNotNone(update_log)
+        self.assertIn('title', update_log.details.get('changed_fields', []))
+        self.assertIn('location', update_log.details.get('changed_fields', []))
+
+    def test_calendar_workflow_actions_create_audit_entries_with_reason_and_status(self):
+        self.client.force_authenticate(user=self.teacher)
+        created = self.client.post('/api/school-calendar-days/', {
+            'academic_year': self.academic_year.id,
+            'calendar_date': '2025-06-26',
+            'day_type': 'SCHOOL_EVENT',
+            'title': 'Science Fair',
+            'location': 'Campus Field',
+            'status': 'DRAFT',
+        }, format='json')
+        event_id = created.data['id']
+        self.client.post(f'/api/school-calendar-days/{event_id}/submit-for-approval/', {})
+        self.client.force_authenticate(user=self.admin)
+        self.client.post(f'/api/school-calendar-days/{event_id}/approve/', {'approval_notes': 'Looks good.'})
+        self.client.post(f'/api/school-calendar-days/{event_id}/publish/', {})
+        self.client.force_authenticate(user=self.teacher)
+        rejected = self.client.post('/api/school-calendar-days/', {
+            'academic_year': self.academic_year.id,
+            'calendar_date': '2025-06-27',
+            'day_type': 'SCHOOL_EVENT',
+            'title': 'Rejected Event',
+            'location': 'Gym',
+            'status': 'DRAFT',
+        }, format='json')
+        reject_id = rejected.data['id']
+        self.client.post(f'/api/school-calendar-days/{reject_id}/submit-for-approval/', {})
+        self.client.force_authenticate(user=self.admin)
+        self.client.post(f'/api/school-calendar-days/{reject_id}/reject/', {'rejection_reason': 'Needs updated agenda.'})
+        cancelled = self.client.post('/api/school-calendar-days/', {
+            'academic_year': self.academic_year.id,
+            'calendar_date': '2025-06-28',
+            'day_type': 'SCHOOL_EVENT',
+            'title': 'Cancelled Event',
+            'location': 'Auditorium',
+            'status': 'PUBLISHED',
+        }, format='json')
+        cancel_id = cancelled.data['id']
+        self.client.post(f'/api/school-calendar-days/{cancel_id}/cancel/', {'cancellation_reason': 'Venue issue.'})
+
+        self.assertTrue(AuditLog.objects.filter(module='attendance', object_type='SchoolCalendarDay', object_id=str(event_id), action='SUBMITTED_FOR_APPROVAL').exists())
+        self.assertTrue(AuditLog.objects.filter(module='attendance', object_type='SchoolCalendarDay', object_id=str(event_id), action='APPROVED').exists())
+        self.assertTrue(AuditLog.objects.filter(module='attendance', object_type='SchoolCalendarDay', object_id=str(event_id), action='PUBLISHED').exists())
+        self.assertTrue(AuditLog.objects.filter(module='attendance', object_type='SchoolCalendarDay', object_id=str(reject_id), action='REJECTED').exists())
+        rejection_log = AuditLog.objects.filter(module='attendance', object_type='SchoolCalendarDay', object_id=str(reject_id), action='REJECTED').first()
+        self.assertEqual(rejection_log.reason, 'Needs updated agenda.')
+        self.assertTrue(AuditLog.objects.filter(module='attendance', object_type='SchoolCalendarDay', object_id=str(cancel_id), action='CANCELLED').exists())
+        cancellation_log = AuditLog.objects.filter(module='attendance', object_type='SchoolCalendarDay', object_id=str(cancel_id), action='CANCELLED').first()
+        self.assertEqual(cancellation_log.reason, 'Venue issue.')
+
+    def test_calendar_audit_logs_are_not_exposed_to_unauthorized_users(self):
+        self.client.force_authenticate(user=self.teacher)
+        response = self.client.get('/api/audit-logs/')
+        self.assertEqual(response.status_code, 403)
 
 
 class ExaminationCalendarAPITests(TestCase):

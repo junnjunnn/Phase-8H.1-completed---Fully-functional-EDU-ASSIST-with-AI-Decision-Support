@@ -30,6 +30,11 @@ export async function updateSchoolCalendarDay(id, payload) {
   return response.data
 }
 
+export async function bulkEditSchoolCalendarDays(payload) {
+  const response = await apiClient.post('/school-calendar-days/bulk-edit/', payload)
+  return response.data
+}
+
 export async function checkSchoolCalendarConflicts(payload) {
   const response = await apiClient.post('/school-calendar-days/check-conflicts/', payload)
   return response.data
