@@ -46,7 +46,12 @@ function normalizeListResponse(data) {
   return { items, count: typeof data?.count === 'number' ? data.count : Array.isArray(items) ? items.length : 0 }
 }
 
-function dateKey(date) { return date.toISOString().slice(0, 10) }
+function dateKey(date) {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
 function monthLabel(date) { return date.toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) }
 function formatCalendarDate(value) { return value ? new Date(`${value}T00:00:00`).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }) : 'No date' }
 function displayType(type) { return TYPE_LABELS[type] || type?.replaceAll('_', ' ') || 'Calendar entry' }
