@@ -195,3 +195,98 @@ Stop database recovery actions at this point. The investigation is complete, no 
 - Source files modified: only this new report was created; application source and migrations were not modified.
 - Git state changed: no. Existing dirty worktree was preserved.
 - Report path: `PRIORITY6_DATABASE_RECOVERY_ASSESSMENT_REPORT.md`.
+
+---
+
+## Addendum — pre-reset backup and administrator-preservation plan
+
+Inspection date: 2026-10-20. This addendum records a newer read-only inspection and supersedes the earlier database counts and backup-availability observations above for the current reset proposal. The earlier report remains an accurate record of its 2026-08-27 inspection.
+
+### Current database and backup
+
+- Active Django settings: `BACKEND/config/settings.py`; engine: `config.mysql_compat`; database: `edu_assist`; host/port: `127.0.0.1:3306`; configured user: `root`.
+- Current schema: 37 base tables and 1,133 rows at the backup snapshot.
+- A new logical MariaDB backup was created at `BACKEND/db_backups/edu_assist_pre_reset_20261020.sql` (253,081 bytes).
+- SHA-256: `e56a4aaab04783cba2e7a43ae2e94f8e03afaaecd02b65c26bac21305debe86d`.
+- Verification: the dump contains DDL for all 37 database tables; the dump used one row per INSERT, and each table's INSERT count matched a fresh exact row count from the active database. The dump command requested routines, events, and triggers. No restore was attempted.
+- This is a database logical backup, not a backup of MariaDB server grants, binary logs, uploaded/media files, or external model/data files. Keep this sensitive dump local, do not commit or upload it, and retain an independent protected copy plus checksum before any separately approved reset.
+
+### Administrator account and authorization findings
+
+- `EDU_admin` exists in `auth_user` with primary key `25`; `is_active=True`.
+- Its linked `accounts_userprofile` row has primary key `25` and `role_name='SUPER_ADMIN'`. The requested `SUuperAdmin` is not a supported value; `SUPER_ADMIN` is the application-supported canonical role.
+- The password field uses the `pbkdf2_sha256` Django hash format. The required plaintext password was not available in the context used for this inspection, so the stored hash could not be compared to it. No login was attempted, no password check was run, and no tests were run. The password match is **unverified**.
+- `is_staff=False` and `is_superuser=False`. Application authorization is role-based: `accounts.permissions.IsSuperAdmin` grants the SuperAdmin permission when the authenticated user's profile role is exactly `SUPER_ADMIN`; `IsSchoolAdmin` also includes that role. Login uses Django `authenticate`, and the API issues JWTs. Therefore the profile role is what grants application SuperAdmin access. These flag values do not grant access to Django's built-in admin site.
+- No Django `PASSWORD_HASHERS` override is set in active settings; the observed format is Django's `pbkdf2_sha256` format.
+- Current auth links: no group memberships, direct user permissions, or assigned profile sections. The profile-to-section association table currently has no row for this account.
+- Other nonzero account-linked data found: 33 school-calendar rows reference this user as creator, 70 audit rows reference this user, and 5 notifications have this user as recipient. These are application records, not dependencies required to authenticate or receive the `SUPER_ADMIN` role.
+
+### Account dependency inventory
+
+The following relationships must be considered when preparing a reset:
+
+| Relationship/table | Reset treatment |
+|---|---|
+| `auth_user` row for `EDU_admin` | Preserve this exact row; never truncate or flush the shared table. |
+| `accounts_userprofile` row for user id 25 | Preserve; its `role_name='SUPER_ADMIN'` is the application's administrator authorization source. |
+| `accounts_userprofile_assigned_sections` | Preserve any rows for profile id 25 and any section rows they reference. There are currently zero such rows. |
+| `auth_user_groups`, `auth_user_user_permissions` | Preserve any rows belonging to user id 25; currently both counts are zero. |
+| `auth_group`, `auth_group_permissions`, `auth_permission`, `django_content_type` | Preserve authorization/catalog metadata; do not reset these shared framework tables. Current group tables are empty; permission and content-type catalogs are populated. |
+| `django_migrations` | Preserve migration history; do not reset or modify schema metadata. |
+| User-linked domain rows | These are not needed for authentication. Resetting them may remove audit/calendar history or notifications; include that data loss explicitly in the approved scope. |
+
+Database foreign keys also connect `auth_user` to profiles, academic records/sections/teacher assignments, attendance/calendar records, audit logs, behavior assessments, interventions, notifications, prediction reviews, admin logs, and token records. The plan below clears or targets those data tables while retaining the account row; it must be applied in FK-safe child-first order and must not use `TRUNCATE`/`flush`.
+
+### Proposed table-by-table reset plan — not approved or executed
+
+“Clear” means remove table data as part of a future, explicitly approved reset. “Targeted” means retain the administrator's rows and only remove other account/link rows. “Preserve” means retain the table's current framework/reference rows.
+
+| Table | Current rows | Proposed action | Administrator / dependency note |
+|---|---:|---|---|
+| `academics_academicrecord` | 62 | Clear | Business records; user-link fields are not required for authentication. |
+| `academics_academicyear` | 12 | Clear | School data; not an auth dependency. |
+| `academics_enrollment` | 11 | Clear | Business records. |
+| `academics_gradelevel` | 14 | Clear | School data; not an auth dependency. |
+| `academics_section` | 7 | Clear | No section is currently assigned to the admin profile; preserve any section referenced by an admin profile link if that changes before approval. |
+| `academics_specialization` | 1 | Clear | School data. |
+| `academics_strand` | 1 | Clear | School data. |
+| `academics_subject` | 11 | Clear | School data. |
+| `academics_subject_grade_levels` | 38 | Clear | Join data for school reference records. |
+| `academics_teacherassignment` | 15 | Clear | Business assignments; none are an admin authorization dependency. |
+| `accounts_userprofile` | 18 | Targeted | Preserve profile id 25 for `EDU_admin`; remove other profiles only if that is within the approved reset scope. |
+| `accounts_userprofile_assigned_sections` | 6 | Targeted | Preserve links for profile id 25 and their referenced sections; currently the admin has zero links. |
+| `attendance_attendancerecord` | 30 | Clear | Operational records. |
+| `attendance_recurringschoolcalendarevent` | 0 | Clear | Operational records; no admin dependency identified. |
+| `attendance_schoolcalendarday` | 52 | Clear | Includes 33 records created by the admin; these records are not needed for admin access. |
+| `audit_auditlog` | 404 | Clear | Includes 70 rows linked to the admin; clearing loses history but does not remove the account. |
+| `auth_group` | 0 | Preserve | Keep authorization framework catalog table/data. |
+| `auth_group_permissions` | 0 | Preserve | Keep group-permission relationships intact. |
+| `auth_permission` | 116 | Preserve | Keep permission catalog. |
+| `auth_user` | 18 | Targeted | Preserve only the existing `EDU_admin` row (id 25); do not clear or truncate the shared user table. |
+| `auth_user_groups` | 0 | Targeted | Preserve any `EDU_admin` memberships; currently none. |
+| `auth_user_user_permissions` | 0 | Targeted | Preserve any direct `EDU_admin` permissions; currently none. |
+| `behavior_behavioralassessment` | 24 | Clear | Operational records. |
+| `behavior_behavioralrating` | 4 | Preserve | Reference/lookup values required by behavior workflows. |
+| `behavior_behaviorindicator` | 8 | Preserve | Reference/lookup values required by behavior workflows. |
+| `behavior_corevalue` | 8 | Preserve | Reference/lookup values required by behavior workflows. |
+| `django_admin_log` | 0 | Clear | Historical admin-site log, not required for application authorization. |
+| `django_content_type` | 29 | Preserve | Framework metadata used by permission records. |
+| `django_migrations` | 57 | Preserve | Migration history; no migration is part of this plan. |
+| `django_session` | 96 | Clear | Expire sessions; admin can authenticate again after reset. |
+| `interventions_intervention` | 3 | Clear | Operational records. |
+| `notifications_notification` | 10 | Clear | Includes 5 notifications for the admin; not required for login or permissions. |
+| `predictions_predictionfactor` | 52 | Clear | Operational prediction data. |
+| `predictions_riskprediction` | 14 | Clear | Operational prediction data. |
+| `students_student` | 12 | Clear | Student records. |
+| `token_blacklist_blacklistedtoken` | 0 | Clear | Token state can be discarded; not required to create a fresh login session. |
+| `token_blacklist_outstandingtoken` | 0 | Clear | Token state can be discarded; not required to create a fresh login session. |
+
+The proposed reset must use targeted deletes for the shared user/profile/auth-link tables and FK-aware deletes for operational tables. It must not use Django `flush`, table-wide `TRUNCATE`, `DROP`, or recreation, because those would remove the protected user and/or framework metadata. Whether to preserve academic setup data rather than clearing it is a reset-scope decision for review; this proposal treats it as school/business data and clears it.
+
+### If credential verification or account correction is needed
+
+The account and role are present, but the required password cannot currently be verified. Do not change either during this inspection phase. Before any reset, verify the intended password through an approved, local, non-login credential-comparison step that does not print or persist the plaintext. If the password does not match, or the account/role is later found missing or different, stop and obtain separate approval for correction. The safest correction would use Django's supported user/password APIs with a secure interactive secret prompt, and set only the linked profile role to the supported `SUPER_ADMIN` value if needed. If the account is missing, create it only after separate approval, using the Django user manager and creating its `UserProfile` with `role_name='SUPER_ADMIN'` in the same controlled transaction. Do not put the password in source, `.env`, command arguments/history, reports, or logs. Do not set `is_staff`/`is_superuser` unless Django built-in admin access is separately required and explicitly approved.
+
+### Recovery and approval gate
+
+No reset, delete, truncate, account change, migration, seed, or restore has been performed. Before a future reset, review this table and the backup path/hash; retain a protected second copy and verify its checksum. If recovery is needed, restore the dump only into a separate isolated MariaDB database first, compare its schema and per-table counts, and keep the original backup unchanged. Do not overwrite `edu_assist` or proceed with any destructive operation until the user explicitly approves the reviewed plan and backup details.

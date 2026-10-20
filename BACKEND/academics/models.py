@@ -63,6 +63,7 @@ class Section(models.Model):
     description = models.TextField(blank=True, default='')
     adviser = models.ForeignKey(get_user_model(), null=True, blank=True, on_delete=models.SET_NULL, related_name='advised_sections')
     strand = models.ForeignKey('Strand', on_delete=models.SET_NULL, related_name='sections', null=True, blank=True)
+    specialization = models.ForeignKey('Specialization', on_delete=models.SET_NULL, related_name='sections', null=True, blank=True)
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -92,13 +93,25 @@ class Section(models.Model):
         if school_level == 'Elementary' and self.strand:
             raise ValidationError({'strand': 'Elementary sections cannot have a strand.'})
 
+        if school_level == 'Elementary' and self.specialization:
+            raise ValidationError({'specialization': 'Elementary sections cannot have a specialization.'})
+
         # Rule: Junior High School sections cannot have a strand
         if school_level == 'Junior High School' and self.strand:
             raise ValidationError({'strand': 'Junior High School sections cannot have a strand.'})
 
+        if school_level == 'Junior High School' and self.specialization:
+            raise ValidationError({'specialization': 'Junior High School sections cannot have a specialization.'})
+
         # Rule: Senior High School sections require a strand
         if school_level == 'Senior High School' and not self.strand:
             raise ValidationError({'strand': 'Senior High School sections must have a strand.'})
+
+        if self.strand and self.strand.code == 'TVL' and not self.specialization:
+            raise ValidationError({'specialization': 'TVL sections must have a specialization.'})
+
+        if self.specialization and self.specialization.strand_id != self.strand_id:
+            raise ValidationError({'specialization': 'The selected specialization does not belong to the selected strand.'})
 
         # Rule: Strand must be active
         if self.strand and not self.strand.is_active:
@@ -121,6 +134,21 @@ class Strand(models.Model):
 
     def __str__(self):
         return self.name
+
+
+class Specialization(models.Model):
+    strand = models.ForeignKey(Strand, on_delete=models.CASCADE, related_name='specializations')
+    name = models.CharField(max_length=100)
+    code = models.CharField(max_length=30)
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ['name']
+        constraints = [models.UniqueConstraint(fields=['strand', 'name'], name='unique_specialization_per_strand')]
+        indexes = [models.Index(fields=['strand', 'is_active'])]
+
+    def __str__(self):
+        return f'{self.strand.name} - {self.name}'
 
 
 class Subject(models.Model):
@@ -221,10 +249,12 @@ class TeacherAssignment(models.Model):
         constraints = [
             models.UniqueConstraint(
                 fields=['teacher', 'academic_year', 'grade_level', 'section', 'subject'],
+                condition=models.Q(is_active=True),
                 name='unique_active_subject_teacher_assignment',
             ),
             models.UniqueConstraint(
-                fields=['academic_year', 'section', 'assignment_type'],
+                fields=['academic_year', 'section'],
+                condition=models.Q(is_active=True, assignment_type='ADVISER'),
                 name='unique_active_section_adviser_assignment',
             ),
             models.CheckConstraint(

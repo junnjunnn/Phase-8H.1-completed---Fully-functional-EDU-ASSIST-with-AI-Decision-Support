@@ -110,7 +110,7 @@ export function TopBar({ pageTitle, onOpenProfile, onOpenNotifications, onOpenSe
   const currentTime = new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit' }).format(now)
 
   return (
-    <header className="topbar">
+    <header className="topbar no-print">
       <div className="topbar-main">
         <div className="topbar-copy">
           <h1>{pageTitle}</h1>

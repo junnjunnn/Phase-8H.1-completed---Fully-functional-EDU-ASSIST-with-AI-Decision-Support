@@ -1,0 +1,156 @@
+.report-print-portal {
+  display: none;
+}
+
+@media print {
+  @page {
+    size: A4 portrait;
+    margin: 12mm 15mm;
+  }
+
+  body:has(.report-print-portal) {
+    background: #fff;
+    color: #111;
+  }
+
+  body:has(.report-print-portal) > #root {
+    display: none;
+  }
+
+  .report-print-portal {
+    display: block;
+    width: 100%;
+    margin: 0;
+    padding: 0;
+  }
+
+  .report-print-document {
+    width: 100%;
+    max-width: none;
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    font-family: Georgia, 'Times New Roman', serif;
+    font-size: 10pt;
+    line-height: 1.4;
+  }
+
+  .report-print-header {
+    padding-bottom: 8mm;
+    border-bottom: 2px solid #1f2937;
+  }
+
+  .report-print-header p,
+  .report-print-title,
+  .report-print-meta,
+  .report-print-section h2,
+  .report-print-section p {
+    margin: 0;
+  }
+
+  .report-print-brand {
+    color: #113f8a;
+    font-family: Arial, sans-serif;
+    font-size: 16pt;
+    font-weight: 800;
+    letter-spacing: .04em;
+  }
+
+  .report-print-school {
+    margin-top: 1mm !important;
+    font-size: 12pt;
+  }
+
+  .report-print-title {
+    margin-top: 7mm !important;
+    font-family: Arial, sans-serif;
+    font-size: 18pt;
+    line-height: 1.2;
+    text-transform: uppercase;
+  }
+
+  .report-print-meta,
+  .report-print-filters {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 4mm 8mm;
+  }
+
+  .report-print-meta {
+    margin-top: 6mm;
+  }
+
+  .report-print-meta div,
+  .report-print-filters div {
+    min-width: 0;
+  }
+
+  .report-print-document dt {
+    color: #4b5563;
+    font-family: Arial, sans-serif;
+    font-size: 9pt;
+    font-weight: 700;
+    text-transform: uppercase;
+  }
+
+  .report-print-document dd {
+    margin: .15rem 0 0;
+    overflow-wrap: anywhere;
+  }
+
+  .report-print-section {
+    margin-top: 8mm;
+  }
+
+  .report-print-section h2 {
+    margin-bottom: 3mm;
+    font-family: Arial, sans-serif;
+    font-size: 14pt;
+    line-height: 1.2;
+    text-transform: uppercase;
+  }
+
+  .report-print-filters {
+    margin: 0;
+  }
+
+  .report-print-empty {
+    margin-bottom: 4mm !important;
+  }
+
+  .report-print-table {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;
+    font-size: 9pt;
+  }
+
+  .report-print-table thead {
+    display: table-header-group;
+  }
+
+  .report-print-table tr {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .report-print-table th,
+  .report-print-table td {
+    padding: 4px 6px;
+    border: 1px solid #9ca3af;
+    text-align: left;
+    overflow-wrap: anywhere;
+    vertical-align: top;
+  }
+
+  .report-print-table th {
+    background: #e5e7eb !important;
+    color: #111827;
+  }
+
+  .report-print-footer {
+    margin-top: 10mm;
+    padding-top: 4mm;
+    border-top: 1px solid #9ca3af;
+  }
+}

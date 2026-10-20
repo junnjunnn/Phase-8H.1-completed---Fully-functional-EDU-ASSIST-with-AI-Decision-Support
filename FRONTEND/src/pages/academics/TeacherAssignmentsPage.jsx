@@ -35,6 +35,7 @@ export function TeacherAssignmentsPage() {
   const [gradeFilter, setGradeFilter] = useState('')
   const [sectionFilter, setSectionFilter] = useState('')
   const [subjectFilter, setSubjectFilter] = useState('')
+  const [subjectSearch, setSubjectSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
   const [page, setPage] = useState(1)
   const [form, setForm] = useState({ id: '', assignment_type: 'SUBJECT', teacher: '', academic_year: '', grade_level: '', section: '', subjects: [], is_active: true })
@@ -87,10 +88,12 @@ export function TeacherAssignmentsPage() {
     let active = true
 
     async function reloadSubjects() {
+      if (!form.grade_level) {
+        setSubjects([])
+        return
+      }
       try {
-        const subjectData = form.grade_level
-          ? await getSubjects({ active_only: 'true', grade_level: form.grade_level })
-          : []
+        const subjectData = await getSubjects({ active_only: 'true', grade_level: form.grade_level })
         if (!active) {
           return
         }
@@ -98,8 +101,12 @@ export function TeacherAssignmentsPage() {
         setSubjects(historicalSubject && !items.some((subject) => String(subject.id) === String(historicalSubject.id))
           ? [...items, historicalSubject]
           : items)
-      } catch {
-        // Keep the existing subject list if the refresh fails.
+      } catch (err) {
+        if (!active) {
+          return
+        }
+        setSubjects(historicalSubject ? [historicalSubject] : [])
+        setFormError(getApiErrorMessage(err))
       }
     }
 
@@ -113,7 +120,16 @@ export function TeacherAssignmentsPage() {
       active = false
       unsubscribeSubjectsUpdated(handleSubjectsUpdated)
     }
-  }, [form.grade_level, historicalSubject])
+  }, [form.grade_level, form.section, historicalSubject])
+
+  useEffect(() => {
+    if (!form.section || sections.some((section) => String(section.id) === String(form.section))) {
+      return
+    }
+    setHistoricalSubject(null)
+    setSubjectSearch('')
+    setForm((current) => ({ ...current, section: '', academic_year: '', grade_level: '', subjects: [] }))
+  }, [form.section, sections])
 
   useEffect(() => {
     // Defer resetting page to avoid synchronous setState in effect
@@ -151,16 +167,26 @@ export function TeacherAssignmentsPage() {
   async function handleSubmit(event) {
     event.preventDefault()
     setFormError('')
+
+    const selectedSection = sections.find((section) => String(section.id) === String(form.section))
+    if (!selectedSection || !form.teacher || (form.assignment_type === 'SUBJECT' && form.subjects.length === 0)) {
+      setFormError(form.assignment_type === 'SUBJECT'
+        ? 'Select a section, teacher, and at least one subject.'
+        : 'Select a section and teacher.')
+      return
+    }
+
     setSubmitting(true)
 
     try {
       const payload = {
         teacher: Number(form.teacher),
-        academic_year: Number(form.academic_year),
-        grade_level: Number(form.grade_level),
+        academic_year: Number(selectedSection.academic_year),
+        grade_level: Number(selectedSection.grade_level),
         section: Number(form.section),
         ...(form.id && form.assignment_type === 'SUBJECT' ? { subject: Number(form.subjects[0]) } : {}),
         ...(!form.id && form.assignment_type === 'SUBJECT' ? { subjects: form.subjects.map(Number) } : {}),
+        ...(form.assignment_type === 'ADVISER' ? { subject: null } : {}),
         assignment_type: form.assignment_type,
         is_active: form.is_active !== false,
       }
@@ -181,12 +207,17 @@ export function TeacherAssignmentsPage() {
   }
 
   function startEdit(assignment) {
-    setGradeLevels((current) => current.some((grade) => String(grade.id) === String(assignment.grade_level))
-      ? current
-      : [...current, { id: assignment.grade_level, name: assignment.grade_level_name || 'Archived grade level', is_active: false }])
     setSections((current) => current.some((section) => String(section.id) === String(assignment.section))
       ? current
-      : [...current, { id: assignment.section, name: assignment.section_name || 'Archived section', grade_level: assignment.grade_level, academic_year: assignment.academic_year, is_active: false }])
+      : [...current, {
+        id: assignment.section,
+        name: assignment.section_name || 'Archived section',
+        grade_level: assignment.grade_level,
+        grade_level_name: assignment.grade_level_name || 'Historical grade level',
+        academic_year: assignment.academic_year,
+        academic_year_name: assignment.academic_year_name || 'Historical academic year',
+        is_active: false,
+      }])
     setTeachers((current) => current.some((teacher) => String(teacher.id) === String(assignment.teacher))
       ? current
       : [...current, { id: assignment.teacher, username: assignment.teacher_name || 'Historical teacher', is_active: false, role_name: 'TEACHER' }])
@@ -230,18 +261,25 @@ export function TeacherAssignmentsPage() {
   }
 
   const visibleSections = sections.filter((section) => {
-    const matchesYear = !form.academic_year || String(section.academic_year) === String(form.academic_year)
-    const matchesGrade = !form.grade_level || String(section.grade_level) === String(form.grade_level)
     const isCurrentHistoricalSection = form.id && String(section.id) === String(form.section)
-    return (section.is_active !== false || isCurrentHistoricalSection) && matchesYear && matchesGrade
+    return section.is_active !== false || isCurrentHistoricalSection
   })
-  const selectableGradeLevels = gradeLevels.filter((grade) => grade.is_active !== false || (form.id && String(grade.id) === String(form.grade_level)))
   const selectableTeachers = teachers.filter((teacher) => teacher.is_active !== false || (form.id && String(teacher.id) === String(form.teacher)))
+  const selectedSection = sections.find((section) => String(section.id) === String(form.section))
   const visibleSubjects = subjects.filter((subject) => {
     const isCurrentHistoricalSubject = form.id && String(subject.id) === String(form.subjects[0])
     const isApplicable = (subject.grade_levels || [subject.grade_level]).map(String).includes(String(form.grade_level))
-    return form.grade_level && (subject.is_active !== false || isCurrentHistoricalSubject) && isApplicable
+    const matchesSectionStrand = !subject.strand || String(subject.strand) === String(selectedSection?.strand)
+    return form.grade_level && (subject.is_active !== false || isCurrentHistoricalSubject) && (isApplicable || isCurrentHistoricalSubject) && (matchesSectionStrand || isCurrentHistoricalSubject)
   })
+  const normalizedSubjectSearch = subjectSearch.trim().toLowerCase()
+  const searchedSubjects = visibleSubjects.filter((subject) => {
+    if (!normalizedSubjectSearch) return true
+    return `${subject.name || ''} ${subject.code || ''}`.toLowerCase().includes(normalizedSubjectSearch)
+  })
+  const selectedSubjects = visibleSubjects.filter((subject) =>
+    form.subjects.map(String).includes(String(subject.id)),
+  )
 
   return (
     <div className="page-stack teacher-assignments-page">
@@ -268,48 +306,45 @@ export function TeacherAssignmentsPage() {
         <form className="form-grid assignment-form-grid" onSubmit={handleSubmit}>
           {formError ? <ErrorBanner message={formError} /> : null}
           <label>
-            <span>Assignment type</span>
-            <select value={form.assignment_type} onChange={(event) => setForm({ ...form, assignment_type: event.target.value, subjects: [] })} required>
-              <option value="SUBJECT">Subject Teacher</option>
-              <option value="ADVISER">Class Adviser</option>
-            </select>
-          </label>
-          <label>
-            <span>Grade level</span>
-            <select value={form.grade_level} onChange={(event) => { setSubjects([]); setForm({ ...form, grade_level: event.target.value, section: '', subjects: [] }) }} required>
-              <option value="">Select</option>
-              {selectableGradeLevels.map((grade) => <option key={grade.id} value={grade.id}>{grade.name}{grade.is_active === false ? ' (Archived)' : ''}</option>)}
-            </select>
-          </label>
-          {form.assignment_type === 'SUBJECT' ? <div className="form-field">
-            <span className="form-field__label">Subjects</span>
-            {!form.grade_level ? <p className="small-muted">Select a grade level to view applicable subjects.</p> : null}
-            {form.grade_level && !visibleSubjects.length ? <p className="small-muted">No active subjects are available for this grade level.</p> : null}
-            <div className="section-actions">
-              <button type="button" className="action-button action-button--neutral" onClick={() => setForm({ ...form, subjects: visibleSubjects.map((subject) => subject.id) })} disabled={!form.grade_level || !visibleSubjects.length}>Select all</button>
-              <button type="button" className="action-button action-button--neutral" onClick={() => setForm({ ...form, subjects: [] })} disabled={!form.grade_level}>Clear selection</button>
-              <span>{form.subjects.length} selected</span>
-            </div>
-            <div className="selection-summary">
-              {visibleSubjects.map((subject) => <label key={subject.id}><input type="checkbox" checked={form.subjects.map(String).includes(String(subject.id))} onChange={(event) => setForm({ ...form, subjects: event.target.checked ? [...new Set([...form.subjects, subject.id])] : form.subjects.filter((id) => String(id) !== String(subject.id)) })} /> {subject.name}{subject.is_active === false ? ' (Archived)' : ''}</label>)}
-            </div>
-          </div> : null}
-          <label>
-            <span>Academic year</span>
-            <select value={form.academic_year} onChange={(event) => setForm({ ...form, academic_year: event.target.value, section: '' })} required>
-              <option value="">Select</option>
-              {academicYears.map((year) => <option key={year.id} value={year.id}>{year.name}</option>)}
-            </select>
-          </label>
-          <label>
             <span>Section</span>
-            <select value={form.section} onChange={(event) => setForm({ ...form, section: event.target.value })} required>
-              <option value="">Select</option>
-              {visibleSections.map((section) => <option key={section.id} value={section.id}>{section.name}</option>)}
+            <select
+              value={form.section}
+              onChange={(event) => {
+                const section = visibleSections.find((item) => String(item.id) === event.target.value)
+                setHistoricalSubject(null)
+                setSubjectSearch('')
+                setSubjects([])
+                setForm((current) => ({
+                  ...current,
+                  section: section ? String(section.id) : '',
+                  academic_year: section ? String(section.academic_year) : '',
+                  grade_level: section ? String(section.grade_level) : '',
+                  subjects: [],
+                }))
+                setFormError('')
+              }}
+              required
+            >
+              <option value="">Select section</option>
+              {visibleSections.map((section) => {
+                const gradeName = section.grade_level_name || getNameById(gradeLevels, section.grade_level)
+                const yearName = section.academic_year_name || getNameById(academicYears, section.academic_year)
+                const curriculum = [section.strand_name, section.specialization_name].filter(Boolean).join(' · ')
+                return (
+                  <option key={section.id} value={section.id}>
+                    {[section.name, gradeName, yearName, curriculum].filter(Boolean).join(' · ')}
+                    {section.is_active === false ? ' (Archived)' : ''}
+                  </option>
+                )
+              })}
             </select>
-            {!form.academic_year || !form.grade_level ? <small className="small-muted">Select an academic year and grade level to view sections.</small> : null}
-            {form.academic_year && form.grade_level && !visibleSections.length ? <small className="small-muted">No active sections are available for the selected academic year and grade level.</small> : null}
           </label>
+          {selectedSection ? (
+            <div className="form-field">
+              <span className="form-field__label">Section context</span>
+              <span>{selectedSection.grade_level_name || getNameById(gradeLevels, selectedSection.grade_level)} · {selectedSection.academic_year_name || getNameById(academicYears, selectedSection.academic_year)}</span>
+            </div>
+          ) : null}
           <label>
             <span>Teacher</span>
             <select value={form.teacher} onChange={(event) => setForm({ ...form, teacher: event.target.value })} required>
@@ -320,6 +355,61 @@ export function TeacherAssignmentsPage() {
               })}
             </select>
           </label>
+          <label>
+            <span>Assignment type</span>
+            <select value={form.assignment_type} onChange={(event) => setForm({ ...form, assignment_type: event.target.value, subjects: [] })} required>
+              <option value="SUBJECT">Subject Teacher</option>
+              <option value="ADVISER">Class Adviser</option>
+            </select>
+          </label>
+          {form.assignment_type === 'SUBJECT' ? <div className="form-field">
+            <span className="form-field__label">Subjects</span>
+            {!form.section ? <p className="small-muted">Select a section to view applicable subjects.</p> : null}
+            {form.grade_level && !visibleSubjects.length ? <p className="small-muted">No active subjects are available for this grade level.</p> : null}
+            {form.section && visibleSubjects.length > 0 ? (
+              <label>
+                <span>Search eligible subjects</span>
+                <input
+                  type="search"
+                  value={subjectSearch}
+                  onChange={(event) => setSubjectSearch(event.target.value)}
+                  placeholder="Search by subject name or code"
+                  aria-label="Search eligible subjects by name or code"
+                />
+              </label>
+            ) : null}
+            <div className="section-actions">
+              <button type="button" className="action-button action-button--neutral" onClick={() => setForm({ ...form, subjects: visibleSubjects.map((subject) => subject.id) })} disabled={!form.section || !visibleSubjects.length}>Select all</button>
+              <button type="button" className="action-button action-button--neutral" onClick={() => setForm({ ...form, subjects: [] })} disabled={!form.section}>Clear selection</button>
+              <span>{form.subjects.length} selected</span>
+            </div>
+            {selectedSubjects.length > 0 ? (
+              <div>
+                <span className="form-field__label">Selected subjects</span>
+                <div className="selection-summary">
+                  {selectedSubjects.map((subject) => (
+                    <label key={subject.id}>
+                      <input
+                        type="checkbox"
+                        checked
+                        onChange={() => setForm((current) => ({
+                          ...current,
+                          subjects: current.subjects.filter((id) => String(id) !== String(subject.id)),
+                        }))}
+                      />
+                      {subject.name}{subject.code ? ` (${subject.code})` : ''}
+                    </label>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+            <div className="selection-summary">
+              {searchedSubjects.map((subject) => <label key={subject.id}><input type="checkbox" checked={form.subjects.map(String).includes(String(subject.id))} onChange={(event) => setForm({ ...form, subjects: event.target.checked ? [...new Set([...form.subjects, subject.id])] : form.subjects.filter((id) => String(id) !== String(subject.id)) })} /> {subject.name}{subject.code ? ` (${subject.code})` : ''}{subject.is_active === false ? ' (Archived)' : ''}</label>)}
+            </div>
+            {form.section && visibleSubjects.length > 0 && searchedSubjects.length === 0 ? (
+              <p className="small-muted">No eligible subjects match this search. Clear the search to see all subjects for this section.</p>
+            ) : null}
+          </div> : null}
           <label>
             <span>Status</span>
             <select value={form.is_active ? 'true' : 'false'} onChange={(event) => setForm({ ...form, is_active: event.target.value === 'true' })}>

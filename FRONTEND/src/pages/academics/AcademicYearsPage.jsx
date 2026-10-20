@@ -28,7 +28,7 @@ export function AcademicYearsPage() {
       setLoading(true)
       setError('')
       try {
-        const data = await getAcademicYears()
+        const data = await getAcademicYears({ status: 'all' })
         if (!active) return
         setAcademicYears(normalizeListResponse(data).items)
       } catch (err) {
@@ -68,7 +68,7 @@ export function AcademicYearsPage() {
       } else {
         await createAcademicYear(form)
       }
-      const refreshed = await getAcademicYears()
+      const refreshed = await getAcademicYears({ status: 'all' })
       setAcademicYears(normalizeListResponse(refreshed).items)
       setForm({ id: '', name: '', start_date: '', end_date: '', is_active: true })
     } catch (err) {
@@ -81,7 +81,7 @@ export function AcademicYearsPage() {
   async function toggleStatus(year) {
     try {
       await updateAcademicYear(year.id, { is_active: !year.is_active })
-      const refreshed = await getAcademicYears()
+      const refreshed = await getAcademicYears({ status: 'all' })
       setAcademicYears(normalizeListResponse(refreshed).items)
     } catch (err) {
       setError(getApiErrorMessage(err))

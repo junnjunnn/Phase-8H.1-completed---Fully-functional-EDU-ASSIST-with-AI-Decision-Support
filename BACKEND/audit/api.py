@@ -12,7 +12,7 @@ class AuditLogViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = AuditLogSerializer
     permission_classes = [permissions.IsAuthenticated, IsSchoolAdmin]
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
-    filterset_fields = ['action', 'module', 'object_type', 'object_id', 'user__username', 'ip_address']
-    search_fields = ['action', 'module', 'object_type', 'object_id', 'user__username', 'ip_address']
-    ordering_fields = ['timestamp', 'action', 'module']
+    filterset_fields = ['action', 'module', 'object_type', 'object_id', 'object_name', 'previous_status', 'new_status', 'user__username', 'ip_address']
+    search_fields = ['action', 'module', 'object_type', 'object_id', 'object_name', 'reason', 'user__username', 'ip_address']
+    ordering_fields = ['timestamp', 'action', 'module', 'object_name']
     ordering = ['-timestamp']

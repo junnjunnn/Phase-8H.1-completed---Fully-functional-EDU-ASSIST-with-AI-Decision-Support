@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
+import { useAuth } from '../../context/AuthContext'
 import { EmptyState } from '../../components/common/EmptyState'
 import { ErrorBanner } from '../../components/feedback/ErrorBanner'
 import { PageHeader } from '../../components/common/PageHeader'
-import { getRiskPredictions, getPredictionFactors } from '../../services/predictionService'
+import { generatePrediction, getRiskPredictions, getPredictionFactors } from '../../services/predictionService'
+import { getStudents } from '../../services/studentService'
 import { getApiErrorMessage } from '../../services/api'
 
 function normalizeListResponse(data) {
@@ -21,6 +23,7 @@ function formatRiskBadge(level) {
 }
 
 function getStudentName(item) {
+  if (item.student_name) return item.student_name
   const firstName = item.enrollment__student__first_name || item.student_first_name || item.first_name || ''
   const lastName = item.enrollment__student__last_name || item.student_last_name || item.last_name || ''
   const name = `${firstName} ${lastName}`.trim()
@@ -61,15 +64,25 @@ function getPredictionGuidance(riskSummary) {
 }
 
 export function PredictionsPage() {
+  const { user } = useAuth()
   const [predictions, setPredictions] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [search, setSearch] = useState('')
+  const [status, setStatus] = useState('active')
   const [pagination, setPagination] = useState({ count: 0, next: null, previous: null })
   const [selectedPrediction, setSelectedPrediction] = useState(null)
   const [drawerFactors, setDrawerFactors] = useState([])
   const [drawerLoading, setDrawerLoading] = useState(false)
   const [drawerError, setDrawerError] = useState('')
+  const [generationOpen, setGenerationOpen] = useState(false)
+  const [eligibleStudents, setEligibleStudents] = useState([])
+  const [selectedStudentId, setSelectedStudentId] = useState('')
+  const [generationLoading, setGenerationLoading] = useState(false)
+  const [generationError, setGenerationError] = useState('')
+  const [generationSuccess, setGenerationSuccess] = useState('')
+  const currentRole = (user?.role_name || user?.role || user?.profile?.role_name || 'NONE').toUpperCase()
+  const canGeneratePrediction = ['SUPER_ADMIN', 'SCHOOL_ADMIN', 'TEACHER'].includes(currentRole)
 
   useEffect(() => {
     let active = true
@@ -79,7 +92,7 @@ export function PredictionsPage() {
       setError('')
 
       try {
-        const data = await getRiskPredictions({ search, ordering: '-prediction_date' })
+        const data = await getRiskPredictions({ search, status, ordering: '-prediction_date' })
         if (!active) {
           return
         }
@@ -103,7 +116,41 @@ export function PredictionsPage() {
     return () => {
       active = false
     }
-  }, [search])
+  }, [search, status])
+
+  async function openGeneration() {
+    setGenerationOpen(true)
+    setGenerationError('')
+    setGenerationSuccess('')
+    setSelectedStudentId('')
+    try {
+      const data = await getStudents()
+      setEligibleStudents(normalizeListResponse(data).items)
+    } catch (err) {
+      setGenerationError(getApiErrorMessage(err))
+    }
+  }
+
+  async function submitGeneration(event) {
+    event.preventDefault()
+    if (!selectedStudentId) return
+    setGenerationLoading(true)
+    setGenerationError('')
+    setGenerationSuccess('')
+    try {
+      await generatePrediction(selectedStudentId)
+      setGenerationSuccess('Prediction generated successfully.')
+      setGenerationOpen(false)
+      const data = await getRiskPredictions({ search, status, ordering: '-prediction_date' })
+      const normalized = normalizeListResponse(data)
+      setPredictions(normalized.items.slice(0, 12))
+      setPagination({ count: normalized.count, next: normalized.next, previous: normalized.previous })
+    } catch (err) {
+      setGenerationError(getApiErrorMessage(err))
+    } finally {
+      setGenerationLoading(false)
+    }
+  }
 
   async function openPredictionDetails(prediction) {
     setSelectedPrediction(prediction)
@@ -161,12 +208,40 @@ export function PredictionsPage() {
         eyebrow="AI decision center"
         title="Predictions"
         description="Review the latest risk signals, understand the confidence behind them, and move quickly into support actions."
+        actions={canGeneratePrediction ? <button type="button" className="action-button action-button--secondary" onClick={openGeneration}>Generate Prediction</button> : null}
       />
 
       <section className="panel-card">
         <p className="eyebrow">AI generation mode</p>
-        <p>Predictions are automatically generated whenever new academic, attendance, or behavioral records are submitted. No manual trigger is required.</p>
+        <p>Generate a current prediction for an eligible active student using the deployed Random Forest model.</p>
       </section>
+
+      {generationSuccess ? <p className="form-success" role="status">{generationSuccess}</p> : null}
+      {generationOpen ? (
+        <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="generate-prediction-title">
+          <form className="detail-drawer" onSubmit={submitGeneration}>
+            <div className="drawer-header">
+              <div>
+                <p className="eyebrow">AI generation</p>
+                <h2 id="generate-prediction-title">Generate Prediction</h2>
+              </div>
+              <button type="button" className="icon-button" aria-label="Close generation dialog" onClick={() => setGenerationOpen(false)}>×</button>
+            </div>
+            {generationError ? <ErrorBanner message={generationError} /> : null}
+            <label htmlFor="prediction-student">Student</label>
+            <select id="prediction-student" value={selectedStudentId} onChange={(event) => setSelectedStudentId(event.target.value)} required>
+              <option value="">Select active student</option>
+              {eligibleStudents.map((student) => (
+                <option key={student.id} value={student.id}>{student.name || `${student.first_name || ''} ${student.last_name || ''}`.trim()}</option>
+              ))}
+            </select>
+            {!eligibleStudents.length ? <p>No active students are currently eligible for prediction.</p> : null}
+            <button type="submit" className="action-button action-button--secondary" disabled={generationLoading || !eligibleStudents.length}>
+              {generationLoading ? 'Generating Prediction...' : 'Generate Prediction'}
+            </button>
+          </form>
+        </div>
+      ) : null}
 
       <div className="record-summary-grid">
         <article className="detail-card stat-card-accent">
@@ -201,6 +276,11 @@ export function PredictionsPage() {
               value={search}
               onChange={(event) => setSearch(event.target.value)}
             />
+            <select aria-label="Prediction status" value={status} onChange={(event) => setStatus(event.target.value)}>
+              <option value="active">Active</option>
+              <option value="archived">Archived</option>
+              <option value="all">All</option>
+            </select>
           </div>
         </div>
 
@@ -224,11 +304,11 @@ export function PredictionsPage() {
               <article key={alert.id} className="detail-card alert-card">
                 <p className="eyebrow">{alert.risk_level || 'Risk'}</p>
                 <h3>{getStudentName(alert)}</h3>
-                <p>{alert.enrollment__grade_level__name || alert.grade_level || 'Grade unavailable'} · {alert.prediction_date || 'Date unavailable'}</p>
+                <p>{alert.grade_level_name || alert.enrollment__grade_level__name || alert.grade_level || 'Grade unavailable'} · {alert.prediction_date || 'Date unavailable'}</p>
                 <div className="alert-card-meta">
                   <span>{alert.probability != null ? `${Math.round(alert.probability * 100)}%` : 'N/A'}</span>
-                  {alert.enrollment__student__id ? (
-                    <Link to={`/students/${alert.enrollment__student__id}`} className="detail-link">
+                  {alert.student_id || alert.enrollment__student__id ? (
+                    <Link to={`/students/${alert.student_id || alert.enrollment__student__id}`} className="detail-link">
                       Profile
                     </Link>
                   ) : null}
@@ -275,15 +355,15 @@ export function PredictionsPage() {
                   {predictions.map((item) => (
                     <tr key={item.id}>
                       <td data-label="Student">{getStudentName(item)}</td>
-                      <td data-label="Grade">{item.enrollment__grade_level__name || item.grade_level || '—'}</td>
+                      <td data-label="Grade">{item.grade_level_name || item.enrollment__grade_level__name || item.grade_level || '—'}</td>
                       <td data-label="Risk level">
                         <span className={formatRiskBadge(item.risk_level)}>{item.risk_level || 'Unknown'}</span>
                       </td>
                       <td data-label="Probability">{item.probability != null ? `${Math.round(item.probability * 100)}%` : 'N/A'}</td>
                       <td data-label="Predicted">{item.prediction_date || '—'}</td>
                       <td data-label="Profile">
-                        {item.enrollment__student__id ? (
-                          <Link to={`/students/${item.enrollment__student__id}`} className="detail-link">
+                        {item.student_id || item.enrollment__student__id ? (
+                          <Link to={`/students/${item.student_id || item.enrollment__student__id}`} className="detail-link">
                             View
                           </Link>
                         ) : (
@@ -311,7 +391,7 @@ export function PredictionsPage() {
               <div>
                 <p className="eyebrow">Prediction details</p>
                 <h2>{getStudentName(selectedPrediction)}</h2>
-                <p>{selectedPrediction.enrollment__grade_level__name || selectedPrediction.grade_level || 'Grade unavailable'} · {selectedPrediction.prediction_date || 'Date unavailable'}</p>
+                <p>{selectedPrediction.grade_level_name || selectedPrediction.enrollment__grade_level__name || selectedPrediction.grade_level || 'Grade unavailable'} · {selectedPrediction.prediction_date || 'Date unavailable'}</p>
               </div>
               <button type="button" className="icon-button" aria-label="Close details" onClick={closePredictionDrawer}>
                 ×

@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { EmptyState } from '../../components/common/EmptyState'
 import { useAuth } from '../../context/AuthContext'
 import { ErrorBanner } from '../../components/feedback/ErrorBanner'
 import { PageHeader } from '../../components/common/PageHeader'
+import { getEnrollments } from '../../services/academicsService'
 import { getBehavioralAssessments } from '../../services/behaviorService'
 import { getApiErrorMessage } from '../../services/api'
 
@@ -22,8 +23,10 @@ export function BehaviorPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [search, setSearch] = useState('')
+  const [status, setStatus] = useState('active')
   const [pagination, setPagination] = useState({ count: 0, next: null, previous: null })
-  const [summary, setSummary] = useState({ assessments: 0 })
+  const [summary, setSummary] = useState({ assessments: 0, averageRating: '—', followUps: 0 })
+  const [enrollments, setEnrollments] = useState([])
 
   useEffect(() => {
     let active = true
@@ -33,16 +36,35 @@ export function BehaviorPage() {
       setError('')
 
       try {
-        const data = await getBehavioralAssessments({ search, ordering: '-assessment_date' })
+        const [enrollmentData, behaviorData] = await Promise.all([
+          status === 'active'
+            ? getEnrollments({ active_only: 'true', ordering: 'student__last_name,student__first_name' })
+            : getEnrollments({ include_archived: 'true', ordering: 'student__last_name,student__first_name' }),
+          getBehavioralAssessments({ status, search, ordering: '-assessment_date' }),
+        ])
+
         if (!active) {
           return
         }
 
-        const normalized = normalizeListResponse(data)
+        const normalizedEnrollments = normalizeListResponse(enrollmentData)
+        const normalized = normalizeListResponse(behaviorData)
         const assessments = normalized.items
+        const numericRatings = assessments
+          .map((assessment) => Number(assessment.numeric_score))
+          .filter((value) => !Number.isNaN(value))
 
+        const averageRating = numericRatings.length
+          ? (numericRatings.reduce((sum, value) => sum + value, 0) / numericRatings.length).toFixed(2)
+          : '—'
+        const followUps = assessments.filter((assessment) => {
+          const numericScore = Number(assessment.numeric_score)
+          return !Number.isNaN(numericScore) && numericScore < 3
+        }).length
+
+        setEnrollments(normalizedEnrollments.items)
         setBehavioralAssessments(assessments.slice(0, 12))
-        setSummary({ assessments: normalized.count })
+        setSummary({ assessments: normalized.count, averageRating, followUps })
         setPagination({ count: normalized.count, next: normalized.next, previous: normalized.previous })
       } catch (err) {
         if (!active) {
@@ -60,7 +82,17 @@ export function BehaviorPage() {
     return () => {
       active = false
     }
-  }, [search])
+  }, [search, status])
+
+  const enrollmentLookup = useMemo(() => {
+    return enrollments.reduce((lookup, enrollment) => {
+      const studentName = [enrollment.student_name, enrollment.student?.full_name]
+        .filter(Boolean)
+        .find(Boolean) || 'Student'
+      lookup[enrollment.id] = studentName
+      return lookup
+    }, {})
+  }, [enrollments])
 
   return (
     <div className="page-stack behavior-page">
@@ -93,10 +125,23 @@ export function BehaviorPage() {
         </div>
       </section>
 
-      <div className="record-summary-grid">
+      <div className="record-summary-grid monitoring-summary-grid">
         <article className="detail-card stat-card-accent">
           <p className="stat-label">Behavioral assessments</p>
           <p className="stat-value">{summary.assessments}</p>
+          <span className="badge badge--info">Latest records</span>
+        </article>
+        <article className="detail-card stat-card-accent">
+          <p className="stat-label">Average rating</p>
+          <p className="stat-value">{summary.averageRating}</p>
+          <span className="badge badge--success">Numeric average</span>
+        </article>
+        <article className="detail-card stat-card-accent">
+          <p className="stat-label">Follow-up alerts</p>
+          <p className="stat-value">{summary.followUps}</p>
+          <span className={`badge ${summary.followUps ? 'badge--warning' : 'badge--success'}`}>
+            {summary.followUps ? 'Needs review' : 'Stable'}
+          </span>
         </article>
       </div>
 
@@ -106,7 +151,16 @@ export function BehaviorPage() {
             <p className="eyebrow">Behavior assessments</p>
             <h2>Recent behavioral evaluations</h2>
           </div>
-          <div className="search-input-group">
+          <div className="section-actions">
+            <label>
+              <span className="sr-only">Behavior record status</span>
+              <select aria-label="Behavior record status" value={status} onChange={(event) => setStatus(event.target.value)}>
+                <option value="active">Active</option>
+                <option value="archived">Archived</option>
+                <option value="all">All</option>
+              </select>
+            </label>
+            <div className="search-input-group">
             <span className="search-icon" aria-hidden="true">🔎</span>
             <input
               aria-label="Search behavioral assessments"
@@ -114,6 +168,7 @@ export function BehaviorPage() {
               value={search}
               onChange={(event) => setSearch(event.target.value)}
             />
+            </div>
           </div>
         </div>
 
@@ -143,30 +198,45 @@ export function BehaviorPage() {
               <table className="records-table">
                 <thead>
                   <tr>
-                    <th scope="col">Enrollment</th>
+                    <th scope="col">Student</th>
                     <th scope="col">Indicator</th>
                     <th scope="col">Rating</th>
-                    <th scope="col">Period</th>
                     <th scope="col">Date</th>
+                    <th scope="col">Period</th>
+                    <th scope="col">Status</th>
                     <th scope="col">Remarks</th>
                   </tr>
                 </thead>
                 <tbody>
                   {behavioralAssessments.map((assessment) => {
                     const ratingDisplay = assessment.rating_code || assessment.rating_label || assessment.rating || '—'
+                    const numericScore = Number(assessment.numeric_score)
+                    const isFollowUp = !Number.isNaN(numericScore) && numericScore < 3
                     const period = assessment.grading_period_type === 'Quarter'
                       ? `Quarter ${assessment.quarter ?? '—'}`
                       : assessment.grading_period_type === 'Semester'
                       ? `Semester ${assessment.semester ?? '—'}`
                       : assessment.grading_period_type || '—'
+                    const studentName = assessment.student_name || enrollmentLookup[assessment.enrollment] || 'Enrollment unavailable'
+
                     return (
                       <tr key={assessment.id}>
-                        <td data-label="Enrollment">{assessment.enrollment || '—'}</td>
+                        <td data-label="Student">
+                          <div className="monitoring-primary-cell">
+                            <strong>{studentName}</strong>
+                            <small>{assessment.academic_year_name || 'Historical context'}{assessment.section_name ? ` · ${assessment.section_name}` : ''}</small>
+                          </div>
+                        </td>
                         <td data-label="Indicator">{assessment.behavior_indicator_name || assessment.behavior_indicator || '—'}</td>
                         <td data-label="Rating">{ratingDisplay}</td>
-                        <td data-label="Period">{period}</td>
                         <td data-label="Date">{assessment.assessment_date || '—'}</td>
-                        <td data-label="Remarks">{assessment.remarks || '—'}</td>
+                        <td data-label="Period">{period}</td>
+                        <td data-label="Status">
+                          <span className={`badge ${isFollowUp ? 'badge--warning' : 'badge--success'}`}>
+                            {isFollowUp ? 'Follow-up' : 'Stable'}
+                          </span>
+                        </td>
+                        <td data-label="Remarks">{assessment.remarks || 'No remarks recorded'}</td>
                       </tr>
                     )
                   })}

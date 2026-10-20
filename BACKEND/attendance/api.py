@@ -4,19 +4,24 @@ from rest_framework import mixins, permissions, viewsets
 from rest_framework.decorators import action
 from rest_framework.filters import OrderingFilter, SearchFilter
 from rest_framework.response import Response
+from rest_framework.exceptions import ValidationError
 from django.db import transaction
 from django.utils import timezone
 from audit.models import AuditLog
 from django_filters.rest_framework import DjangoFilterBackend
 
 from accounts.permissions import IsAuthorizedStaff, IsSchoolAdmin
+from common.authorization import active_enrollment_queryset, archived_enrollment_queryset
 from academics.models import AcademicYear
+from academics.models import Enrollment
 from common.audit import AuditMixin
 from common.drf_filters import RoleScopedViewsetMixin
+from academics.serializers import AcademicYearSerializer
 from .holiday_import import PhilippineHolidayImportService
 from .models import AttendanceRecord, RecurringSchoolCalendarEvent, SchoolCalendarDay
 from .recurrence import generate_occurrences
 from .conflicts import detect_conflicts, detect_recurring_conflicts, serialize_conflicts
+from .school_day_service import get_school_day_summary
 from .serializers import AttendanceRecordSerializer, RecurringSchoolCalendarEventSerializer, SchoolCalendarDaySerializer
 
 
@@ -30,6 +35,124 @@ class AttendanceRecordViewSet(RoleScopedViewsetMixin, AuditMixin, mixins.ListMod
     search_fields = ['enrollment__student__first_name', 'enrollment__student__last_name', 'month', 'attendance_date']
     ordering_fields = ['created_at', 'school_days', 'days_present', 'absences', 'attendance_date']
     ordering = ['-created_at']
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        status = self.request.query_params.get('status', 'active').lower()
+        enrollments = Enrollment.objects.all()
+        if status == 'active':
+            enrollments = active_enrollment_queryset(enrollments)
+        elif status == 'archived':
+            enrollments = archived_enrollment_queryset(enrollments)
+        elif status != 'all':
+            raise ValidationError({'status': 'Status must be active, archived, or all.'})
+        return queryset.filter(enrollment__in=enrollments)
+
+    @action(detail=False, methods=['post'], url_path='bulk')
+    def bulk_create_or_update(self, request):
+        if not isinstance(request.data, list):
+            raise ValidationError({'detail': 'Bulk attendance payload must be a list of records.'})
+        if not request.data:
+            return Response({'results': [], 'count': 0}, status=201)
+
+        serializers_to_save = []
+        errors = {}
+        seen_record_ids = set()
+        seen_enrollment_months = set()
+
+        with transaction.atomic():
+            for index, item in enumerate(request.data):
+                if not isinstance(item, dict):
+                    errors[str(index)] = {'detail': 'Each attendance row must be an object.'}
+                    continue
+
+                item_data = item.copy()
+                record_id = item_data.pop('id', None)
+                instance = None
+                if record_id is not None:
+                    if isinstance(record_id, bool) or not str(record_id).isdigit():
+                        errors[str(index)] = {'id': 'Attendance record ID must be a valid integer.'}
+                        continue
+                    try:
+                        record_id = int(record_id)
+                    except (TypeError, ValueError):
+                        errors[str(index)] = {'id': 'Attendance record ID must be a valid integer.'}
+                        continue
+                    if record_id <= 0:
+                        errors[str(index)] = {'id': 'Attendance record ID must be a valid integer.'}
+                        continue
+                    if record_id in seen_record_ids:
+                        errors[str(index)] = {'id': 'The same attendance record cannot be submitted more than once.'}
+                        continue
+                    seen_record_ids.add(record_id)
+                    instance = self.get_queryset().filter(pk=record_id).first()
+                    if instance is None:
+                        errors[str(index)] = {'id': 'Attendance record was not found or is not authorized.'}
+                        continue
+
+                serializer = self.get_serializer(
+                    instance,
+                    data=item_data,
+                    partial=instance is not None,
+                    context={'request': request},
+                )
+                if not serializer.is_valid():
+                    errors[str(index)] = serializer.errors
+                    continue
+
+                enrollment = serializer.validated_data.get(
+                    'enrollment',
+                    instance.enrollment if instance else None,
+                )
+                month = serializer.validated_data.get(
+                    'month',
+                    instance.month if instance else None,
+                )
+                enrollment_month = (enrollment.pk, month)
+                if enrollment is not None and month is not None and enrollment_month in seen_enrollment_months:
+                    errors[str(index)] = {
+                        'enrollment': 'Only one attendance row per enrollment and date can be submitted.',
+                    }
+                    continue
+                if enrollment is not None and month is not None:
+                    seen_enrollment_months.add(enrollment_month)
+                serializers_to_save.append(serializer)
+
+            if errors:
+                raise ValidationError({'errors': errors})
+
+            results = [serializer.save() for serializer in serializers_to_save]
+
+        return Response({
+            'results': self.get_serializer(results, many=True).data,
+            'count': len(results),
+        }, status=201)
+
+    @action(detail=False, methods=['get'], url_path='school-day-summary')
+    def school_day_summary(self, request):
+        academic_year_id = request.query_params.get('academic_year_id') or request.query_params.get('academic_year')
+        reporting_date = request.query_params.get('reporting_date') or request.query_params.get('attendance_date') or request.query_params.get('date')
+        today = request.query_params.get('today')
+        include_archived = request.query_params.get('status', '').lower() == 'archived'
+        summary = get_school_day_summary(
+            academic_year_id=academic_year_id,
+            reporting_date=reporting_date,
+            today=today,
+            include_archived=include_archived,
+        )
+
+        academic_year = summary.get('academic_year')
+        academic_year_payload = AcademicYearSerializer(academic_year).data if academic_year else None
+
+        reporting_date_value = summary.get('reporting_date')
+        reporting_date_payload = reporting_date_value.isoformat() if hasattr(reporting_date_value, 'isoformat') else reporting_date_value
+
+        return Response({
+            'school_days': summary.get('school_days'),
+            'academic_year': academic_year_payload,
+            'calendar_available': summary.get('calendar_available', False),
+            'reporting_date': reporting_date_payload,
+        })
 
 
 class SchoolCalendarDayViewSet(AuditMixin, mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins.CreateModelMixin, mixins.UpdateModelMixin, viewsets.GenericViewSet):
@@ -219,8 +342,11 @@ class SchoolCalendarDayViewSet(AuditMixin, mixins.ListModelMixin, mixins.Retriev
 
     def perform_create(self, serializer):
         status = serializer.validated_data.get('status')
-        if status is None:
-            status = 'PENDING_APPROVAL' if not IsSchoolAdmin().has_permission(self.request, self) else 'DRAFT'
+        is_school_admin = IsSchoolAdmin().has_permission(self.request, self)
+        if not is_school_admin:
+            status = 'PENDING_APPROVAL'
+        elif status is None:
+            status = 'DRAFT'
         instance = serializer.save(created_by=self.request.user, status=status)
         self._audit('CREATE', instance, details={'created_fields': sorted(serializer.validated_data.keys())})
 

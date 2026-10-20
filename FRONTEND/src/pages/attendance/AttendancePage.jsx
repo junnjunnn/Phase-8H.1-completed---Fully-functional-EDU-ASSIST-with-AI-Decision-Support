@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { EmptyState } from '../../components/common/EmptyState'
 import { ErrorBanner } from '../../components/feedback/ErrorBanner'
 import { PageHeader } from '../../components/common/PageHeader'
+import { getEnrollments } from '../../services/academicsService'
 import { getAttendanceRecords } from '../../services/attendanceService'
 import { getApiErrorMessage } from '../../services/api'
 
@@ -16,8 +17,10 @@ export function AttendancePage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [search, setSearch] = useState('')
+  const [status, setStatus] = useState('active')
   const [pagination, setPagination] = useState({ count: 0, next: null, previous: null })
-  const [summary, setSummary] = useState({ records: 0, present: 0, absences: 0, tardies: 0 })
+  const [summary, setSummary] = useState({ records: 0, present: 0, absences: 0, tardies: 0, attendanceRate: 0 })
+  const [enrollments, setEnrollments] = useState([])
 
   useEffect(() => {
     let active = true
@@ -27,25 +30,40 @@ export function AttendancePage() {
       setError('')
 
       try {
-        const data = await getAttendanceRecords({ search, ordering: '-created_at' })
+        const [enrollmentData, attendanceData] = await Promise.all([
+          status === 'active'
+            ? getEnrollments({ active_only: 'true', ordering: 'student__last_name,student__first_name' })
+            : getEnrollments({ include_archived: 'true', ordering: 'student__last_name,student__first_name' }),
+          getAttendanceRecords({ status, search, ordering: '-created_at' }),
+        ])
+
         if (!active) {
           return
         }
 
-        const normalized = normalizeListResponse(data)
+        const normalizedEnrollments = normalizeListResponse(enrollmentData)
+        const normalized = normalizeListResponse(attendanceData)
         const records = normalized.items
         const totals = records.reduce(
           (acc, record) => ({
             records: acc.records + 1,
-            present: acc.present + (record.days_present || 0),
-            absences: acc.absences + (record.absences || 0),
-            tardies: acc.tardies + (record.times_tardy || 0),
+            present: acc.present + (Number(record.days_present) || 0),
+            absences: acc.absences + (Number(record.absences) || 0),
+            tardies: acc.tardies + (Number(record.times_tardy) || 0),
+            schoolDays: acc.schoolDays + (Number(record.school_days) || 0),
           }),
-          { records: 0, present: 0, absences: 0, tardies: 0 },
+          { records: 0, present: 0, absences: 0, tardies: 0, schoolDays: 0 },
         )
 
+        setEnrollments(normalizedEnrollments.items)
         setAttendanceRecords(records.slice(0, 12))
-        setSummary({ records: normalized.count, present: totals.present, absences: totals.absences, tardies: totals.tardies })
+        setSummary({
+          records: normalized.count,
+          present: totals.present,
+          absences: totals.absences,
+          tardies: totals.tardies,
+          attendanceRate: totals.schoolDays ? Math.round((totals.present / totals.schoolDays) * 100) : 0,
+        })
         setPagination({ count: normalized.count, next: normalized.next, previous: normalized.previous })
       } catch (err) {
         if (!active) {
@@ -63,7 +81,17 @@ export function AttendancePage() {
     return () => {
       active = false
     }
-  }, [search])
+  }, [search, status])
+
+  const enrollmentLookup = useMemo(() => {
+    return enrollments.reduce((lookup, enrollment) => {
+      const studentName = [enrollment.student_name, enrollment.student?.full_name]
+        .filter(Boolean)
+        .find(Boolean) || 'Student'
+      lookup[enrollment.id] = studentName
+      return lookup
+    }, {})
+  }, [enrollments])
 
   return (
     <div className="page-stack attendance-page">
@@ -86,28 +114,33 @@ export function AttendancePage() {
           <li>Open the attendance encoding flow whenever a class needs immediate updates.</li>
         </ul>
         <div className="workflow-guide-actions">
-          <a className="action-button" href="/attendance/encode">Encode attendance</a>
           <span className="action-chip">Attendance review</span>
           <span className="action-chip">Support follow-up</span>
         </div>
       </section>
 
-      <div className="record-summary-grid">
+      <div className="record-summary-grid monitoring-summary-grid">
         <article className="detail-card stat-card-accent">
           <p className="stat-label">Attendance records</p>
           <p className="stat-value">{summary.records}</p>
+          <span className="badge badge--info">Latest snapshots</span>
+        </article>
+        <article className="detail-card stat-card-accent">
+          <p className="stat-label">Overall rate</p>
+          <p className="stat-value">{summary.attendanceRate}%</p>
+          <span className={`badge ${summary.attendanceRate < 80 ? 'badge--warning' : 'badge--success'}`}>
+            {summary.attendanceRate < 80 ? 'Monitor closely' : 'On track'}
+          </span>
         </article>
         <article className="detail-card stat-card-accent">
           <p className="stat-label">Days present</p>
           <p className="stat-value">{summary.present}</p>
+          <span className="badge badge--success">Present</span>
         </article>
         <article className="detail-card stat-card-accent">
-          <p className="stat-label">Absences</p>
-          <p className="stat-value">{summary.absences}</p>
-        </article>
-        <article className="detail-card stat-card-accent">
-          <p className="stat-label">Tardies</p>
-          <p className="stat-value">{summary.tardies}</p>
+          <p className="stat-label">Absences / tardies</p>
+          <p className="stat-value">{summary.absences} / {summary.tardies}</p>
+          <span className="badge badge--warning">Follow-up</span>
         </article>
       </div>
 
@@ -119,6 +152,14 @@ export function AttendancePage() {
           </div>
           <div className="section-actions">
             <a className="action-button" href="/attendance/encode">Encode attendance</a>
+            <label>
+              <span className="sr-only">Attendance record status</span>
+              <select aria-label="Attendance record status" value={status} onChange={(event) => setStatus(event.target.value)}>
+                <option value="active">Active</option>
+                <option value="archived">Archived</option>
+                <option value="all">All</option>
+              </select>
+            </label>
             <div className="search-input-group">
               <span className="search-icon" aria-hidden="true">🔎</span>
               <input
@@ -157,23 +198,44 @@ export function AttendancePage() {
               <table className="records-table">
                 <thead>
                   <tr>
-                    <th scope="col">Enrollment</th>
+                    <th scope="col">Student</th>
                     <th scope="col">Month</th>
-                    <th scope="col">Days present</th>
-                    <th scope="col">Absences</th>
-                    <th scope="col">Tardies</th>
+                    <th scope="col">Attendance %</th>
+                    <th scope="col">Present</th>
+                    <th scope="col">Absent</th>
+                    <th scope="col">Late</th>
+                    <th scope="col">Status</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {attendanceRecords.map((record) => (
-                    <tr key={record.id}>
-                      <td data-label="Enrollment">{record.enrollment || '—'}</td>
-                      <td data-label="Month">{record.month || '—'}</td>
-                      <td data-label="Days present">{record.days_present ?? '—'}</td>
-                      <td data-label="Absences">{record.absences ?? '—'}</td>
-                      <td data-label="Tardies">{record.times_tardy ?? '—'}</td>
-                    </tr>
-                  ))}
+                  {attendanceRecords.map((record) => {
+                    const schoolDays = Number(record.school_days || 0)
+                    const present = Number(record.days_present || 0)
+                    const absent = Number(record.absences || 0)
+                    const late = Number(record.times_tardy || 0)
+                    const percentage = schoolDays > 0 ? Math.round((present / schoolDays) * 100) : 0
+                    const status = percentage < 80 ? 'Needs attention' : 'Stable'
+                    const studentName = record.student_name || enrollmentLookup[record.enrollment] || 'Enrollment unavailable'
+
+                    return (
+                      <tr key={record.id}>
+                        <td data-label="Student">
+                          <div className="monitoring-primary-cell">
+                            <strong>{studentName}</strong>
+                            <small>{record.academic_year_name || 'Historical context'}{record.section_name ? ` · ${record.section_name}` : ''}</small>
+                          </div>
+                        </td>
+                        <td data-label="Month">{record.month || '—'}</td>
+                        <td data-label="Attendance %">{percentage}%</td>
+                        <td data-label="Present">{present}</td>
+                        <td data-label="Absent">{absent}</td>
+                        <td data-label="Late">{late}</td>
+                        <td data-label="Status">
+                          <span className={`badge ${status === 'Needs attention' ? 'badge--warning' : 'badge--success'}`}>{status}</span>
+                        </td>
+                      </tr>
+                    )
+                  })}
                 </tbody>
               </table>
             </div>

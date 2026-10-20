@@ -2,6 +2,27 @@ from django.conf import settings
 from django.db import models
 
 
+class UserProfileManager(models.Manager):
+    def create(self, **kwargs):
+        user = kwargs.get('user')
+        if user is not None:
+            existing = self.filter(user=user).first()
+            if existing is not None:
+                changed_fields = []
+                for field_name in ('role_name', 'employee_id', 'department', 'phone_number'):
+                    if field_name in kwargs and getattr(existing, field_name) != kwargs[field_name]:
+                        setattr(existing, field_name, kwargs[field_name])
+                        changed_fields.append(field_name)
+                if changed_fields:
+                    existing.save(update_fields=changed_fields)
+                user._profile_cache = existing
+                return existing
+        profile = super().create(**kwargs)
+        if user is not None:
+            user._profile_cache = profile
+        return profile
+
+
 class UserProfile(models.Model):
     ROLE_CHOICES = [
         ('SUPER_ADMIN', 'Super Administrator'),
@@ -19,6 +40,8 @@ class UserProfile(models.Model):
     assigned_sections = models.ManyToManyField('academics.Section', blank=True, related_name='authorized_personnel')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+
+    objects = UserProfileManager()
 
     class Meta:
         ordering = ['-created_at']

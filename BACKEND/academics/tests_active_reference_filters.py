@@ -167,3 +167,40 @@ class ActiveReferenceFilterTests(TestCase):
         response = self.client.patch(f'/api/teacher-assignments/{historical.id}/', {'subject': archived_subject.id}, format='json')
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data['subject'], archived_subject.id)
+
+    def test_academic_reference_endpoints_default_to_active_only(self):
+        self.authenticate_admin()
+
+        active_year_response = self.client.get('/api/academic-years/')
+        active_year_ids = {item['id'] for item in active_year_response.data['results']}
+        self.assertIn(self.active_year.id, active_year_ids)
+        self.assertNotIn(self.archived_year.id, active_year_ids)
+
+        active_grade_response = self.client.get('/api/grade-levels/')
+        active_grade_ids = {item['id'] for item in active_grade_response.data['results']}
+        self.assertIn(self.active_grade.id, active_grade_ids)
+        self.assertNotIn(self.archived_grade.id, active_grade_ids)
+
+        active_section_response = self.client.get('/api/sections/')
+        active_section_ids = {item['id'] for item in active_section_response.data['results']}
+        self.assertIn(self.active_section.id, active_section_ids)
+        self.assertNotIn(self.archived_section.id, active_section_ids)
+        self.assertNotIn(self.archived_year_section.id, active_section_ids)
+        self.assertNotIn(self.archived_grade_section.id, active_section_ids)
+
+    def test_historical_reference_records_are_available_when_explicitly_requested(self):
+        self.authenticate_admin()
+
+        archived_year_response = self.client.get('/api/academic-years/?include_archived=true')
+        archived_year_ids = {item['id'] for item in archived_year_response.data['results']}
+        self.assertIn(self.archived_year.id, archived_year_ids)
+
+        archived_grade_response = self.client.get('/api/grade-levels/?include_archived=true')
+        archived_grade_ids = {item['id'] for item in archived_grade_response.data['results']}
+        self.assertIn(self.archived_grade.id, archived_grade_ids)
+
+        archived_section_response = self.client.get('/api/sections/?include_archived=true')
+        archived_section_ids = {item['id'] for item in archived_section_response.data['results']}
+        self.assertIn(self.archived_section.id, archived_section_ids)
+        self.assertIn(self.archived_year_section.id, archived_section_ids)
+        self.assertIn(self.archived_grade_section.id, archived_section_ids)

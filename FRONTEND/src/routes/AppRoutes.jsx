@@ -38,7 +38,7 @@ export function AppRoutes() {
       <Route element={<ProtectedRoute />}>
         <Route element={<AppLayout />}>
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
-          <Route element={<RoleRoute allowedRoles={['SUPER_ADMIN', 'SCHOOL_ADMIN', 'TEACHER', 'GUIDANCE']} />}>
+          <Route element={<RoleRoute allowedRoles={['SUPER_ADMIN', 'SCHOOL_ADMIN', 'REGISTRAR', 'TEACHER', 'GUIDANCE']} />}>
             <Route path="/dashboard" element={<DashboardResolver />} />
           </Route>
           <Route path="/students" element={<StudentsPage />} />

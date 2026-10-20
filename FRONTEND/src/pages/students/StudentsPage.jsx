@@ -1,6 +1,6 @@
 import { MagnifyingGlassIcon, PlusIcon, UserPlusIcon } from '@heroicons/react/24/outline'
 import { useEffect, useMemo, useState } from 'react'
-import { Link, useLocation } from 'react-router-dom'
+import { Link, useLocation, useSearchParams } from 'react-router-dom'
 import { EmptyState } from '../../components/common/EmptyState'
 import { ErrorBanner } from '../../components/feedback/ErrorBanner'
 import { LoadingSpinner } from '../../components/common/LoadingSpinner'
@@ -34,6 +34,7 @@ function getSectionLabel(section) {
 export function StudentsPage() {
   const { user } = useAuth()
   const location = useLocation()
+  const [searchParams, setSearchParams] = useSearchParams()
   const [students, setStudents] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -63,7 +64,9 @@ export function StudentsPage() {
   const [sections, setSections] = useState([])
   const [registerMessage, setRegisterMessage] = useState('')
   const [selectedYear, setSelectedYear] = useState('')
-  const [selectedGrade, setSelectedGrade] = useState('')
+  const selectedGrade = searchParams.get('grade_level') || ''
+  const selectedSection = searchParams.get('section') || ''
+  const selectedStatus = searchParams.get('status') || 'active'
   const [editModalOpen, setEditModalOpen] = useState(false)
   const [selectedStudent, setSelectedStudent] = useState(null)
   const [editForm, setEditForm] = useState({ lrn: '', first_name: '', middle_name: '', last_name: '', gender: '', birth_date: '', student_status: 'active' })
@@ -75,6 +78,15 @@ export function StudentsPage() {
   const canManageStudents = ['SUPER_ADMIN', 'SCHOOL_ADMIN', 'REGISTRAR'].includes(currentRole)
 
   const canCreateStudent = canManageStudents
+  const visibleSections = useMemo(() => {
+    const relevantSections = selectedGrade
+      ? sections.filter((section) => String(section.grade_level) === String(selectedGrade) || String(section.grade_level_id ?? section.grade_level) === String(selectedGrade))
+      : sections
+
+    return [...relevantSections].sort((left, right) => String(left.name).localeCompare(String(right.name)))
+  }, [sections, selectedGrade])
+
+  const hasActiveStudentFilters = Boolean(search || selectedGrade || selectedSection)
 
   function resetRegisterForm() {
     setRegisterForm({
@@ -115,6 +127,7 @@ export function StudentsPage() {
         const routeParams = new URLSearchParams(location.search)
         const data = await getStudents({
           search,
+          status: selectedStatus,
           academic_year: routeParams.get('academic_year') || undefined,
           grade_level: routeParams.get('grade_level') || undefined,
           section: routeParams.get('section') || undefined,
@@ -140,7 +153,7 @@ export function StudentsPage() {
     return () => {
       active = false
     }
-  }, [location.search, search])
+  }, [location.search, search, selectedStatus])
 
   useEffect(() => {
     async function loadReferenceData() {
@@ -148,7 +161,7 @@ export function StudentsPage() {
         const [years, grades, allSections] = await Promise.all([
           getAcademicYears(),
           getGradeLevels(),
-          getSections(),
+          getSections({ active_only: 'true' }),
         ])
         setAcademicYears(years.results || years || [])
         setGradeLevels(grades.results || grades || [])
@@ -160,6 +173,32 @@ export function StudentsPage() {
 
     loadReferenceData()
   }, [])
+
+  function updateStudentFilters(changes) {
+    const nextParams = new URLSearchParams(searchParams)
+    Object.entries(changes).forEach(([key, value]) => {
+      if (value) {
+        nextParams.set(key, String(value))
+      } else {
+        nextParams.delete(key)
+      }
+    })
+    setSearchParams(nextParams, { replace: true })
+  }
+
+  function handleGradeChange(event) {
+    const nextGrade = event.target.value
+    const nextSection = selectedSection && visibleSections.some((section) => String(section.id) === String(selectedSection) && String(section.grade_level) === String(nextGrade)) ? selectedSection : ''
+    updateStudentFilters({ grade_level: nextGrade, section: nextSection })
+  }
+
+  function handleSectionChange(event) {
+    updateStudentFilters({ section: event.target.value })
+  }
+
+  function clearStudentFilters() {
+    updateStudentFilters({ grade_level: '', section: '' })
+  }
 
   function toggleSort(field) {
     if (sortField === field) {
@@ -332,6 +371,38 @@ export function StudentsPage() {
           </div>
         </div>
 
+        <div className="students-toolbar students-toolbar--filters">
+          <label className="filter-field">
+            <span>Status</span>
+            <select value={selectedStatus} onChange={(event) => updateStudentFilters({ status: event.target.value })}>
+              <option value="active">Active</option>
+              <option value="archived">Archived</option>
+              <option value="all">All</option>
+            </select>
+          </label>
+          <label className="filter-field">
+            <span>Grade level</span>
+            <select value={selectedGrade} onChange={handleGradeChange}>
+              <option value="">All grades</option>
+              {gradeLevels.map((grade) => (
+                <option key={grade.id} value={grade.id}>{grade.name}</option>
+              ))}
+            </select>
+          </label>
+          <label className="filter-field">
+            <span>Section</span>
+            <select value={selectedSection} onChange={handleSectionChange} disabled={!visibleSections.length}>
+              <option value="">All sections</option>
+              {visibleSections.map((section) => (
+                <option key={section.id} value={section.id}>{section.name}</option>
+              ))}
+            </select>
+          </label>
+          <button type="button" className="action-button action-button--outline" onClick={clearStudentFilters}>
+            Clear filters
+          </button>
+        </div>
+
         {error ? <ErrorBanner message={error} /> : null}
         {registerMessage ? <div className="status-banner status-banner--success">{registerMessage}</div> : null}
         {loading ? (
@@ -344,8 +415,8 @@ export function StudentsPage() {
 
         {!loading && !error && students.length === 0 ? (
           <EmptyState
-            title={search ? 'No students match your search' : 'No students available'}
-            message={search ? 'Try another name, LRN, or clear the search filter.' : 'There are no student records available in the system right now.'}
+            title={hasActiveStudentFilters ? 'No students match the current filters' : 'No students available'}
+            message={hasActiveStudentFilters ? 'Try another search, change the grade/section filters, or clear the filters.' : 'There are no student records available in the system right now.'}
           />
         ) : null}
 

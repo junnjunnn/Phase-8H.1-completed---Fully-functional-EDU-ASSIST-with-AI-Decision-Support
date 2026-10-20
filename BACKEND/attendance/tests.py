@@ -70,6 +70,82 @@ class AttendanceRecordAPITests(TestCase):
         self.assertIn(response.status_code, [400, 403],
             f"Teacher should not create attendance for unauthorized enrollment. Got {response.status_code}: {response.data}")
 
+    def test_current_attendance_excludes_archived_student_and_context(self):
+        self.client.force_authenticate(user=self.superadmin)
+
+        lifecycle_changes = [
+            ('student_status', self.student_a, 'archived'),
+            ('enrollment_status', self.enrollment_a, 'withdrawn'),
+            ('section_active', self.enrollment_a.section, False),
+            ('grade_active', self.enrollment_a.grade_level, False),
+            ('year_active', self.enrollment_a.academic_year, False),
+        ]
+        for change_name, instance, value in lifecycle_changes:
+            with self.subTest(change=change_name):
+                field = change_name.split('_', 1)[0]
+                if change_name == 'student_status':
+                    instance.student_status = value
+                    instance.save(update_fields=['student_status'])
+                elif change_name == 'enrollment_status':
+                    instance.enrollment_status = value
+                    instance.save(update_fields=['enrollment_status'])
+                else:
+                    setattr(instance, 'is_active', value)
+                    instance.save(update_fields=['is_active'])
+
+                response = self.client.get('/api/attendance-records/')
+                self.assertEqual(response.status_code, 200)
+                record_ids = {item['id'] for item in response.data['results']}
+                self.assertNotIn(self.attendance_a.id, record_ids)
+
+                if change_name == 'student_status':
+                    instance.student_status = 'active'
+                    instance.save(update_fields=['student_status'])
+                elif change_name == 'enrollment_status':
+                    instance.enrollment_status = 'active'
+                    instance.save(update_fields=['enrollment_status'])
+                else:
+                    instance.is_active = True
+                    instance.save(update_fields=['is_active'])
+
+    def test_archived_student_attendance_is_rejected_and_preserved(self):
+        self.student_a.student_status = 'archived'
+        self.student_a.save(update_fields=['student_status'])
+        self.client.force_authenticate(user=self.superadmin)
+
+        response = self.client.post('/api/attendance-records/', {
+            'enrollment': self.enrollment_a.id,
+            'month': 'July',
+            'school_days': 20,
+            'days_present': 18,
+            'absences': 2,
+            'times_tardy': 0,
+        })
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(AttendanceRecord.objects.filter(pk=self.attendance_a.id).count(), 1)
+
+    def test_attendance_status_filter_separates_current_and_historical_records(self):
+        self.student_a.student_status = 'archived'
+        self.student_a.save(update_fields=['student_status'])
+        self.client.force_authenticate(user=self.superadmin)
+
+        active_response = self.client.get('/api/attendance-records/?status=active')
+        archived_response = self.client.get('/api/attendance-records/?status=archived')
+        all_response = self.client.get('/api/attendance-records/?status=all')
+
+        active_ids = {item['id'] for item in active_response.data['results']}
+        archived_items = archived_response.data['results']
+        archived_ids = {item['id'] for item in archived_items}
+        all_ids = {item['id'] for item in all_response.data['results']}
+        self.assertNotIn(self.attendance_a.id, active_ids)
+        self.assertIn(self.attendance_b.id, active_ids)
+        self.assertIn(self.attendance_a.id, archived_ids)
+        self.assertNotIn(self.attendance_b.id, archived_ids)
+        self.assertEqual(all_ids, {self.attendance_a.id, self.attendance_b.id})
+        self.assertEqual(archived_items[0]['student_name'], 'Alice Anderson')
+        self.assertEqual(AttendanceRecord.objects.count(), 2)
+
 
 class SchoolCalendarDayAPITests(TestCase):
     def setUp(self):
@@ -533,6 +609,39 @@ class SchoolCalendarApprovalWorkflowTests(TestCase):
         self.client.force_authenticate(user=user)
         return self.client.post('/api/school-calendar-days/', payload, format='json')
 
+    def test_teacher_create_without_status_defaults_to_pending_approval(self):
+        self.client.force_authenticate(user=self.teacher)
+        response = self.client.post('/api/school-calendar-days/', {
+            'academic_year': self.academic_year.id,
+            'calendar_date': '2025-06-16',
+            'day_type': 'SCHOOL_EVENT',
+            'title': 'Teacher Prepared Event',
+            'location': 'Main Hall',
+            'organizer': 'Math Department',
+        }, format='json')
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data['status'], 'PENDING_APPROVAL')
+
+    def test_teacher_create_with_explicit_draft_is_forced_to_pending_approval(self):
+        response = self._create_event(self.teacher, status='DRAFT')
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data['status'], 'PENDING_APPROVAL')
+        self.assertEqual(SchoolCalendarDay.objects.get(pk=response.data['id']).status, 'PENDING_APPROVAL')
+
+    def test_admin_create_event_keeps_admin_creation_behavior(self):
+        self.client.force_authenticate(user=self.admin)
+        response = self.client.post('/api/school-calendar-days/', {
+            'academic_year': self.academic_year.id,
+            'calendar_date': '2025-06-17',
+            'day_type': 'SCHOOL_EVENT',
+            'title': 'Admin Draft Event',
+            'location': 'Admin Office',
+            'organizer': 'Administration',
+            'status': 'DRAFT',
+        }, format='json')
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data['status'], 'DRAFT')
+
     def test_teacher_can_create_event_and_submit_for_approval(self):
         created = self._create_event(self.teacher)
         self.assertEqual(created.status_code, 201)
@@ -634,11 +743,14 @@ class SchoolCalendarAuditTrailTests(TestCase):
             'location': 'Campus Field',
             'status': 'DRAFT',
         }, format='json')
+        self.assertEqual(created.status_code, 201)
+        self.assertEqual(created.data['status'], 'PENDING_APPROVAL')
         event_id = created.data['id']
-        self.client.post(f'/api/school-calendar-days/{event_id}/submit-for-approval/', {})
+
         self.client.force_authenticate(user=self.admin)
         self.client.post(f'/api/school-calendar-days/{event_id}/approve/', {'approval_notes': 'Looks good.'})
         self.client.post(f'/api/school-calendar-days/{event_id}/publish/', {})
+
         self.client.force_authenticate(user=self.teacher)
         rejected = self.client.post('/api/school-calendar-days/', {
             'academic_year': self.academic_year.id,
@@ -649,9 +761,13 @@ class SchoolCalendarAuditTrailTests(TestCase):
             'status': 'DRAFT',
         }, format='json')
         reject_id = rejected.data['id']
-        self.client.post(f'/api/school-calendar-days/{reject_id}/submit-for-approval/', {})
         self.client.force_authenticate(user=self.admin)
         self.client.post(f'/api/school-calendar-days/{reject_id}/reject/', {'rejection_reason': 'Needs updated agenda.'})
+
+        self.client.force_authenticate(user=self.teacher)
+        self.client.post(f'/api/school-calendar-days/{reject_id}/submit-for-approval/', {})
+
+        self.client.force_authenticate(user=self.admin)
         cancelled = self.client.post('/api/school-calendar-days/', {
             'academic_year': self.academic_year.id,
             'calendar_date': '2025-06-28',
@@ -663,10 +779,10 @@ class SchoolCalendarAuditTrailTests(TestCase):
         cancel_id = cancelled.data['id']
         self.client.post(f'/api/school-calendar-days/{cancel_id}/cancel/', {'cancellation_reason': 'Venue issue.'})
 
-        self.assertTrue(AuditLog.objects.filter(module='attendance', object_type='SchoolCalendarDay', object_id=str(event_id), action='SUBMITTED_FOR_APPROVAL').exists())
         self.assertTrue(AuditLog.objects.filter(module='attendance', object_type='SchoolCalendarDay', object_id=str(event_id), action='APPROVED').exists())
         self.assertTrue(AuditLog.objects.filter(module='attendance', object_type='SchoolCalendarDay', object_id=str(event_id), action='PUBLISHED').exists())
         self.assertTrue(AuditLog.objects.filter(module='attendance', object_type='SchoolCalendarDay', object_id=str(reject_id), action='REJECTED').exists())
+        self.assertTrue(AuditLog.objects.filter(module='attendance', object_type='SchoolCalendarDay', object_id=str(reject_id), action='SUBMITTED_FOR_APPROVAL').exists())
         rejection_log = AuditLog.objects.filter(module='attendance', object_type='SchoolCalendarDay', object_id=str(reject_id), action='REJECTED').first()
         self.assertEqual(rejection_log.reason, 'Needs updated agenda.')
         self.assertTrue(AuditLog.objects.filter(module='attendance', object_type='SchoolCalendarDay', object_id=str(cancel_id), action='CANCELLED').exists())

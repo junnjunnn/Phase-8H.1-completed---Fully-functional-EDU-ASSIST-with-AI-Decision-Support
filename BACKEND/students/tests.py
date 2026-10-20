@@ -64,6 +64,56 @@ class StudentAPITests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data['count'], 0)
 
+    def test_grade_and_section_filters_ignore_historical_inactive_enrollments(self):
+        self.client.force_authenticate(user=self.superadmin)
+
+        previous_year = AcademicYear.objects.create(name='2024-2025', start_date='2024-06-01', end_date='2025-03-31', is_active=False)
+        historical_grade = GradeLevel.objects.get(code='G10')
+        historical_section = Section.objects.create(name='History', grade_level=historical_grade, academic_year=previous_year)
+        student = Student.objects.create(first_name='History', last_name='Student', gender='Female', student_status='active')
+        Enrollment.objects.create(
+            student=student,
+            academic_year=previous_year,
+            grade_level=historical_grade,
+            section=historical_section,
+            enrollment_status='inactive',
+        )
+
+        current_grade = GradeLevel.objects.get(code='G11')
+        current_section = self.section_b
+        Enrollment.objects.create(
+            student=student,
+            academic_year=AcademicYear.objects.get(name='2025-2026'),
+            grade_level=current_grade,
+            section=current_section,
+            enrollment_status='active',
+        )
+
+        response = self.client.get(f'/api/students/?grade_level={historical_grade.id}')
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn(student.id, {item['id'] for item in response.data['results']})
+
+        response = self.client.get(f'/api/students/?grade_level={current_grade.id}&section={current_section.id}')
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(student.id, {item['id'] for item in response.data['results']})
+
+    def test_section_filter_endpoint_excludes_archived_sections_for_active_student_workflow(self):
+        self.client.force_authenticate(user=self.superadmin)
+
+        current_year = AcademicYear.objects.get(name='2025-2026')
+        selected_grade = GradeLevel.objects.get(code='G11')
+        other_grade = GradeLevel.objects.create(name='Grade 12 Archive Check', code='G12-ARCHIVE-CHECK', school_level='Senior High School', order=13, is_active=True)
+        active_section = Section.objects.create(name='Active Section', grade_level=selected_grade, academic_year=current_year, is_active=True)
+        archived_section = Section.objects.create(name='Archived Section', grade_level=selected_grade, academic_year=current_year, is_active=False)
+        other_grade_section = Section.objects.create(name='Other Grade Section', grade_level=other_grade, academic_year=current_year, is_active=True)
+
+        response = self.client.get('/api/sections/', {'active_only': 'true', 'academic_year': current_year.id, 'grade_level': selected_grade.id})
+        self.assertEqual(response.status_code, 200)
+        ids = {item['id'] for item in response.data['results']}
+        self.assertIn(active_section.id, ids)
+        self.assertNotIn(archived_section.id, ids)
+        self.assertNotIn(other_grade_section.id, ids)
+
     def test_registration_creates_student_profile_without_enrollment(self):
         self.client.force_authenticate(user=self.superadmin)
         payload = {
@@ -89,3 +139,65 @@ class StudentAPITests(TestCase):
         self.assertEqual(student.guardian_name, 'Anna Cruz')
         self.assertEqual(student.parent_contact, '09171234567')
         self.assertFalse(student.enrollments.exists())
+
+    def test_archived_student_is_hidden_from_active_student_workflows(self):
+        self.client.force_authenticate(user=self.superadmin)
+        archived_student = Student.objects.create(first_name='Arch', last_name='Student', gender='Female', student_status='archived')
+        Enrollment.objects.create(
+            student=archived_student,
+            academic_year=AcademicYear.objects.get(name='2025-2026'),
+            grade_level=GradeLevel.objects.get(code='G11'),
+            section=self.section_b,
+            enrollment_status='active',
+        )
+
+        response = self.client.get('/api/students/')
+        self.assertEqual(response.status_code, 200)
+        student_ids = {item['id'] for item in response.data['results']}
+        self.assertNotIn(archived_student.id, student_ids)
+
+    def test_archived_student_can_be_retrieved_explicitly_when_requested(self):
+        self.client.force_authenticate(user=self.superadmin)
+        archived_student = Student.objects.create(first_name='Hist', last_name='Student', gender='Female', student_status='archived')
+        Enrollment.objects.create(
+            student=archived_student,
+            academic_year=AcademicYear.objects.get(name='2025-2026'),
+            grade_level=GradeLevel.objects.get(code='G11'),
+            section=self.section_b,
+            enrollment_status='active',
+        )
+
+        response = self.client.get('/api/students/?include_archived=true')
+        self.assertEqual(response.status_code, 200)
+        student_ids = {item['id'] for item in response.data['results']}
+        self.assertIn(archived_student.id, student_ids)
+
+    def test_active_student_detail_does_not_require_current_enrollment(self):
+        self.client.force_authenticate(user=self.superadmin)
+        student = Student.objects.create(first_name='Unenrolled', last_name='Student', gender='Female', student_status='active')
+
+        response = self.client.get(f'/api/students/{student.id}/')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['id'], student.id)
+
+    def test_active_student_without_enrollment_appears_in_student_list_api(self):
+        self.client.force_authenticate(user=self.superadmin)
+        student = Student.objects.create(first_name='Fresh', last_name='Student', gender='Female', student_status='active')
+
+        response = self.client.get('/api/students/')
+
+        self.assertEqual(response.status_code, 200)
+        student_ids = {item['id'] for item in response.data['results']}
+        self.assertIn(student.id, student_ids)
+
+    def test_archived_student_detail_preserves_lifecycle_rules(self):
+        self.client.force_authenticate(user=self.superadmin)
+        archived_student = Student.objects.create(first_name='Archived', last_name='Detail', gender='Female', student_status='archived')
+
+        default_response = self.client.get(f'/api/students/{archived_student.id}/')
+        archived_response = self.client.get(f'/api/students/{archived_student.id}/', {'status': 'archived'})
+
+        self.assertEqual(default_response.status_code, 404)
+        self.assertEqual(archived_response.status_code, 200)
+        self.assertEqual(archived_response.data['id'], archived_student.id)

@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from 'react'
 import {
   ChartBarIcon,
   CheckCircleIcon,
+  CalendarDaysIcon,
   ExclamationTriangleIcon,
   ShieldExclamationIcon,
   SparklesIcon,
@@ -21,6 +22,7 @@ const placeholderCards = [
   { title: 'High risk', message: 'Loading…', icon: ShieldExclamationIcon },
   { title: 'Moderate risk', message: 'Loading…', icon: ChartBarIcon },
   { title: 'Low risk', message: 'Loading…', icon: CheckCircleIcon },
+  { title: 'Number of School Days', message: 'Loading…', icon: CalendarDaysIcon },
 ]
 
 const riskBadgeClass = (level) => {
@@ -83,11 +85,13 @@ export function Dashboard() {
         { title: 'High risk', message: dashboardData.high_risk_students ?? 'N/A', icon: ShieldExclamationIcon },
         { title: 'Moderate risk', message: dashboardData.moderate_risk_students ?? 'N/A', icon: ChartBarIcon },
         { title: 'Low risk', message: dashboardData.low_risk_students ?? 'N/A', icon: CheckCircleIcon },
+        { title: 'Number of School Days', message: dashboardData.school_days ?? 'N/A', icon: CalendarDaysIcon, supportingLabel: dashboardData.academic_year ? `Current Academic Year: ${dashboardData.academic_year}` : 'Current Academic Year' },
       ]
     : placeholderCards
 
   const riskDistribution = dashboardData?.risk_distribution || {}
   const attentionStudents = dashboardData?.attention_students || []
+  const attendanceSummary = dashboardData?.attendance_summary || {}
   const distributionEntries = Object.entries(riskDistribution)
   const distributionTotal = distributionEntries.reduce((sum, [, count]) => sum + Number(count || 0), 0)
 
@@ -151,6 +155,7 @@ export function Dashboard() {
                 <div>
                   <p className="stat-label">{card.title}</p>
                   <p className="stat-value">{card.message}</p>
+                  {card.supportingLabel ? <p className="support-copy">{card.supportingLabel}</p> : null}
                 </div>
               </article>
             ))}
@@ -245,28 +250,28 @@ export function Dashboard() {
                 <div className="chart-row">
                   <div className="chart-row-labels">
                     <span>Present</span>
-                    <span>{dashboardData?.total_students ?? '0'}</span>
+                    <span>{attendanceSummary.present ?? '0'}</span>
                   </div>
                   <div className="chart-bar-track">
-                    <div className="chart-bar-fill bar-present" style={{ width: '88%' }}></div>
+                    <div className="chart-bar-fill bar-present" style={{ width: `${attendanceSummary.school_days ? Math.min((attendanceSummary.present / attendanceSummary.school_days) * 100, 100) : 0}%` }}></div>
                   </div>
                 </div>
                 <div className="chart-row">
                   <div className="chart-row-labels">
                     <span>Late</span>
-                    <span>4</span>
+                    <span>{attendanceSummary.late ?? '0'}</span>
                   </div>
                   <div className="chart-bar-track">
-                    <div className="chart-bar-fill bar-late" style={{ width: '20%' }}></div>
+                    <div className="chart-bar-fill bar-late" style={{ width: `${attendanceSummary.school_days ? Math.min((attendanceSummary.late / attendanceSummary.school_days) * 100, 100) : 0}%` }}></div>
                   </div>
                 </div>
                 <div className="chart-row">
                   <div className="chart-row-labels">
                     <span>Absent</span>
-                    <span>2</span>
+                    <span>{attendanceSummary.absent ?? '0'}</span>
                   </div>
                   <div className="chart-bar-track">
-                    <div className="chart-bar-fill bar-absent" style={{ width: '12%' }}></div>
+                    <div className="chart-bar-fill bar-absent" style={{ width: `${attendanceSummary.school_days ? Math.min((attendanceSummary.absent / attendanceSummary.school_days) * 100, 100) : 0}%` }}></div>
                   </div>
                 </div>
               </div>

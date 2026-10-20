@@ -6,6 +6,5 @@ export async function getReportCenter(params = {}) {
 }
 
 export async function exportReport(params = {}) {
-  const response = await apiClient.get('/reports/export/', { params })
-  return response.data
+  return apiClient.get('/reports/export/', { params, responseType: 'blob' })
 }

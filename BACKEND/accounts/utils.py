@@ -20,5 +20,7 @@ def get_authorized_student_queryset(user, queryset):
     return _authorized_students_queryset(user, queryset)
 
 
-def get_authorized_enrollment_queryset(user, queryset, enrollment_field='enrollment'):
-    return _authorized_enrollment_queryset(user, queryset, enrollment_field=enrollment_field)
+def get_authorized_enrollment_queryset(user, queryset, enrollment_field='enrollment', lifecycle_status='active'):
+    return _authorized_enrollment_queryset(
+        user, queryset, enrollment_field=enrollment_field, lifecycle_status=lifecycle_status,
+    )

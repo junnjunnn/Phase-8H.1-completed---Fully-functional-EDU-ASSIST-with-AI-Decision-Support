@@ -5,6 +5,11 @@ export async function getAttendanceRecords(params = {}) {
   return response.data
 }
 
+export async function getSchoolDaySummary(params = {}) {
+  const response = await apiClient.get('/attendance-records/school-day-summary/', { params })
+  return response.data
+}
+
 export async function createAttendanceRecord(payload) {
   const response = await apiClient.post('/attendance-records/', payload)
   return response.data
@@ -12,6 +17,11 @@ export async function createAttendanceRecord(payload) {
 
 export async function updateAttendanceRecord(id, payload) {
   const response = await apiClient.patch(`/attendance-records/${id}/`, payload)
+  return response.data
+}
+
+export async function bulkSaveAttendanceRecords(payload) {
+  const response = await apiClient.post('/attendance-records/bulk/', payload)
   return response.data
 }
 

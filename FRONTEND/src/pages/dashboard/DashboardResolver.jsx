@@ -3,6 +3,7 @@ import { useAuth } from '../../context/AuthContext'
 import { getTeacherContext } from '../../services/academicsService'
 import { AdviserDashboard } from './AdviserDashboard'
 import { Dashboard } from './Dashboard'
+import { RegistrarDashboard } from './RegistrarDashboard'
 
 export function DashboardResolver() {
   const { user } = useAuth()
@@ -27,6 +28,7 @@ export function DashboardResolver() {
     return () => { active = false }
   }, [role])
 
+  if (role === 'REGISTRAR') return <RegistrarDashboard />
   if (role !== 'TEACHER') return <Dashboard />
   if (adviser === true) return <AdviserDashboard />
   if (adviser === false) return <Dashboard />

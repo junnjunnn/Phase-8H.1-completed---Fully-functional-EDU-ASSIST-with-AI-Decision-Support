@@ -44,7 +44,7 @@ export function NotificationDrawer({ open, onClose }) {
   const notificationCount = notifications.length
 
   return (
-    <div className={`notification-drawer ${open ? 'notification-drawer--open' : ''}`} role="dialog" aria-modal="true" aria-label="Notifications panel">
+    <div className={`notification-drawer no-print ${open ? 'notification-drawer--open' : ''}`} role="dialog" aria-modal="true" aria-label="Notifications panel">
       <div className="drawer-panel">
         <div className="drawer-header">
           <div>

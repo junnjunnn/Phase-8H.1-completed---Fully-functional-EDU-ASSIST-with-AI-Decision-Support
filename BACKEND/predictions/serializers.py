@@ -1,15 +1,25 @@
 from rest_framework import serializers
 
-from common.authorization import authorized_enrollment_queryset
+from common.authorization import active_enrollment_queryset, authorized_enrollment_queryset
 from academics.models import Enrollment
 from .models import PredictionFactor, RiskPrediction
 
 
 class RiskPredictionSerializer(serializers.ModelSerializer):
+    student_id = serializers.IntegerField(source='enrollment.student_id', read_only=True)
+    student_name = serializers.SerializerMethodField()
+    grade_level_name = serializers.CharField(source='enrollment.grade_level.name', read_only=True)
+    section_name = serializers.CharField(source='enrollment.section.name', read_only=True)
+    academic_year_name = serializers.CharField(source='enrollment.academic_year.name', read_only=True)
+
     class Meta:
         model = RiskPrediction
-        fields = ['id', 'enrollment', 'prediction_type', 'risk_level', 'probability', 'model_name', 'model_version', 'prediction_date', 'explanation', 'review_status', 'reviewed_by', 'reviewed_at']
+        fields = ['id', 'enrollment', 'student_id', 'student_name', 'grade_level_name', 'section_name', 'academic_year_name', 'prediction_type', 'risk_level', 'probability', 'model_name', 'model_version', 'prediction_date', 'explanation', 'review_status', 'reviewed_by', 'reviewed_at']
         read_only_fields = ['prediction_date']
+
+    def get_student_name(self, instance):
+        student = instance.enrollment.student
+        return f'{student.first_name} {student.last_name}'.strip()
 
     def validate_enrollment(self, value):
         """Verify that the user has authorization to access this enrollment."""
@@ -27,6 +37,11 @@ class RiskPredictionSerializer(serializers.ModelSerializer):
         if not authorized_qs.filter(pk=value.pk).exists():
             raise serializers.ValidationError(
                 'You do not have permission to create records for this enrollment.'
+            )
+
+        if not active_enrollment_queryset(Enrollment.objects.filter(pk=value.pk)).exists():
+            raise serializers.ValidationError(
+                'Predictions can only be created for active students with a current academic context.'
             )
         
         return value

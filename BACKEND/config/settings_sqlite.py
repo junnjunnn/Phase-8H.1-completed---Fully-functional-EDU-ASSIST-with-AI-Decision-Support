@@ -1,5 +1,6 @@
 from .settings import *
 
+# Development-only SQLite settings; normal authentication uses config.settings and MariaDB.
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.sqlite3',

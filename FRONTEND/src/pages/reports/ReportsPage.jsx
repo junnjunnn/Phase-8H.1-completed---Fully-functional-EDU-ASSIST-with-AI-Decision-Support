@@ -1,3 +1,4 @@
+import { createPortal } from 'react-dom'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
@@ -8,6 +9,7 @@ import { FilterBar, KpiCard, SearchBar, SectionHeader } from '../../components/d
 import { getApiErrorMessage } from '../../services/api'
 import { exportReport, getReportCenter } from '../../services/reportService'
 import { getTeacherContext } from '../../services/academicsService'
+import { ReportPrintDocument } from '../../components/reports/ReportPrintDocument'
 
 const categories = [
   { key: 'student', label: 'Student Reports', description: 'Master list, profiles, and enrollment visibility.' },
@@ -144,40 +146,19 @@ export function ReportsPage() {
 
   const handleExport = async (format) => {
     try {
-      const result = await exportReport({ ...filters, format })
-      const payload = result?.data || result || {}
-      const responseFormat = String(result?.format || format || 'csv').toLowerCase()
-      const fileName = result?.download_file || `report-export-${responseFormat || 'data'}-${new Date().toISOString().slice(0, 10)}.${responseFormat === 'pdf' ? 'pdf' : responseFormat === 'xlsx' ? 'xlsx' : 'csv'}`
-
-      if (responseFormat === 'pdf') {
-        window.alert(result?.message || 'Use print preview to save as PDF.')
-        window.print()
-        return
-      }
-
-      const downloadData = payload?.data || payload
-      const exportContent = responseFormat === 'csv'
-        ? Object.entries(downloadData || {}).map(([key, value]) => `${key},${String(value ?? '')}`).join('\n')
-        : typeof downloadData === 'string'
-          ? downloadData
-          : JSON.stringify(downloadData, null, 2)
-
-      const contentType = responseFormat === 'csv'
-        ? 'text/csv;charset=utf-8'
-        : responseFormat === 'xlsx'
-          ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;charset=utf-8'
-          : 'application/json;charset=utf-8'
-
-      const blob = new Blob([exportContent], { type: contentType })
+      const response = await exportReport({ ...filters, category: activeCategory, export_format: format })
+      const contentDisposition = response.headers['content-disposition'] || ''
+      const fileNameMatch = contentDisposition.match(/filename="?([^";]+)"?/i)
+      const fileName = fileNameMatch?.[1] || `${activeCategory}_report_${new Date().toISOString().slice(0, 10)}.csv`
       const link = document.createElement('a')
-      const url = URL.createObjectURL(blob)
+      const url = URL.createObjectURL(response.data)
       link.href = url
       link.download = fileName
       document.body.appendChild(link)
       link.click()
       document.body.removeChild(link)
       URL.revokeObjectURL(url)
-      window.alert(result?.message || `Report exported as ${fileName}`)
+      window.alert(`Report exported as ${fileName}`)
     } catch (err) {
       setError(getApiErrorMessage(err))
     }
@@ -191,8 +172,9 @@ export function ReportsPage() {
   const interventionReports = reportData?.intervention_reports || {}
 
   return (
-    <div className="page-stack">
-      <PageHeader
+    <div className="page-stack reports-page">
+      <div className="no-print">
+        <PageHeader
         eyebrow="Reporting workspace"
         title="Reports"
         description="Jump into the right report category, review the key metrics, and export the evidence you need in one step."
@@ -201,12 +183,13 @@ export function ReportsPage() {
             Export CSV
           </button>,
           <button key="print" type="button" className="action-button action-button--outline" onClick={() => window.print()}>
-            Print
+            Print Report
           </button>,
         ]}
-      />
+        />
+      </div>
 
-      <div className="panel-card">
+      <div className="panel-card no-print">
         <p className="eyebrow">Role view</p>
         <p>
           {getRoleLabel(user?.role_name || user?.role || user?.profile?.role_name)} · {visibleCategories.length}{' '}
@@ -214,13 +197,13 @@ export function ReportsPage() {
         </p>
       </div>
 
-      <div className="report-filter-toolbar">
+      <div className="report-filter-toolbar no-print">
         <SearchBar value={filters.search} onChange={(event) => handleChange({ target: { name: 'search', value: event.target.value } })} placeholder="Search student" ariaLabel="Search reports" />
         <button type="button" className="action-button action-button--outline" onClick={() => setFiltersOpen((open) => !open)} aria-expanded={filtersOpen} aria-controls="report-filter-panel">
           {filtersOpen ? 'Hide filters' : 'Show filters'}
         </button>
       </div>
-      {filtersOpen ? <div id="report-filter-panel"><FilterBar title="Report filters">
+      {filtersOpen ? <div id="report-filter-panel" className="no-print"><FilterBar title="Report filters">
         <label>
           Academic Year
           {teacherContext ? <select name="academic_year" value={filters.academic_year} onChange={handleChange}><option value="">All assigned years</option>{[...new Map([...(teacherContext.advisory_classes || []), ...(teacherContext.subject_assignments || [])].map((item) => [item.academic_year, item.academic_year_name])).entries()].map(([id, name]) => <option key={id} value={id}>{name}</option>)}</select> : <input name="academic_year" value={filters.academic_year} onChange={handleChange} placeholder="2024-2025" />}
@@ -274,7 +257,7 @@ export function ReportsPage() {
         </div>
       </FilterBar></div> : null}
 
-      <section className="panel-card" aria-label="Report categories">
+      <section className="panel-card no-print" aria-label="Report categories">
         <div className="chip-list">
           {visibleCategories.map((category) => (
             <button
@@ -290,20 +273,20 @@ export function ReportsPage() {
         <p className="subtle-copy">{visibleCategories.find((category) => category.key === activeCategory)?.description}</p>
       </section>
 
-      {error ? <ErrorBanner message={error} /> : null}
+      {error ? <div className="no-print"><ErrorBanner message={error} /></div> : null}
 
       {loading ? (
-        <div className="table-skeleton-grid">
+        <div className="table-skeleton-grid no-print">
           <div className="table-skeleton-card" />
         </div>
       ) : null}
 
       {!loading && !reportData ? (
-        <EmptyState title="No report data" message="No report data is available for the selected filters." />
+        <div className="no-print"><EmptyState title="No report data" message="No report data is available for the selected filters." /></div>
       ) : null}
 
       {!loading && reportData ? (
-        <div>
+        <div className="no-print">
           <section className="dashboard-summary-grid" aria-label="Report summaries">
             <KpiCard label="Students" value={studentReports.student_count ?? 0} tone="primary" />
             <KpiCard label="Enrollments" value={studentReports.enrollment_count ?? 0} tone="primary" />
@@ -548,6 +531,12 @@ export function ReportsPage() {
             </div>
           </section>
         </div>
+      ) : null}
+      {typeof document !== 'undefined' ? createPortal(
+        <div className="report-print-portal">
+          <ReportPrintDocument reportData={reportData} reportCategory={activeCategory} filters={filters} />
+        </div>,
+        document.body,
       ) : null}
     </div>
   )

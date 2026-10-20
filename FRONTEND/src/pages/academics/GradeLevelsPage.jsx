@@ -16,6 +16,7 @@ export function GradeLevelsPage() {
   const [error, setError] = useState('')
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
+  const [schoolLevelFilter, setSchoolLevelFilter] = useState('all')
   const [page, setPage] = useState(1)
   const [form, setForm] = useState({ id: '', name: '', code: '', school_level: 'Elementary', order: 1, is_active: true })
   const [saving, setSaving] = useState(false)
@@ -29,7 +30,7 @@ export function GradeLevelsPage() {
       setLoading(true)
       setError('')
       try {
-        const data = await getGradeLevels()
+        const data = await getGradeLevels({ status: 'all' })
         if (!active) return
         setGradeLevels(normalizeListResponse(data).items)
       } catch (err) {
@@ -49,9 +50,10 @@ export function GradeLevelsPage() {
     return gradeLevels.filter((grade) => {
       const matchesSearch = !term || grade.name.toLowerCase().includes(term) || grade.code.toLowerCase().includes(term)
       const matchesStatus = statusFilter === 'all' || String(grade.is_active) === statusFilter
-      return matchesSearch && matchesStatus
+      const matchesSchoolLevel = schoolLevelFilter === 'all' || grade.school_level === schoolLevelFilter
+      return matchesSearch && matchesStatus && matchesSchoolLevel
     })
-  }, [gradeLevels, search, statusFilter])
+  }, [gradeLevels, search, statusFilter, schoolLevelFilter])
 
   const pagedGradeLevels = useMemo(() => {
     const start = (page - 1) * pageSize
@@ -70,7 +72,7 @@ export function GradeLevelsPage() {
       } else {
         await createGradeLevel(form)
       }
-      const refreshed = await getGradeLevels()
+      const refreshed = await getGradeLevels({ status: 'all' })
       setGradeLevels(normalizeListResponse(refreshed).items)
       setForm({ id: '', name: '', code: '', school_level: 'Elementary', order: 1, is_active: true })
     } catch (err) {
@@ -171,6 +173,12 @@ export function GradeLevelsPage() {
               <option value="all">All statuses</option>
               <option value="true">Active</option>
               <option value="false">Archived</option>
+            </select>
+            <select value={schoolLevelFilter} onChange={(event) => { setSchoolLevelFilter(event.target.value); setPage(1) }} aria-label="School level filter">
+              <option value="all">All</option>
+              <option value="Elementary">Elementary</option>
+              <option value="Junior High School">Junior High School</option>
+              <option value="Senior High School">Senior High School</option>
             </select>
           </div>
         </div>

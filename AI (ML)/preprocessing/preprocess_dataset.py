@@ -162,6 +162,8 @@ def encode_features(cleaned: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
     y = cleaned['risk_label']
 
     categorical_columns = ['school_year', 'grade_level', 'section', 'behavior_core_value', 'behavior_indicator', 'behavior_teacher_rating', 'intervention_type', 'intervention_outcome']
+    dynamic_categorical_columns = contract.get('dynamic_categorical_columns', [])
+    fixed_categorical_columns = contract.get('fixed_categorical_columns', [])
     encoder = OneHotEncoder(
         categories=[contract['categorical_values'][column] for column in categorical_columns],
         handle_unknown='ignore',
@@ -178,7 +180,10 @@ def encode_features(cleaned: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
         'numeric_columns': list(X_numeric.columns),
         'encoder_categories': [list(cat) for cat in encoder.categories_],
         'subject_feature_map': contract['subject_feature_map'],
-        'unknown_category_policy': contract['unknown_category_policy'],
+        'dynamic_categorical_columns': dynamic_categorical_columns,
+        'fixed_categorical_columns': fixed_categorical_columns,
+        'unknown_category_policy': contract.get('unknown_category_policy', 'one_hot_ignore'),
+        'encoding_strategy': "OneHotEncoder(handle_unknown='ignore', sparse_output=False)",
         'encoded_feature_count': int(X_final.shape[1]),
     }
 

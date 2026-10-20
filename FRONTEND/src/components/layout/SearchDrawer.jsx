@@ -59,7 +59,7 @@ export function SearchDrawer({ open, onClose }) {
   const totalCount = studentCount + predictionCount + userCount
 
   return (
-    <div className={`search-drawer ${open ? 'search-drawer--open' : ''}`} role="dialog" aria-modal="true" aria-label="Global search panel">
+    <div className={`search-drawer no-print ${open ? 'search-drawer--open' : ''}`} role="dialog" aria-modal="true" aria-label="Global search panel">
       <div className="drawer-panel search-panel">
         <div className="drawer-header">
           <div>

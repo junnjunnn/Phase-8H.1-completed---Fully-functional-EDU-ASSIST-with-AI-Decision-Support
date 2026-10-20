@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { EmptyState } from '../../components/common/EmptyState'
 import { ErrorBanner } from '../../components/feedback/ErrorBanner'
@@ -8,9 +8,9 @@ import { useRoleAwareAutoLoad } from '../../hooks/useRoleAwareAutoLoad'
 import { useAuth } from '../../context/AuthContext'
 import { getApiErrorMessage } from '../../services/api'
 import {
-  createAttendanceRecord,
+  bulkSaveAttendanceRecords,
   getAttendanceRecords,
-  updateAttendanceRecord,
+  getSchoolDaySummary,
 } from '../../services/attendanceService'
 import { getAcademicYears, getEnrollments, getGradeLevels, getSections, getTeacherContext } from '../../services/academicsService'
 import { getStudentById } from '../../services/studentService'
@@ -52,8 +52,71 @@ export function AttendanceEncodingPage() {
   const [rows, setRows] = useState([])
   const [loading, setLoading] = useState(true)
   const [loadingClass, setLoadingClass] = useState(false)
+  const [savingAttendance, setSavingAttendance] = useState(false)
   const [error, setError] = useState('')
   const [successMessage, setSuccessMessage] = useState('')
+  const [schoolDayMessage, setSchoolDayMessage] = useState('')
+  const loadSequenceRef = useRef(0)
+
+  const selectedAcademicYear = useMemo(() => {
+    return academicYears.find((year) => String(year.id) === String(filters.academicYear)) || null
+  }, [academicYears, filters.academicYear])
+
+  function formatDateInput(date) {
+    const year = date.getFullYear()
+    const month = String(date.getMonth() + 1).padStart(2, '0')
+    const day = String(date.getDate()).padStart(2, '0')
+    return `${year}-${month}-${day}`
+  }
+
+  function shiftAttendanceDateByDays(dateValue, days) {
+    if (!dateValue) {
+      return ''
+    }
+
+    const parsedDate = new Date(`${dateValue}T00:00:00`)
+    parsedDate.setDate(parsedDate.getDate() + days)
+    return formatDateInput(parsedDate)
+  }
+
+  function navigateAttendanceDate(days) {
+    if (!filters.attendanceDate) {
+      return
+    }
+
+    const nextDate = shiftAttendanceDateByDays(filters.attendanceDate, days)
+    const nextFilters = {
+      ...filters,
+      attendanceDate: nextDate,
+    }
+
+    setFilters(nextFilters)
+    loadClassData(nextFilters)
+  }
+
+  function updateAttendanceDate(newDate) {
+    if (!newDate) {
+      return
+    }
+
+    if (selectedAcademicYear && (newDate < selectedAcademicYear.start_date || newDate > selectedAcademicYear.end_date)) {
+      setError(`The selected date must fall within the academic year ${selectedAcademicYear.name}.`)
+      return
+    }
+
+    const nextFilters = {
+      ...filters,
+      attendanceDate: newDate,
+    }
+
+    setFilters(nextFilters)
+    loadClassData(nextFilters)
+  }
+
+  const previousDayDate = shiftAttendanceDateByDays(filters.attendanceDate, -1)
+  const nextDayDate = shiftAttendanceDateByDays(filters.attendanceDate, 1)
+  const canNavigatePrevious = !selectedAcademicYear || !filters.attendanceDate || previousDayDate >= selectedAcademicYear.start_date
+  const canNavigateNext = !selectedAcademicYear || !filters.attendanceDate || nextDayDate <= selectedAcademicYear.end_date
 
   useEffect(() => {
     let active = true
@@ -64,13 +127,11 @@ export function AttendanceEncodingPage() {
 
       try {
         const context = role === 'TEACHER' ? await getTeacherContext() : null
-        const [yearsData, levelsData, sectionsData] = context
-          ? [
-            [...new Map((context.subject_assignments || []).map((item) => [item.academic_year, { id: item.academic_year, name: item.academic_year_name }])).values()],
-            [...new Map((context.subject_assignments || []).map((item) => [item.grade_level, { id: item.grade_level, name: item.grade_level_name }])).values()],
-            [...new Map((context.subject_assignments || []).map((item) => [item.section, { id: item.section, name: item.section_name, academic_year: item.academic_year, grade_level: item.grade_level }])).values()],
-          ]
-          : await Promise.all([getAcademicYears(), getGradeLevels(), getSections()])
+        const [yearsData, levelsData, sectionsData] = await Promise.all([
+          getAcademicYears(),
+          getGradeLevels(),
+          getSections(),
+        ])
 
         if (!active) {
           return
@@ -78,7 +139,14 @@ export function AttendanceEncodingPage() {
 
         if (context) setTeacherContext(context)
 
-        setAcademicYears(normalizeListResponse(yearsData).items)
+        const yearItems = normalizeListResponse(yearsData).items.filter((year) => year.is_active === true)
+        setAcademicYears(yearItems)
+        setFilters((currentFilters) => {
+          if (!currentFilters.academicYear || yearItems.some((year) => String(year.id) === String(currentFilters.academicYear))) {
+            return currentFilters
+          }
+          return { ...currentFilters, academicYear: '', gradeLevel: '', section: '' }
+        })
         setGradeLevels(normalizeListResponse(levelsData).items)
         setSections(normalizeListResponse(sectionsData).items)
       } catch (err) {
@@ -183,13 +251,29 @@ export function AttendanceEncodingPage() {
       return
     }
 
+    const requestId = loadSequenceRef.current + 1
+    loadSequenceRef.current = requestId
+
     setLoadingClass(true)
     setError('')
     setSuccessMessage('')
 
     try {
-      const enrollmentsData = await getEnrollments({ academic_year: nextFilters.academicYear, grade_level: nextFilters.gradeLevel, section: nextFilters.section, enrollment_status: 'active' })
-      const attendanceData = await getAttendanceRecords({ month: nextFilters.attendanceDate, enrollment__student: undefined })
+      const [enrollmentsData, attendanceData, schoolDaySummary] = await Promise.all([
+        getEnrollments({ active_only: 'true', academic_year: nextFilters.academicYear, grade_level: nextFilters.gradeLevel, section: nextFilters.section, enrollment_status: 'active' }),
+        getAttendanceRecords({ month: nextFilters.attendanceDate, enrollment__student: undefined }),
+        getSchoolDaySummary({ academic_year_id: nextFilters.academicYear, reporting_date: nextFilters.attendanceDate, today: nextFilters.attendanceDate }),
+      ])
+
+      if (requestId !== loadSequenceRef.current) {
+        return
+      }
+
+      if (schoolDaySummary?.calendar_available) {
+        setSchoolDayMessage(`School-day view: ${schoolDaySummary.school_days} expected school day(s) for ${schoolDaySummary.reporting_date}.`)
+      } else {
+        setSchoolDayMessage('No school-calendar days available for the selected academic year and date.')
+      }
 
       const enrollments = normalizeListResponse(enrollmentsData).items
       const existingRecords = normalizeListResponse(attendanceData).items
@@ -201,6 +285,10 @@ export function AttendanceEncodingPage() {
       }, {})
 
       const studentProfiles = await Promise.all(enrollments.map((enrollment) => getStudentById(enrollment.student)))
+      if (requestId !== loadSequenceRef.current) {
+        return
+      }
+
       const studentMap = studentProfiles.reduce((accumulator, student) => {
         if (student && student.id) accumulator[student.id] = student
         return accumulator
@@ -222,12 +310,21 @@ export function AttendanceEncodingPage() {
         }
       })
 
+      if (requestId !== loadSequenceRef.current) {
+        return
+      }
+
       setRows(classRows)
     } catch (err) {
+      if (requestId !== loadSequenceRef.current) {
+        return
+      }
       setError(getApiErrorMessage(err))
       setRows([])
     } finally {
-      setLoadingClass(false)
+      if (requestId === loadSequenceRef.current) {
+        setLoadingClass(false)
+      }
     }
   }
 
@@ -246,31 +343,39 @@ export function AttendanceEncodingPage() {
       setError('You do not have permission to encode attendance for this class.')
       return
     }
+    if (savingAttendance || !rows.length) {
+      return
+    }
 
     setError('')
     setSuccessMessage('')
+    setSavingAttendance(true)
 
     try {
-      for (const row of rows) {
-        const payload = {
-          enrollment: row.enrollmentId,
-          month: filters.attendanceDate,
-          school_days: 1,
-          days_present: row.status === 'present' ? 1 : 0,
-          absences: row.status === 'absent' ? 1 : 0,
-          times_tardy: row.status === 'late' ? 1 : 0,
-        }
+      const payload = rows.map((row) => ({
+        ...(row.recordId ? { id: row.recordId } : {}),
+        enrollment: row.enrollmentId,
+        month: filters.attendanceDate,
+        school_days: 1,
+        days_present: row.status === 'present' ? 1 : 0,
+        absences: row.status === 'absent' ? 1 : 0,
+        times_tardy: row.status === 'late' ? 1 : 0,
+      }))
+      const response = await bulkSaveAttendanceRecords(payload)
+      const savedByEnrollment = new Map(response.results.map((record) => [
+        String(record.enrollment),
+        record,
+      ]))
 
-        if (row.recordId) {
-          await updateAttendanceRecord(row.recordId, payload)
-        } else {
-          await createAttendanceRecord(payload)
-        }
-      }
-
-      setSuccessMessage('Attendance saved successfully.')
+      setRows((currentRows) => currentRows.map((row) => {
+        const saved = savedByEnrollment.get(String(row.enrollmentId))
+        return saved ? { ...row, recordId: saved.id, remarks: 'Saved' } : row
+      }))
+      setSuccessMessage(`Attendance saved successfully for ${response.count} student${response.count === 1 ? '' : 's'}.`)
     } catch (err) {
       setError(getApiErrorMessage(err))
+    } finally {
+      setSavingAttendance(false)
     }
   }
 
@@ -337,10 +442,30 @@ export function AttendanceEncodingPage() {
                 </select>
               </label>
             ) : null}
-            <label>
-              <span>Date</span>
-              <input type="date" value={filters.attendanceDate} onChange={(event) => setFilters({ ...filters, attendanceDate: event.target.value })} />
-            </label>
+            <div className="date-navigation-group">
+              <button
+                type="button"
+                className="action-button action-button--secondary"
+                aria-label="Previous Day"
+                disabled={!canNavigatePrevious}
+                onClick={() => navigateAttendanceDate(-1)}
+              >
+                ← Previous Day
+              </button>
+              <label className="date-selector-label">
+                <span>Date</span>
+                <input type="date" value={filters.attendanceDate} onChange={(event) => updateAttendanceDate(event.target.value)} />
+              </label>
+              <button
+                type="button"
+                className="action-button action-button--secondary"
+                aria-label="Next Day"
+                disabled={!canNavigateNext}
+                onClick={() => navigateAttendanceDate(1)}
+              >
+                Next Day →
+              </button>
+            </div>
           </div>
 
           <div className="grade-encoding-actions">
@@ -357,6 +482,7 @@ export function AttendanceEncodingPage() {
           </div>
         </div>
 
+        {schoolDayMessage ? <div className="status-banner status-banner--info">{schoolDayMessage}</div> : null}
         {error ? <ErrorBanner message={error} /> : null}
         {successMessage ? <div className="status-banner status-banner--success">{successMessage}</div> : null}
 
@@ -396,7 +522,9 @@ export function AttendanceEncodingPage() {
 
         {rows.length > 0 ? (
           <div className="grade-encoding-actions">
-            <button type="button" className="action-button" onClick={handleSave}>Save attendance</button>
+            <button type="button" className="action-button" onClick={handleSave} disabled={savingAttendance}>
+              {savingAttendance ? 'Saving attendance...' : 'Save attendance'}
+            </button>
           </div>
         ) : null}
       </section>

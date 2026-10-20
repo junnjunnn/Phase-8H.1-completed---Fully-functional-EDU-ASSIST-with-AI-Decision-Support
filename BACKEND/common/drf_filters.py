@@ -1,6 +1,6 @@
 from rest_framework.filters import BaseFilterBackend
 
-from .authorization import authorized_enrollment_queryset, authorized_students_queryset
+from .authorization import authorized_enrollment_queryset, authorized_students_queryset, requested_lifecycle_status
 
 
 class RoleScopedFilterBackend(BaseFilterBackend):
@@ -19,7 +19,8 @@ class RoleScopedFilterBackend(BaseFilterBackend):
             return authorized_students_queryset(request.user, queryset)
 
         if scope_field:
-            return authorized_enrollment_queryset(request.user, queryset, enrollment_field=scope_field)
+            status = requested_lifecycle_status(request)
+            return authorized_enrollment_queryset(request.user, queryset, enrollment_field=scope_field, lifecycle_status=status)
 
         return queryset
 
@@ -38,4 +39,5 @@ class RoleScopedViewsetMixin:
         qs = super().get_queryset()
         if not self.scope_field:
             return qs
-        return authorized_enrollment_queryset(self.request.user, qs, enrollment_field=self.scope_field)
+        status = requested_lifecycle_status(self.request)
+        return authorized_enrollment_queryset(self.request.user, qs, enrollment_field=self.scope_field, lifecycle_status=status)

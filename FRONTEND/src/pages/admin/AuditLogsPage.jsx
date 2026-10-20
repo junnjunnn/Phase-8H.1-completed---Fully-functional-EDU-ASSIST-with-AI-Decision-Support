@@ -85,21 +85,32 @@ export function AuditLogsPage() {
                   <th scope="col">User</th>
                   <th scope="col">Action</th>
                   <th scope="col">Module</th>
-                  <th scope="col">Object</th>
+                  <th scope="col">Affected Event</th>
+                  <th scope="col">Status</th>
+                  <th scope="col">Reason / Notes</th>
+                  <th scope="col">Changes</th>
                   <th scope="col">IP address</th>
                 </tr>
               </thead>
               <tbody>
-                {logs.map((log) => (
-                  <tr key={log.id}>
-                    <td>{new Date(log.timestamp).toLocaleString()}</td>
-                    <td>{log.user_username || 'System'}</td>
-                    <td>{log.action}</td>
-                    <td>{log.module}</td>
-                    <td>{log.object_type ? `${log.object_type}${log.object_id ? ` (${log.object_id})` : ''}` : log.object_id || '—'}</td>
-                    <td>{log.ip_address || '—'}</td>
-                  </tr>
-                ))}
+                {logs.map((log) => {
+                  const statusTransition = log.previous_status || log.new_status ? `${log.previous_status || '—'} → ${log.new_status || '—'}` : '—'
+                  const changedFields = Array.isArray(log.details?.changed_fields) ? log.details.changed_fields.join(', ') : log.details?.summary || '—'
+                  const objectLabel = log.object_name || (log.object_type ? `${log.object_type}${log.object_id ? ` (${log.object_id})` : ''}` : log.object_id || '—')
+                  return (
+                    <tr key={log.id}>
+                      <td>{new Date(log.timestamp).toLocaleString()}</td>
+                      <td>{log.user_username || 'System'}</td>
+                      <td>{log.action}</td>
+                      <td>{log.module}</td>
+                      <td>{objectLabel}</td>
+                      <td>{statusTransition}</td>
+                      <td>{log.reason || '—'}</td>
+                      <td>{changedFields}</td>
+                      <td>{log.ip_address || '—'}</td>
+                    </tr>
+                  )
+                })}
               </tbody>
             </table>
           </div>

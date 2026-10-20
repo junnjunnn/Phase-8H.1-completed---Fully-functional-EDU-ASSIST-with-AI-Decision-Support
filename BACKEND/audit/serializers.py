@@ -8,7 +8,11 @@ class AuditLogSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = AuditLog
-        fields = ['id', 'user', 'user_username', 'action', 'module', 'object_type', 'object_id', 'timestamp', 'ip_address']
+        fields = [
+            'id', 'user', 'user_username', 'action', 'module', 'object_type', 'object_id',
+            'object_name', 'object_date', 'previous_status', 'new_status', 'reason',
+            'details', 'timestamp', 'ip_address'
+        ]
         read_only_fields = ['id', 'user', 'user_username', 'timestamp']
 
     def get_user_username(self, obj):

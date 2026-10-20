@@ -85,7 +85,7 @@ export function EnrollmentPage() {
         setSections(sectionList)
         setStrands(strandList)
 
-        const activeYear = yearList.find((year) => year.is_active) || yearList[0]
+        const activeYear = yearList.find((year) => year.is_active)
         if (activeYear) {
           setSelectedYearId(String(activeYear.id))
         }
@@ -102,6 +102,12 @@ export function EnrollmentPage() {
   }, [])
 
   const activeYears = useMemo(() => academicYears.filter((year) => year.is_active), [academicYears])
+
+  useEffect(() => {
+    if (selectedYearId && !activeYears.some((year) => String(year.id) === String(selectedYearId))) {
+      setSelectedYearId(activeYears[0] ? String(activeYears[0].id) : '')
+    }
+  }, [activeYears, selectedYearId])
 
   const selectedYear = useMemo(
     () => academicYears.find((year) => String(year.id) === String(selectedYearId)) || null,

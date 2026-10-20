@@ -149,7 +149,7 @@ export function BehaviorEncodingPage() {
     setSuccessMessage('')
     try {
       const [enrollmentsData, assessmentsData] = await Promise.all([
-        getEnrollments({ academic_year: nextFilters.academicYear, grade_level: nextFilters.gradeLevel, section: nextFilters.section, enrollment_status: 'active' }),
+        getEnrollments({ active_only: 'true', academic_year: nextFilters.academicYear, grade_level: nextFilters.gradeLevel, section: nextFilters.section, enrollment_status: 'active' }),
         getBehavioralAssessments({
           academic_year: nextFilters.academicYear,
           grading_period_type: nextFilters.gradingPeriod,

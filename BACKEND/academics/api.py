@@ -12,10 +12,10 @@ from django.contrib.auth import get_user_model
 from audit.models import AuditLog
 from accounts.permissions import IsAuthorizedStaff, IsAcademicReferenceAccessAllowed, IsEnrollmentAccessAllowed, IsRegistrarOrSchoolAdmin, IsSchoolAdmin, IsTeacherOrSchoolAdmin
 from accounts.utils import get_authorized_enrollment_queryset, get_user_scope
-from common.authorization import teacher_assignment_queryset, teacher_section_queryset
-from .models import AcademicRecord, AcademicYear, Enrollment, GradeLevel, Section, Strand, Subject, TeacherAssignment
+from common.authorization import active_enrollment_queryset, archived_enrollment_queryset, filter_lifecycle_queryset, requested_lifecycle_status, teacher_assignment_queryset, teacher_section_queryset
+from .models import AcademicRecord, AcademicYear, Enrollment, GradeLevel, Section, Specialization, Strand, Subject, TeacherAssignment
 from .academic_divisions import ACADEMIC_DIVISIONS, grade_levels_for_division
-from .serializers import AcademicRecordSerializer, AcademicYearSerializer, EnrollmentSerializer, GradeLevelSerializer, SectionSerializer, StrandSerializer, SubjectSerializer, TeacherAssignmentSerializer
+from .serializers import AcademicRecordSerializer, AcademicYearSerializer, EnrollmentSerializer, GradeLevelSerializer, SectionSerializer, SpecializationSerializer, StrandSerializer, SubjectSerializer, TeacherAssignmentSerializer
 
 
 class AcademicYearViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins.CreateModelMixin, mixins.UpdateModelMixin, viewsets.GenericViewSet):
@@ -27,6 +27,13 @@ class AcademicYearViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixi
         if self.request.method in ['POST', 'PUT', 'PATCH']:
             return [permissions.IsAuthenticated(), IsSchoolAdmin()]
         return [permissions.IsAuthenticated(), IsAcademicReferenceAccessAllowed()]
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        if self.request.method in ['PUT', 'PATCH']:
+            return queryset
+        status = requested_lifecycle_status(self.request, self.request.query_params.get('include_archived') == 'true')
+        return filter_lifecycle_queryset(queryset, status, lambda qs: qs.filter(is_active=True), lambda qs: qs.filter(is_active=False))
 
     def perform_create(self, serializer):
         instance = serializer.save()
@@ -61,8 +68,27 @@ class GradeLevelViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins
 
     def get_queryset(self):
         queryset = super().get_queryset()
-        if self.request.query_params.get('active_only') == 'true':
-            queryset = queryset.filter(is_active=True)
+        include_archived = self.request.query_params.get('include_archived') == 'true'
+        status = requested_lifecycle_status(self.request, include_archived)
+        if self.request.query_params.get('active_only') == 'true' and 'status' not in self.request.query_params:
+            status = 'active'
+        queryset = filter_lifecycle_queryset(queryset, status, lambda qs: qs.filter(is_active=True), lambda qs: qs.filter(is_active=False))
+
+        school_level = self.request.query_params.get('school_level')
+        if school_level:
+            normalized = str(school_level).strip().lower()
+            school_level_map = {
+                'all': None,
+                'elementary': 'Elementary',
+                'junior high school': 'Junior High School',
+                'jhs': 'Junior High School',
+                'senior high school': 'Senior High School',
+                'shs': 'Senior High School',
+            }
+            canonical = school_level_map.get(normalized)
+            if canonical:
+                queryset = queryset.filter(school_level=canonical)
+
         return queryset
 
     def perform_create(self, serializer):
@@ -87,7 +113,7 @@ class GradeLevelViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins
 
 
 class SectionViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins.CreateModelMixin, mixins.UpdateModelMixin, viewsets.GenericViewSet):
-    queryset = Section.objects.select_related('grade_level', 'academic_year', 'adviser', 'strand').all()
+    queryset = Section.objects.select_related('grade_level', 'academic_year', 'adviser', 'strand', 'specialization').all()
     serializer_class = SectionSerializer
     permission_classes = [permissions.IsAuthenticated, IsAcademicReferenceAccessAllowed]
 
@@ -98,12 +124,39 @@ class SectionViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins.Cr
 
     def get_queryset(self):
         queryset = super().get_queryset()
-        if self.request.query_params.get('active_only') == 'true':
-            queryset = queryset.filter(is_active=True, grade_level__is_active=True, academic_year__is_active=True)
+        include_archived = self.request.query_params.get('include_archived') == 'true'
+        status = requested_lifecycle_status(self.request, include_archived)
+        if self.request.query_params.get('active_only') == 'true' and 'status' not in self.request.query_params:
+            status = 'active'
+        if self.action not in {'retrieve', 'update', 'partial_update'}:
+            queryset = filter_lifecycle_queryset(
+                queryset,
+                status,
+                lambda qs: qs.filter(is_active=True, grade_level__is_active=True, academic_year__is_active=True),
+                lambda qs: qs.filter(Q(is_active=False) | Q(grade_level__is_active=False) | Q(academic_year__is_active=False)),
+            )
+
+        grade_level = self.request.query_params.get('grade_level')
+        if grade_level:
+            queryset = queryset.filter(grade_level_id=grade_level)
+
+        academic_year = self.request.query_params.get('academic_year')
+        if academic_year:
+            queryset = queryset.filter(academic_year_id=academic_year)
+
+        strand = self.request.query_params.get('strand')
+        if strand:
+            queryset = queryset.filter(strand_id=strand)
+
+        specialization = self.request.query_params.get('specialization')
+        if specialization:
+            queryset = queryset.filter(specialization_id=specialization)
+
         if get_user_scope(self.request.user) == 'teacher':
             assigned_sections = self.request.user.profile.assigned_sections.values_list('pk', flat=True)
             return queryset.filter(pk__in=assigned_sections).distinct()
         return queryset
+
 
     def _sync_teacher_assignment(self, section, adviser):
         previous_adviser_id = None
@@ -149,6 +202,19 @@ class SectionViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins.Cr
         )
 
 
+class SpecializationViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.GenericViewSet):
+    queryset = Specialization.objects.select_related('strand').all()
+    serializer_class = SpecializationSerializer
+    permission_classes = [permissions.IsAuthenticated, IsAcademicReferenceAccessAllowed]
+
+    def get_queryset(self):
+        queryset = super().get_queryset().filter(is_active=True, strand__is_active=True)
+        strand = self.request.query_params.get('strand')
+        if strand:
+            queryset = queryset.filter(strand_id=strand)
+        return queryset
+
+
 class StrandViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins.CreateModelMixin, mixins.UpdateModelMixin, viewsets.GenericViewSet):
     queryset = Strand.objects.all()
     serializer_class = StrandSerializer
@@ -172,8 +238,11 @@ class SubjectViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins.Cr
 
     def get_queryset(self):
         queryset = super().get_queryset()
-        if self.request.query_params.get('active_only') == 'true':
-            queryset = queryset.filter(is_active=True)
+        include_archived = self.request.query_params.get('include_archived') == 'true'
+        status = requested_lifecycle_status(self.request, include_archived)
+        if self.request.query_params.get('active_only') == 'true' and 'status' not in self.request.query_params:
+            status = 'active'
+        queryset = filter_lifecycle_queryset(queryset, status, lambda qs: qs.filter(is_active=True), lambda qs: qs.filter(is_active=False))
         grade_level = self.request.query_params.get('grade_level')
         if grade_level:
             queryset = queryset.filter(Q(grade_levels__id=grade_level) | Q(grade_level_id=grade_level)).distinct()
@@ -323,7 +392,18 @@ class EnrollmentViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins
         return [permissions.IsAuthenticated(), IsEnrollmentAccessAllowed()]
 
     def get_queryset(self):
-        return get_authorized_enrollment_queryset(self.request.user, super().get_queryset())
+        queryset = super().get_queryset()
+        include_archived = self.request.query_params.get('include_archived') == 'true'
+        status = requested_lifecycle_status(self.request, include_archived)
+        if status == 'active':
+            queryset = active_enrollment_queryset(queryset)
+        elif status == 'archived':
+            queryset = archived_enrollment_queryset(queryset)
+        elif self.request.query_params.get('enrollment_status'):
+            queryset = queryset.filter(enrollment_status=self.request.query_params['enrollment_status'])
+        return get_authorized_enrollment_queryset(
+            self.request.user, queryset, lifecycle_status=status,
+        )
 
     def create(self, request, *args, **kwargs):
         students = request.data.get('students')
@@ -400,15 +480,30 @@ class AcademicRecordViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mi
         ).exists()
 
     def get_queryset(self):
-        qs = get_authorized_enrollment_queryset(self.request.user, super().get_queryset(), enrollment_field='enrollment')
+        status = requested_lifecycle_status(self.request, self.request.query_params.get('include_archived') == 'true')
+        qs = get_authorized_enrollment_queryset(
+            self.request.user,
+            super().get_queryset(),
+            enrollment_field='enrollment',
+            lifecycle_status=status,
+        )
+        if status == 'active':
+            qs = qs.filter(enrollment__in=active_enrollment_queryset(Enrollment.objects.all()))
+        elif status == 'archived':
+            qs = qs.filter(enrollment__in=archived_enrollment_queryset(Enrollment.objects.all()))
         scope = get_user_scope(self.request.user)
         if scope == 'teacher':
+            assignment_queryset = teacher_assignment_queryset(self.request.user, active_only=False)
+            if status == 'active':
+                assignment_queryset = assignment_queryset.filter(is_active=True)
+            elif status == 'archived':
+                assignment_queryset = assignment_queryset.filter(is_active=False)
             # Check if teacher is a section adviser
-            adviser_assignments = teacher_assignment_queryset(self.request.user).filter(assignment_type='ADVISER')
+            adviser_assignments = assignment_queryset.filter(assignment_type='ADVISER')
             has_adviser_role = adviser_assignments.exists()
             
             # Get the teacher's subject assignments
-            active_subject_assignments = teacher_assignment_queryset(self.request.user).filter(assignment_type='SUBJECT')
+            active_subject_assignments = assignment_queryset.filter(assignment_type='SUBJECT')
             has_subject_assignments = active_subject_assignments.exists()
             
             # Build the filter based on adviser and subject roles

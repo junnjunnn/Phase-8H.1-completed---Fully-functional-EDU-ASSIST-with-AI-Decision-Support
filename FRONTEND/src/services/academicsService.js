@@ -20,6 +20,11 @@ export async function getStrands(params = {}) {
   return response.data
 }
 
+export async function getSpecializations(params = {}) {
+  const response = await apiClient.get('/specializations/', { params })
+  return response.data
+}
+
 export async function getSubjects(params = {}) {
   const response = await apiClient.get('/subjects/', { params })
   return response.data

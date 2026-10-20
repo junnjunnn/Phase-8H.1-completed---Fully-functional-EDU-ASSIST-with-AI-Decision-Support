@@ -13,6 +13,7 @@ from academics.api import (
     AcademicYearViewSet,
     GradeLevelViewSet,
     SectionViewSet,
+    SpecializationViewSet,
     StrandViewSet,
     SubjectViewSet,
     TeacherAssignmentViewSet,
@@ -20,7 +21,7 @@ from academics.api import (
     AcademicRecordViewSet,
 )
 from attendance.api import AttendanceRecordViewSet, RecurringSchoolCalendarEventViewSet, SchoolCalendarDayViewSet
-from predictions.api import AdviserDashboardViewSet, DashboardViewSet
+from predictions.api import AdviserDashboardViewSet, DashboardViewSet, RegistrarDashboardViewSet
 from reports.api import ReportsViewSet
 from audit.api import AuditLogViewSet
 from notifications.api import NotificationViewSet
@@ -40,6 +41,7 @@ router.register('academic-years', AcademicYearViewSet, basename='academic-year')
 router.register('grade-levels', GradeLevelViewSet, basename='grade-level')
 router.register('sections', SectionViewSet, basename='section')
 router.register('strands', StrandViewSet, basename='strand')
+router.register('specializations', SpecializationViewSet, basename='specialization')
 router.register('subjects', SubjectViewSet, basename='subject')
 router.register('teacher-assignments', TeacherAssignmentViewSet, basename='teacher-assignment')
 router.register('enrollments', EnrollmentViewSet, basename='enrollment')
@@ -56,6 +58,7 @@ router.register('risk-predictions', RiskPredictionViewSet, basename='risk-predic
 router.register('prediction-factors', PredictionFactorViewSet, basename='prediction-factor')
 router.register('dashboard-summary', DashboardViewSet, basename='dashboard-summary')
 router.register('adviser-dashboard', AdviserDashboardViewSet, basename='adviser-dashboard')
+router.register('registrar-dashboard', RegistrarDashboardViewSet, basename='registrar-dashboard')
 router.register('reports', ReportsViewSet, basename='report')
 router.register('audit-logs', AuditLogViewSet, basename='audit-log')
 router.register('notifications', NotificationViewSet, basename='notification')

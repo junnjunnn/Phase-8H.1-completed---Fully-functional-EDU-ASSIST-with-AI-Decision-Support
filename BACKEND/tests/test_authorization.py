@@ -67,3 +67,19 @@ class AuthorizationTests(TestCase):
         # teacher assigned to section_a should see student1's enrollment
         self.assertEqual(qs.filter(student=self.student1).count(), 1)
         self.assertEqual(qs.filter(student=self.student2).count(), 0)
+
+    def test_authorized_students_queryset_respects_active_lifecycle_chain_for_teacher_section_access(self):
+        self.section_a.is_active = False
+        self.section_a.save(update_fields=['is_active'])
+
+        archived_student = Student.objects.create(lrn='S003', first_name='Archive', last_name='Student')
+        Enrollment.objects.create(
+            student=archived_student,
+            academic_year=self.year,
+            grade_level=self.grade,
+            section=self.section_a,
+            enrollment_status='active',
+        )
+
+        qs = authorized_students_queryset(self.teacher, Student.objects.all())
+        self.assertNotIn(archived_student, list(qs))

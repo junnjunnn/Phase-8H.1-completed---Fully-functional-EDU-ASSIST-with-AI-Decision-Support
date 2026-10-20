@@ -4,7 +4,7 @@ from rest_framework.test import APIClient
 
 from academics.models import AcademicYear, AcademicRecord, GradeLevel, Section, TeacherAssignment, Enrollment, Subject
 from accounts.models import UserProfile
-from attendance.models import AttendanceRecord
+from attendance.models import AttendanceRecord, SchoolCalendarDay
 from behavior.models import BehavioralAssessment, BehaviorIndicator, BehavioralRating, CoreValue
 from common.authorization import get_adviser_sections, get_adviser_students
 from interventions.models import Intervention
@@ -301,6 +301,69 @@ class AdviserStudentAuthorizationTests(TestCase):
         self.assertEqual(profile_response.status_code, 200)
         profile_records = profile_response.data.get('results', profile_response.data)
         self.assertEqual(profile_records[0]['final_grade'], '72.00')
+
+    def test_adviser_dashboard_prefers_calendar_school_days(self):
+        enrollment = self.student_a.enrollments.get()
+        AttendanceRecord.objects.create(
+            enrollment=enrollment,
+            month='June',
+            school_days=20,
+            days_present=18,
+            absences=2,
+            times_tardy=1,
+        )
+        for day in range(1, 21):
+            SchoolCalendarDay.objects.create(
+                academic_year=self.year,
+                calendar_date=f'2027-06-{day:02d}',
+                day_type='SCHOOL_DAY',
+                title='School Day',
+                attendance_expected=True,
+                classes_suspended=False,
+                created_by=self.admin,
+            )
+
+        self.client.force_authenticate(user=self.adviser_a)
+        response = self.client.get('/api/adviser-dashboard/', {'reporting_date': '2027-06-30'})
+
+        student = response.data['students'][0]
+        self.assertEqual(response.data['school_days'], 20)
+        self.assertEqual(student['attendance_percentage'], 90.0)
+
+    def test_adviser_dashboard_falls_back_to_attendance_record_school_days(self):
+        enrollment = self.student_a.enrollments.get()
+        AttendanceRecord.objects.create(
+            enrollment=enrollment,
+            month='June',
+            school_days=20,
+            days_present=18,
+            absences=2,
+            times_tardy=1,
+        )
+
+        self.client.force_authenticate(user=self.adviser_a)
+        response = self.client.get('/api/adviser-dashboard/')
+
+        student = response.data['students'][0]
+        self.assertEqual(response.data['school_days'], 0)
+        self.assertEqual(student['attendance_percentage'], 90.0)
+
+    def test_adviser_dashboard_keeps_empty_attendance_percentage_without_school_days(self):
+        enrollment = self.student_a.enrollments.get()
+        AttendanceRecord.objects.create(
+            enrollment=enrollment,
+            month='June',
+            school_days=0,
+            days_present=0,
+            absences=0,
+            times_tardy=0,
+        )
+
+        self.client.force_authenticate(user=self.adviser_a)
+        response = self.client.get('/api/adviser-dashboard/')
+
+        student = response.data['students'][0]
+        self.assertIsNone(student['attendance_percentage'])
 
     def test_advisory_roster_supports_authorized_section_and_search_filters(self):
         self.section_b.adviser = self.adviser_a

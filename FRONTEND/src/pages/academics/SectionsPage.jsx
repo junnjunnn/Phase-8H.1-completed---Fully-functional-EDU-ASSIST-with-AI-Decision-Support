@@ -4,7 +4,7 @@ import { ErrorBanner } from '../../components/feedback/ErrorBanner'
 import { PageHeader } from '../../components/common/PageHeader'
 import AdviserSelect from '../../components/AdviserSelect'
 import { getApiErrorMessage } from '../../services/api'
-import { createSection, getAcademicYears, getGradeLevels, getSections, getStrands, updateSection } from '../../services/academicsService'
+import { createSection, getAcademicYears, getGradeLevels, getSections, getSpecializations, getStrands, updateSection } from '../../services/academicsService'
 
 function normalizeListResponse(data) {
   const items = data?.results || data || []
@@ -20,16 +20,25 @@ export function SectionsPage() {
   const [academicYears, setAcademicYears] = useState([])
   const [gradeLevels, setGradeLevels] = useState([])
   const [strands, setStrands] = useState([])
+  const [specializations, setSpecializations] = useState([])
   const [sections, setSections] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [search, setSearch] = useState('')
-  const [statusFilter, setStatusFilter] = useState('all')
+  const [statusFilter, setStatusFilter] = useState('true')
+  const [gradeFilter, setGradeFilter] = useState('')
+  const [strandFilter, setStrandFilter] = useState('')
+  const [specializationFilter, setSpecializationFilter] = useState('')
   const [page, setPage] = useState(1)
-  const [form, setForm] = useState({ id: '', academic_year: '', grade_level: '', strand: '', name: '', capacity: 40, description: '', adviser: '', adviser_name: '', is_active: true })
+  const [form, setForm] = useState({ id: '', academic_year: '', grade_level: '', strand: '', specialization: '', name: '', capacity: 40, description: '', adviser: '', adviser_name: '', is_active: true })
   const [saving, setSaving] = useState(false)
 
   const pageSize = 8
+
+  function resetForm() {
+    const activeYear = academicYears.find((year) => year.is_active)
+    setForm({ id: '', academic_year: activeYear ? String(activeYear.id) : '', grade_level: '', strand: '', specialization: '', name: '', capacity: 40, description: '', adviser: '', adviser_name: '', is_active: true })
+  }
 
   useEffect(() => {
     let active = true
@@ -38,17 +47,25 @@ export function SectionsPage() {
       setLoading(true)
       setError('')
       try {
-        const [yearsData, gradeData, strandsData, sectionsData] = await Promise.all([
-          getAcademicYears(),
-          getGradeLevels(),
+        const [yearsData, gradeData, strandsData, specializationsData, sectionsData] = await Promise.all([
+          getAcademicYears({ status: 'all' }),
+          getGradeLevels({ status: 'all' }),
           getStrands(),
-          getSections(),
+          getSpecializations(),
+          getSections({ status: 'all' }),
         ])
         if (!active) return
         setAcademicYears(normalizeListResponse(yearsData).items)
         setGradeLevels(normalizeListResponse(gradeData).items)
         setStrands(normalizeListResponse(strandsData).items)
+        setSpecializations(normalizeListResponse(specializationsData).items)
         setSections(normalizeListResponse(sectionsData).items)
+        const activeYear = normalizeListResponse(yearsData).items.find((year) => year.is_active)
+        if (activeYear) {
+          setForm((current) => current.id || current.academic_year
+            ? current
+            : { ...current, academic_year: String(activeYear.id) })
+        }
       } catch (err) {
         if (!active) return
         setError(getApiErrorMessage(err))
@@ -64,11 +81,14 @@ export function SectionsPage() {
   const filteredSections = useMemo(() => {
     const term = search.trim().toLowerCase()
     return sections.filter((section) => {
-      const matchesSearch = !term || section.name.toLowerCase().includes(term) || getNameById(academicYears, section.academic_year).toLowerCase().includes(term) || getNameById(gradeLevels, section.grade_level).toLowerCase().includes(term) || (section.adviser || '').toLowerCase().includes(term)
+      const matchesSearch = !term || section.name.toLowerCase().includes(term) || getNameById(academicYears, section.academic_year).toLowerCase().includes(term) || getNameById(gradeLevels, section.grade_level).toLowerCase().includes(term) || getNameById(strands, section.strand).toLowerCase().includes(term) || getNameById(specializations, section.specialization).toLowerCase().includes(term) || (section.adviser || '').toLowerCase().includes(term)
       const matchesStatus = statusFilter === 'all' || String(section.is_active) === statusFilter
-      return matchesSearch && matchesStatus
+      const matchesGrade = !gradeFilter || String(section.grade_level) === gradeFilter
+      const matchesStrand = !strandFilter || String(section.strand) === strandFilter
+      const matchesSpecialization = !specializationFilter || String(section.specialization) === specializationFilter
+      return matchesSearch && matchesStatus && matchesGrade && matchesStrand && matchesSpecialization
     })
-  }, [sections, search, statusFilter, academicYears, gradeLevels])
+  }, [sections, search, statusFilter, gradeFilter, strandFilter, specializationFilter, academicYears, gradeLevels, strands, specializations])
 
   const pagedSections = useMemo(() => {
     const start = (page - 1) * pageSize
@@ -76,6 +96,21 @@ export function SectionsPage() {
   }, [filteredSections, page])
 
   const totalPages = Math.max(1, Math.ceil(filteredSections.length / pageSize))
+  const selectedGrade = gradeLevels.find((grade) => String(grade.id) === String(form.grade_level))
+  const selectableAcademicYears = academicYears.filter((year) =>
+    year.is_active || (form.id && String(year.id) === String(form.academic_year)),
+  )
+  const selectableGradeLevels = gradeLevels.filter((grade) =>
+    grade.is_active !== false || (form.id && String(grade.id) === String(form.grade_level)),
+  )
+  const selectableStrands = strands.filter((strand) =>
+    strand.is_active || (form.id && String(strand.id) === String(form.strand)),
+  )
+  const selectableSpecializations = specializations.filter((specialization) =>
+    (specialization.is_active && String(specialization.strand) === String(form.strand)) ||
+    (form.id && String(specialization.id) === String(form.specialization)),
+  )
+  const requiresSpecialization = selectableStrands.find((strand) => String(strand.id) === String(form.strand))?.code === 'TVL'
 
   async function handleSave(event) {
     event.preventDefault()
@@ -87,15 +122,16 @@ export function SectionsPage() {
         capacity: Number(form.capacity || 0),
         adviser: form.adviser || null,
         strand: form.strand || null,
+        specialization: form.specialization || null,
       }
       if (form.id) {
         await updateSection(form.id, payload)
       } else {
         await createSection(payload)
       }
-      const refreshed = await getSections()
+      const refreshed = await getSections({ status: 'all' })
       setSections(normalizeListResponse(refreshed).items)
-      setForm({ id: '', academic_year: '', grade_level: '', strand: '', name: '', capacity: 40, description: '', adviser: '', adviser_name: '', is_active: true })
+      resetForm()
     } catch (err) {
       setError(getApiErrorMessage(err))
     } finally {
@@ -104,11 +140,18 @@ export function SectionsPage() {
   }
 
   function editSection(section) {
+    if (section.specialization && !specializations.some((item) => String(item.id) === String(section.specialization))) {
+      setSpecializations((current) => [
+        ...current,
+        { id: section.specialization, strand: section.strand, name: section.specialization_name || 'Historical specialization', is_active: false },
+      ])
+    }
     setForm({
       id: section.id,
       academic_year: section.academic_year || '',
       grade_level: section.grade_level || '',
       strand: section.strand || '',
+      specialization: section.specialization || '',
       name: section.name || '',
       capacity: section.capacity ?? 40,
       description: section.description || '',
@@ -123,8 +166,9 @@ export function SectionsPage() {
     setError('')
     try {
       await updateSection(section.id, { is_active: !section.is_active })
-      const refreshed = await getSections()
+      const refreshed = await getSections({ status: 'all' })
       setSections(normalizeListResponse(refreshed).items)
+      if (String(form.id) === String(section.id)) resetForm()
     } catch (err) {
       setError(getApiErrorMessage(err))
     }
@@ -156,38 +200,55 @@ export function SectionsPage() {
             <span>Academic year</span>
             <select value={form.academic_year} onChange={(event) => setForm({ ...form, academic_year: event.target.value })} required>
               <option value="">Select year</option>
-              {academicYears.filter((year) => year.is_active !== false).map((year) => (
-                <option key={year.id} value={year.id}>{year.name}</option>
+              {selectableAcademicYears.map((year) => (
+                <option key={year.id} value={year.id}>{year.name}{year.is_active ? '' : ' (Archived)'}</option>
               ))}
             </select>
+            {!form.id && !academicYears.some((year) => year.is_active) ? <small className="small-muted">No active academic year is configured. Create or activate a year before adding an operational section.</small> : null}
           </label>
           <label>
             <span>Grade level</span>
-            <select value={form.grade_level} onChange={(event) => setForm({ ...form, grade_level: event.target.value })} required>
+            <select value={form.grade_level} onChange={(event) => {
+              const grade = gradeLevels.find((item) => String(item.id) === event.target.value)
+              setForm((current) => ({
+                ...current,
+                grade_level: event.target.value,
+                strand: grade?.school_level === 'Senior High School' ? current.strand : '',
+                specialization: grade?.school_level === 'Senior High School' ? current.specialization : '',
+              }))
+            }} required>
               <option value="">Select grade level</option>
-              {gradeLevels.filter((grade) => grade.is_active !== false).map((grade) => (
-                <option key={grade.id} value={grade.id}>{grade.name}</option>
+              {selectableGradeLevels.map((grade) => (
+                <option key={grade.id} value={grade.id}>{grade.name}{grade.is_active === false ? ' (Archived)' : ''}</option>
               ))}
             </select>
           </label>
+          {selectedGrade?.school_level === 'Senior High School' ? (
+            <>
+              <label>
+                <span>Strand *</span>
+                <select value={form.strand} onChange={(event) => setForm({ ...form, strand: event.target.value, specialization: '' })} required>
+                  <option value="">Select strand</option>
+                  {selectableStrands.map((strand) => (
+                    <option key={strand.id} value={strand.id}>{strand.name}{strand.is_active === false ? ' (Archived)' : ''}</option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                <span>Specialization{requiresSpecialization ? ' *' : ''}</span>
+                <select value={form.specialization} onChange={(event) => setForm({ ...form, specialization: event.target.value })} disabled={!form.strand} required={requiresSpecialization}>
+                  <option value="">{form.strand ? 'Select specialization' : 'Select strand first'}</option>
+                  {selectableSpecializations.map((specialization) => (
+                    <option key={specialization.id} value={specialization.id}>{specialization.name}{specialization.is_active === false ? ' (Archived)' : ''}</option>
+                  ))}
+                </select>
+              </label>
+            </>
+          ) : null}
           <label>
             <span>Section name</span>
             <input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} required />
           </label>
-          {form.grade_level && (() => {
-            const selectedGrade = gradeLevels.find(g => String(g.id) === String(form.grade_level))
-            return selectedGrade?.school_level === 'Senior High School' ? (
-              <label>
-                <span>Strand *</span>
-                <select value={form.strand} onChange={(event) => setForm({ ...form, strand: event.target.value })} required>
-                  <option value="">Select strand</option>
-                  {strands.filter(s => s.is_active).map((strand) => (
-                    <option key={strand.id} value={strand.id}>{strand.name}</option>
-                  ))}
-                </select>
-              </label>
-            ) : null
-          })()}
           <label>
             <span>Capacity</span>
             <input type="number" min="1" value={form.capacity} onChange={(event) => setForm({ ...form, capacity: Number(event.target.value) })} required />
@@ -209,7 +270,7 @@ export function SectionsPage() {
           </label>
           <div className="section-actions form-grid-full">
             <button type="submit" className="action-button action-button--primary" disabled={saving}>{saving ? 'Saving...' : form.id ? 'Update section' : 'Create section'}</button>
-            {form.id ? <button type="button" className="action-button action-button--secondary" onClick={() => setForm({ id: '', academic_year: '', grade_level: '', name: '', capacity: 40, description: '', adviser: '', adviser_name: '', is_active: true })}>Cancel</button> : null}
+            {form.id ? <button type="button" className="action-button action-button--secondary" onClick={resetForm}>Cancel</button> : null}
           </div>
         </form>
       </div>
@@ -222,7 +283,19 @@ export function SectionsPage() {
           </div>
           <div className="search-input-group">
             <input aria-label="Search sections" placeholder="Search sections" value={search} onChange={(event) => { setSearch(event.target.value); setPage(1) }} />
-            <select value={statusFilter} onChange={(event) => { setStatusFilter(event.target.value); setPage(1) }}>
+            <select aria-label="Filter by grade level" value={gradeFilter} onChange={(event) => { setGradeFilter(event.target.value); setPage(1) }}>
+              <option value="">All grade levels</option>
+              {gradeLevels.map((grade) => <option key={grade.id} value={grade.id}>{grade.name}</option>)}
+            </select>
+            <select aria-label="Filter by strand" value={strandFilter} onChange={(event) => { setStrandFilter(event.target.value); setSpecializationFilter(''); setPage(1) }}>
+              <option value="">All strands</option>
+              {strands.filter((strand) => strand.is_active).map((strand) => <option key={strand.id} value={strand.id}>{strand.name}</option>)}
+            </select>
+            <select aria-label="Filter by specialization" value={specializationFilter} onChange={(event) => { setSpecializationFilter(event.target.value); setPage(1) }}>
+              <option value="">All specializations</option>
+              {specializations.filter((specialization) => specialization.is_active && (!strandFilter || String(specialization.strand) === strandFilter)).map((specialization) => <option key={specialization.id} value={specialization.id}>{specialization.name}</option>)}
+            </select>
+            <select aria-label="Filter by status" value={statusFilter} onChange={(event) => { setStatusFilter(event.target.value); setPage(1) }}>
               <option value="all">All statuses</option>
               <option value="true">Active</option>
               <option value="false">Archived</option>
@@ -249,6 +322,7 @@ export function SectionsPage() {
                     <th scope="col">Academic year</th>
                     <th scope="col">Grade level</th>
                     <th scope="col">Strand</th>
+                    <th scope="col">Specialization</th>
                     <th scope="col">Capacity</th>
                     <th scope="col">Adviser</th>
                     <th scope="col">Status</th>
@@ -262,6 +336,7 @@ export function SectionsPage() {
                       <td>{getNameById(academicYears, section.academic_year)}</td>
                       <td>{getNameById(gradeLevels, section.grade_level)}</td>
                       <td>{section.strand ? getNameById(strands, section.strand) : 'Not applicable'}</td>
+                      <td>{section.specialization ? getNameById(specializations, section.specialization) : 'Not applicable'}</td>
                       <td>{section.capacity ?? '—'}</td>
                       <td>{section.adviser_name || section.adviser || '—'}</td>
                       <td><span className={section.is_active ? 'status-pill status-pill--success' : 'status-pill status-pill--neutral'}>{section.is_active ? 'Active' : 'Archived'}</span></td>

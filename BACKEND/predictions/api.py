@@ -1,15 +1,17 @@
-from django.db.models import Avg, Case, Count, IntegerField, Q, Sum, When
+from django.db.models import Avg, Case, Count, F, IntegerField, Q, Sum, When
 from django.utils import timezone
 from rest_framework import mixins, permissions, viewsets
 from rest_framework.filters import OrderingFilter, SearchFilter
 from rest_framework.response import Response
 from django_filters.rest_framework import DjangoFilterBackend
 
-from accounts.permissions import IsAuthorizedStaff
+from accounts.permissions import IsAuthorizedStaff, IsRegistrarOrSchoolAdmin
 from common.audit import AuditMixin
 from common.drf_filters import RoleScopedViewsetMixin
-from common.authorization import authorized_students_queryset, authorized_enrollment_queryset, get_adviser_sections, get_user_scope, teacher_assignment_queryset
-from academics.models import AcademicRecord, Enrollment
+from common.authorization import active_enrollment_queryset, archived_enrollment_queryset, authorized_students_queryset, authorized_enrollment_queryset, get_adviser_sections, get_user_scope, requested_lifecycle_status, teacher_assignment_queryset
+from academics.models import AcademicRecord, Enrollment, Section
+from attendance.models import AttendanceRecord
+from attendance.school_day_service import get_school_day_summary
 from behavior.models import BehavioralAssessment
 from interventions.models import Intervention
 from students.models import Student
@@ -19,7 +21,7 @@ from .serializers import PredictionFactorSerializer, RiskPredictionSerializer
 
 class RiskPredictionViewSet(RoleScopedViewsetMixin, AuditMixin, mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins.CreateModelMixin, mixins.UpdateModelMixin, viewsets.GenericViewSet):
     scope_field = 'enrollment'
-    queryset = RiskPrediction.objects.select_related('enrollment', 'reviewed_by').all()
+    queryset = RiskPrediction.objects.select_related('enrollment__student', 'enrollment__academic_year', 'enrollment__grade_level', 'enrollment__section', 'reviewed_by').all()
     serializer_class = RiskPredictionSerializer
     permission_classes = [permissions.IsAuthenticated, IsAuthorizedStaff]
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
@@ -27,6 +29,15 @@ class RiskPredictionViewSet(RoleScopedViewsetMixin, AuditMixin, mixins.ListModel
     search_fields = ['enrollment__student__first_name', 'enrollment__student__last_name', 'model_name', 'model_version']
     ordering_fields = ['prediction_date', 'probability']
     ordering = ['-prediction_date']
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        status = requested_lifecycle_status(self.request)
+        if status == 'active':
+            return queryset.filter(enrollment__in=active_enrollment_queryset(Enrollment.objects.all()))
+        if status == 'archived':
+            return queryset.filter(enrollment__in=archived_enrollment_queryset(Enrollment.objects.all()))
+        return queryset
 
 
 class PredictionFactorViewSet(RoleScopedViewsetMixin, AuditMixin, mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins.CreateModelMixin, mixins.UpdateModelMixin, viewsets.GenericViewSet):
@@ -40,17 +51,83 @@ class PredictionFactorViewSet(RoleScopedViewsetMixin, AuditMixin, mixins.ListMod
     ordering_fields = ['feature_name']
     ordering = ['feature_name']
 
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        status = requested_lifecycle_status(self.request)
+        enrollments = Enrollment.objects.all()
+        if status == 'active':
+            enrollments = active_enrollment_queryset(enrollments)
+        elif status == 'archived':
+            enrollments = archived_enrollment_queryset(enrollments)
+        return queryset.filter(prediction__enrollment__in=enrollments)
+
 
 class DashboardViewSet(viewsets.ViewSet):
     permission_classes = [permissions.IsAuthenticated, IsAuthorizedStaff]
 
     def list(self, request):
+        school_day_summary = get_school_day_summary(
+            academic_year_id=request.query_params.get('academic_year'),
+            reporting_date=request.query_params.get('reporting_date'),
+        )
+        school_days = school_day_summary['school_days']
         student_qs = authorized_students_queryset(request.user, Student.objects.all())
+        student_qs = student_qs.filter(
+            student_status='active',
+            enrollments__enrollment_status='active',
+            enrollments__academic_year__is_active=True,
+            enrollments__grade_level__is_active=True,
+            enrollments__section__is_active=True,
+            enrollments__section__academic_year__is_active=True,
+        ).distinct()
+
         prediction_qs = authorized_enrollment_queryset(request.user, RiskPrediction.objects.select_related('enrollment__student', 'enrollment__grade_level').all(), enrollment_field='enrollment')
+        prediction_qs = prediction_qs.filter(
+            enrollment__student__student_status='active',
+            enrollment__enrollment_status='active',
+            enrollment__academic_year__is_active=True,
+            enrollment__grade_level__is_active=True,
+            enrollment__section__is_active=True,
+            enrollment__section__academic_year__is_active=True,
+        )
+
         intervention_qs = authorized_enrollment_queryset(request.user, Intervention.objects.select_related('enrollment__student', 'enrollment__grade_level').all(), enrollment_field='enrollment')
+        intervention_qs = intervention_qs.filter(
+            enrollment__student__student_status='active',
+            enrollment__enrollment_status='active',
+            enrollment__academic_year__is_active=True,
+            enrollment__grade_level__is_active=True,
+            enrollment__section__is_active=True,
+            enrollment__section__academic_year__is_active=True,
+        )
+
         behavior_qs = authorized_enrollment_queryset(request.user, BehavioralAssessment.objects.select_related('enrollment__student', 'rating').all(), enrollment_field='enrollment')
+        behavior_qs = behavior_qs.filter(
+            enrollment__student__student_status='active',
+            enrollment__enrollment_status='active',
+            enrollment__academic_year__is_active=True,
+            academic_year__is_active=True,
+            academic_year_id=F('enrollment__academic_year_id'),
+            enrollment__grade_level__is_active=True,
+            enrollment__section__is_active=True,
+            enrollment__section__academic_year__is_active=True,
+        )
+
+        attendance_qs = authorized_enrollment_queryset(request.user, AttendanceRecord.objects.all(), enrollment_field='enrollment').filter(
+            enrollment__student__student_status='active',
+            enrollment__enrollment_status='active',
+            enrollment__academic_year__is_active=True,
+            enrollment__grade_level__is_active=True,
+            enrollment__section__is_active=True,
+            enrollment__section__academic_year__is_active=True,
+        )
 
         total_students = student_qs.count()
+        attendance_totals = attendance_qs.aggregate(
+            present=Sum('days_present'),
+            absent=Sum('absences'),
+            late=Sum('times_tardy'),
+        )
         total_predictions = prediction_qs.count()
         high_risk_students = prediction_qs.filter(risk_level='High').values('enrollment__student').distinct().count()
         moderate_risk_students = prediction_qs.filter(risk_level='Moderate').values('enrollment__student').distinct().count()
@@ -77,7 +154,14 @@ class DashboardViewSet(viewsets.ViewSet):
             'Excellent': 0,
         }
         for record in AcademicRecord.objects.filter(
-            enrollment__in=prediction_qs.values('enrollment')
+            enrollment__in=prediction_qs.values('enrollment'),
+            academic_year__is_active=True,
+            academic_year_id=F('enrollment__academic_year_id'),
+            enrollment__student__student_status='active',
+            enrollment__enrollment_status='active',
+            enrollment__grade_level__is_active=True,
+            enrollment__section__is_active=True,
+            enrollment__section__academic_year__is_active=True,
         ).values_list('final_grade', flat=True):
             if record is None:
                 continue
@@ -149,6 +233,16 @@ class DashboardViewSet(viewsets.ViewSet):
         return Response({
             'total_students': total_students,
             'total_predictions': total_predictions,
+            'attendance_summary': {
+                'record_count': attendance_qs.count(),
+                'present': int(attendance_totals['present'] or 0),
+                'absent': int(attendance_totals['absent'] or 0),
+                'late': int(attendance_totals['late'] or 0),
+                'school_days': school_days,
+                'attendance_percentage': round((int(attendance_totals['present'] or 0) / school_days) * 100, 2) if school_days else 0,
+            },
+            'school_days': school_days,
+            'academic_year': school_day_summary['academic_year'].name if school_day_summary['academic_year'] else None,
             'at_risk_students': at_risk_students,
             'not_at_risk_students': not_at_risk_students,
             'high_risk_students': high_risk_students,
@@ -165,10 +259,63 @@ class DashboardViewSet(viewsets.ViewSet):
         })
 
 
+class RegistrarDashboardViewSet(viewsets.ViewSet):
+    permission_classes = [permissions.IsAuthenticated, IsRegistrarOrSchoolAdmin]
+
+    def list(self, request):
+        school_day_summary = get_school_day_summary(
+            reporting_date=request.query_params.get('reporting_date'),
+        )
+        academic_year = school_day_summary['academic_year']
+        enrollments = active_enrollment_queryset(
+            Enrollment.objects.select_related('student', 'grade_level', 'section', 'academic_year')
+        )
+        if academic_year:
+            enrollments = enrollments.filter(academic_year=academic_year)
+        else:
+            enrollments = enrollments.none()
+
+        distribution = list(
+            enrollments.values('grade_level_id', 'grade_level__name')
+            .annotate(count=Count('id'))
+            .order_by('grade_level__order', 'grade_level__name')
+        )
+        recent_enrollments = list(
+            enrollments.order_by('-enrollment_date', '-created_at')[:10].values(
+                'id',
+                'enrollment_date',
+                'created_at',
+                'student__first_name',
+                'student__last_name',
+                'grade_level__name',
+                'section__name',
+            )
+        )
+
+        return Response({
+            'total_active_students': enrollments.values('student_id').distinct().count(),
+            'total_active_enrollments': enrollments.count(),
+            'total_active_sections': Section.objects.filter(
+                academic_year=academic_year,
+                is_active=True,
+                grade_level__is_active=True,
+            ).count() if academic_year else 0,
+            'current_academic_year': academic_year.name if academic_year else None,
+            'school_days': school_day_summary['school_days'],
+            'enrollment_distribution': distribution,
+            'recent_enrollments': recent_enrollments,
+        })
+
+
 class AdviserDashboardViewSet(viewsets.ViewSet):
     permission_classes = [permissions.IsAuthenticated, IsAuthorizedStaff]
 
     def list(self, request):
+        school_day_summary = get_school_day_summary(
+            academic_year_id=request.query_params.get('academic_year'),
+            reporting_date=request.query_params.get('reporting_date'),
+        )
+        school_days = school_day_summary['school_days']
         sections = get_adviser_sections(request.user)
         selected_section = request.query_params.get('section')
         search = request.query_params.get('search', '').strip()
@@ -188,7 +335,10 @@ class AdviserDashboardViewSet(viewsets.ViewSet):
                     'active_interventions': 0,
                     'follow_up_required': 0,
                     'students_requiring_attention': 0,
+                    'school_days': school_days,
                 },
+                'school_days': school_days,
+                'academic_year': school_day_summary['academic_year'].name if school_day_summary['academic_year'] else None,
                 'risk_distribution': {},
                 'students_requiring_attention': [],
                 'students': [],
@@ -196,14 +346,13 @@ class AdviserDashboardViewSet(viewsets.ViewSet):
             })
 
         enrollments = (
-            Enrollment.objects
-            .filter(section__in=sections, enrollment_status='active')
+            active_enrollment_queryset(Enrollment.objects.filter(section__in=sections))
             .filter(
                 Q(student__first_name__icontains=search)
                 | Q(student__middle_name__icontains=search)
                 | Q(student__last_name__icontains=search)
                 | Q(student__lrn__icontains=search)
-            ) if search else Enrollment.objects.filter(section__in=sections, enrollment_status='active')
+            ) if search else active_enrollment_queryset(Enrollment.objects.filter(section__in=sections))
         ).select_related('student', 'grade_level', 'section', 'section__academic_year', 'section__strand')
         enrollments = enrollments.order_by('student__last_name', 'student__first_name')
         today = timezone.localdate()
@@ -220,29 +369,38 @@ class AdviserDashboardViewSet(viewsets.ViewSet):
         roster_students = []
 
         for enrollment in enrollments:
-            academic_records = list(enrollment.academic_records.filter(final_grade__isnull=False).values_list('final_grade', flat=True))
+            academic_records = list(enrollment.academic_records.filter(
+                final_grade__isnull=False,
+                academic_year__is_active=True,
+                academic_year_id=enrollment.academic_year_id,
+            ).values_list('final_grade', flat=True))
             average = round(float(sum(academic_records) / len(academic_records)), 2) if academic_records else None
             academic_concern = average is not None and average < 75
             if average is not None:
                 class_averages.append(average)
 
-            attendance = enrollment.attendance_records.aggregate(
-                school_days=Sum('school_days'),
+            attendance_records = enrollment.attendance_records.all()
+            attendance = attendance_records.aggregate(
                 present=Sum('days_present'),
                 absences=Sum('absences'),
                 tardy=Sum('times_tardy'),
+                school_days=Sum('school_days'),
             )
-            school_days = int(attendance['school_days'] or 0)
-            attendance_percentage = round((int(attendance['present'] or 0) / school_days) * 100, 2) if school_days else None
-            attendance_record_count += enrollment.attendance_records.count()
-            total_school_days += school_days
+            applicable_school_days = school_days or attendance['school_days']
+            attendance_percentage = round((int(attendance['present'] or 0) / applicable_school_days) * 100, 2) if applicable_school_days else None
+            attendance_record_count += attendance_records.count()
+            total_school_days += applicable_school_days or 0
             total_days_present += int(attendance['present'] or 0)
 
-            behavior = enrollment.behavioral_assessments.aggregate(
+            behavior_records = enrollment.behavioral_assessments.filter(
+                academic_year__is_active=True,
+                academic_year_id=enrollment.academic_year_id,
+            )
+            behavior = behavior_records.aggregate(
                 average_score=Avg('numeric_score'),
             )
             behavior_average = round(float(behavior['average_score']), 2) if behavior['average_score'] is not None else None
-            behavior_record_count += enrollment.behavioral_assessments.count()
+            behavior_record_count += behavior_records.count()
 
             prediction = enrollment.risk_predictions.order_by('-prediction_date').values(
                 'id', 'risk_level', 'probability', 'prediction_date', 'explanation',
@@ -287,7 +445,7 @@ class AdviserDashboardViewSet(viewsets.ViewSet):
                     'days_present': int(attendance['present'] or 0) if school_days else None,
                     'times_tardy': int(attendance['tardy'] or 0) if school_days else None,
                     'behavior_average': behavior_average,
-                    'behavior_records': enrollment.behavioral_assessments.count(),
+                    'behavior_records': behavior_records.count(),
                     'risk_level': prediction['risk_level'] if prediction else None,
                     'risk_probability': float(prediction['probability']) if prediction else None,
                     'risk_explanation': prediction['explanation'] if prediction else None,
@@ -310,18 +468,22 @@ class AdviserDashboardViewSet(viewsets.ViewSet):
                 'academic_concerns': academic_concerns,
                 'class_general_average': round(sum(class_averages) / len(class_averages), 2) if class_averages else None,
                 'attendance_rate': round((total_days_present / total_school_days) * 100, 2) if total_school_days else None,
+                'school_days': school_days,
                 'attendance_concerns': None,
                 'behavioral_concerns': None,
                 'active_interventions': len(intervention_student_ids),
                 'follow_up_required': len(follow_up_student_ids),
                 'students_requiring_attention': len(attention_students),
                 'students_with_attendance_records': len({enrollment.student_id for enrollment in enrollments if enrollment.attendance_records.exists()}),
-                'students_with_behavior_records': len({enrollment.student_id for enrollment in enrollments if enrollment.behavioral_assessments.exists()}),
+                'students_with_behavior_records': len({enrollment.student_id for enrollment in enrollments if enrollment.behavioral_assessments.filter(academic_year__is_active=True, academic_year_id=enrollment.academic_year_id).exists()}),
             },
             'attendance_summary': {
                 'students_with_records': len({enrollment.student_id for enrollment in enrollments if enrollment.attendance_records.exists()}),
                 'record_count': attendance_record_count,
+                'school_days': school_days,
             },
+            'school_days': school_days,
+            'academic_year': school_day_summary['academic_year'].name if school_day_summary['academic_year'] else None,
             'behavior_summary': {
                 'students_with_records': len({enrollment.student_id for enrollment in enrollments if enrollment.behavioral_assessments.exists()}),
                 'record_count': behavior_record_count,

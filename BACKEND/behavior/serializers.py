@@ -1,6 +1,6 @@
 from rest_framework import serializers
 
-from common.authorization import authorized_enrollment_queryset
+from common.authorization import active_enrollment_queryset, authorized_enrollment_queryset
 from academics.models import Enrollment
 from .models import CoreValue, BehaviorIndicator, BehavioralRating, BehavioralAssessment
 from .reference_data import DEPED_RATINGS
@@ -25,6 +25,9 @@ class BehavioralRatingSerializer(serializers.ModelSerializer):
 
 
 class BehavioralAssessmentSerializer(serializers.ModelSerializer):
+    student_name = serializers.CharField(source='enrollment.student', read_only=True)
+    academic_year_name = serializers.CharField(source='academic_year.name', read_only=True)
+    section_name = serializers.CharField(source='enrollment.section.name', read_only=True)
     rating_code = serializers.CharField(source='rating.code', read_only=True)
     rating_label = serializers.CharField(source='rating.label', read_only=True)
     core_value_name = serializers.CharField(source='core_value.name', read_only=True)
@@ -36,7 +39,10 @@ class BehavioralAssessmentSerializer(serializers.ModelSerializer):
         fields = [
             'id',
             'enrollment',
+            'student_name',
             'academic_year',
+            'academic_year_name',
+            'section_name',
             'grading_period_type',
             'quarter',
             'semester',
@@ -73,6 +79,11 @@ class BehavioralAssessmentSerializer(serializers.ModelSerializer):
         if not authorized_qs.filter(pk=value.pk).exists():
             raise serializers.ValidationError(
                 'You do not have permission to create records for this enrollment.'
+            )
+
+        if not active_enrollment_queryset(Enrollment.objects.filter(pk=value.pk)).exists():
+            raise serializers.ValidationError(
+                'Behavior assessments can only be created for active students with a current academic context.'
             )
         
         return value

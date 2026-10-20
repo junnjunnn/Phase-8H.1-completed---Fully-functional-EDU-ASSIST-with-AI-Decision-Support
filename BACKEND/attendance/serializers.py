@@ -1,7 +1,7 @@
 from django.utils import timezone
 from rest_framework import serializers
 
-from common.authorization import authorized_enrollment_queryset
+from common.authorization import active_enrollment_queryset, authorized_enrollment_queryset
 from academics.models import Enrollment
 from .models import AttendanceRecord, RecurringSchoolCalendarEvent, SchoolCalendarDay
 from .conflicts import detect_conflicts, serialize_conflicts
@@ -27,6 +27,15 @@ class SchoolCalendarDaySerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ['created_by', 'created_at', 'updated_at', 'authorized_by', 'published_at', 'submitted_by', 'submitted_at', 'approved_by', 'approved_at', 'rejected_by', 'rejected_at']
 
+    def _normalize_material_value(self, value):
+        if value is None or value == '':
+            return None
+        if hasattr(value, 'isoformat'):
+            return value.isoformat()
+        if hasattr(value, 'id'):
+            return value.id
+        return value
+
     def get_attendance_expected_display(self, obj):
         return 'Yes' if obj.attendance_expected else 'No'
 
@@ -38,12 +47,23 @@ class SchoolCalendarDaySerializer(serializers.ModelSerializer):
 
     def validate(self, attrs):
         instance = self.instance or SchoolCalendarDay(**attrs)
+        if self.instance and self.instance.status in {'APPROVED', 'PUBLISHED'}:
+            material_fields = {'calendar_date', 'end_date', 'day_type', 'event_type', 'title', 'location', 'scope_type', 'section', 'affected_grade_level', 'affected_department', 'start_time', 'end_time', 'attendance_expected', 'classes_suspended', 'reason', 'announcement', 'organizer', 'target_participants', 'examination_type', 'examination_period', 'subject', 'instructor'}
+            changed = False
+            for field in material_fields:
+                current_value = self._normalize_material_value(getattr(self.instance, field))
+                updated_value = self._normalize_material_value(attrs.get(field, getattr(self.instance, field)))
+                if current_value != updated_value:
+                    changed = True
+                    break
+            if changed:
+                attrs['status'] = 'PENDING_APPROVAL'
         if self.instance and 'status' in attrs and attrs['status'] != self.instance.status:
             allowed_transitions = {
                 'DRAFT': {'PENDING_APPROVAL'},
                 'PENDING_APPROVAL': {'APPROVED', 'REJECTED'},
-                'APPROVED': {'PUBLISHED', 'CANCELLED'},
-                'PUBLISHED': {'CANCELLED', 'ARCHIVED'},
+                'APPROVED': {'PUBLISHED', 'CANCELLED', 'PENDING_APPROVAL'},
+                'PUBLISHED': {'CANCELLED', 'ARCHIVED', 'PENDING_APPROVAL'},
                 'REJECTED': {'DRAFT'},
                 'CANCELLED': {'ARCHIVED'},
                 'ARCHIVED': set(),
@@ -110,10 +130,16 @@ class RecurringSchoolCalendarEventSerializer(serializers.ModelSerializer):
 
 
 class AttendanceRecordSerializer(serializers.ModelSerializer):
+    student_name = serializers.SerializerMethodField()
+    academic_year_name = serializers.CharField(source='enrollment.academic_year.name', read_only=True)
+    section_name = serializers.CharField(source='enrollment.section.name', read_only=True)
     class Meta:
         model = AttendanceRecord
-        fields = ['id', 'enrollment', 'attendance_date', 'month', 'school_days', 'days_present', 'absences', 'times_tardy', 'encoded_by', 'created_at', 'updated_at']
+        fields = ['id', 'enrollment', 'student_name', 'academic_year_name', 'section_name', 'attendance_date', 'month', 'school_days', 'days_present', 'absences', 'times_tardy', 'encoded_by', 'created_at', 'updated_at']
         read_only_fields = ['created_at', 'updated_at']
+
+    def get_student_name(self, obj):
+        return str(obj.enrollment.student)
 
     def validate_enrollment(self, value):
         request = self.context.get('request')
@@ -129,6 +155,11 @@ class AttendanceRecordSerializer(serializers.ModelSerializer):
         if not authorized_qs.filter(pk=value.pk).exists():
             raise serializers.ValidationError(
                 'You do not have permission to create records for this enrollment.'
+            )
+
+        if not active_enrollment_queryset(Enrollment.objects.filter(pk=value.pk)).exists():
+            raise serializers.ValidationError(
+                'Attendance can only be recorded for active students with a current academic context.'
             )
 
         return value

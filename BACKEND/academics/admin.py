@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import AcademicYear, GradeLevel, Section, Strand, Subject, Enrollment, AcademicRecord
+from .models import AcademicYear, GradeLevel, Section, Specialization, Strand, Subject, Enrollment, AcademicRecord
 
 
 @admin.register(AcademicYear)
@@ -27,6 +27,13 @@ class SectionAdmin(admin.ModelAdmin):
 class StrandAdmin(admin.ModelAdmin):
     list_display = ('name', 'code', 'is_active')
     list_filter = ('is_active',)
+    search_fields = ('name', 'code')
+
+
+@admin.register(Specialization)
+class SpecializationAdmin(admin.ModelAdmin):
+    list_display = ('name', 'code', 'strand', 'is_active')
+    list_filter = ('strand', 'is_active')
     search_fields = ('name', 'code')
 
 

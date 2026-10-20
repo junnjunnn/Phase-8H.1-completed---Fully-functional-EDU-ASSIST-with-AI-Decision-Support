@@ -4,6 +4,11 @@ from django.conf import settings
 from django.db import migrations, models
 
 
+def normalize_adviser_subjects(apps, schema_editor):
+    TeacherAssignment = apps.get_model('academics', 'TeacherAssignment')
+    TeacherAssignment.objects.filter(assignment_type='ADVISER', subject__isnull=False).update(subject=None)
+
+
 class Migration(migrations.Migration):
 
     dependencies = [
@@ -12,31 +17,9 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
-        migrations.SeparateDatabaseAndState(
-            database_operations=[],
-            state_operations=[
-                migrations.RemoveConstraint(
-                    model_name='teacherassignment',
-                    name='unique_active_subject_teacher_assignment',
-                ),
-                migrations.RemoveConstraint(
-                    model_name='teacherassignment',
-                    name='unique_active_section_adviser_assignment',
-                ),
-            ],
-        ),
-        migrations.SeparateDatabaseAndState(
-            database_operations=[],
-            state_operations=[
-                migrations.AddConstraint(
-                    model_name='teacherassignment',
-                    constraint=models.UniqueConstraint(fields=('teacher', 'academic_year', 'grade_level', 'section', 'subject'), name='unique_active_subject_teacher_assignment'),
-                ),
-                migrations.AddConstraint(
-                    model_name='teacherassignment',
-                    constraint=models.UniqueConstraint(fields=('academic_year', 'section', 'assignment_type'), name='unique_active_section_adviser_assignment'),
-                ),
-            ],
+        migrations.RunPython(
+            code=normalize_adviser_subjects,
+            reverse_code=migrations.RunPython.noop,
         ),
         migrations.RemoveIndex(
             model_name='teacherassignment',

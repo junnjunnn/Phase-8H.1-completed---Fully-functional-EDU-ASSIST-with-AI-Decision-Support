@@ -4,7 +4,7 @@ from .academic_divisions import division_for_grade_levels, grade_levels_for_divi
 from django.contrib.auth import get_user_model
 
 from common.authorization import authorized_enrollment_queryset, get_user_scope
-from .models import AcademicRecord, AcademicYear, Enrollment, GradeLevel, Section, Strand, Subject, TeacherAssignment
+from .models import AcademicRecord, AcademicYear, Enrollment, GradeLevel, Section, Specialization, Strand, Subject, TeacherAssignment
 
 
 class AcademicYearSerializer(serializers.ModelSerializer):
@@ -68,10 +68,11 @@ class SectionSerializer(serializers.ModelSerializer):
     grade_level_school_level = serializers.SerializerMethodField()
     adviser_name = serializers.SerializerMethodField()
     strand_name = serializers.SerializerMethodField()
+    specialization_name = serializers.SerializerMethodField()
 
     class Meta:
         model = Section
-        fields = ['id', 'grade_level', 'academic_year', 'name', 'capacity', 'description', 'adviser', 'strand', 'is_active', 'student_count', 'academic_year_name', 'grade_level_name', 'grade_level_school_level', 'adviser_name', 'strand_name']
+        fields = ['id', 'grade_level', 'academic_year', 'name', 'capacity', 'description', 'adviser', 'strand', 'specialization', 'is_active', 'student_count', 'academic_year_name', 'grade_level_name', 'grade_level_school_level', 'adviser_name', 'strand_name', 'specialization_name']
         validators = [
             UniqueTogetherValidator(
                 queryset=Section.objects.all(),
@@ -100,6 +101,9 @@ class SectionSerializer(serializers.ModelSerializer):
     def get_strand_name(self, obj):
         return obj.strand.name if obj.strand else None
 
+    def get_specialization_name(self, obj):
+        return obj.specialization.name if obj.specialization else None
+
     def validate_adviser(self, value):
         # ensure adviser (user) has an appropriate role
         if value is None:
@@ -120,6 +124,13 @@ class SectionSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError('The selected strand is not active.')
         return value
 
+    def validate_specialization(self, value):
+        if value is None:
+            return None
+        if not value.is_active:
+            raise serializers.ValidationError('The selected specialization is not active.')
+        return value
+
     def validate_name(self, value):
         normalized_value = (value or '').strip()
         if not normalized_value:
@@ -131,14 +142,20 @@ class SectionSerializer(serializers.ModelSerializer):
         academic_year = attrs.get('academic_year') or getattr(self.instance, 'academic_year', None)
         name = attrs.get('name') or getattr(self.instance, 'name', None)
         capacity = attrs.get('capacity', getattr(self.instance, 'capacity', 0))
-        strand = attrs.get('strand') or getattr(self.instance, 'strand', None)
+        strand = attrs.get('strand', getattr(self.instance, 'strand', None))
+        specialization = attrs.get('specialization', getattr(self.instance, 'specialization', None))
 
         # Validate that grade level and academic year are active (not archived)
         if grade_level and not grade_level.is_active:
             raise serializers.ValidationError({'grade_level': 'Cannot create section with an archived grade level.'})
 
-        if academic_year and not academic_year.is_active:
-            raise serializers.ValidationError({'academic_year': 'Cannot create section in an archived academic year.'})
+        retains_existing_archived_year = (
+            self.instance is not None
+            and academic_year
+            and academic_year.pk == self.instance.academic_year_id
+        )
+        if academic_year and not academic_year.is_active and not retains_existing_archived_year:
+            raise serializers.ValidationError({'academic_year': 'Cannot assign a section to an archived academic year.'})
 
         if grade_level and academic_year and name:
             queryset = Section.objects.filter(grade_level=grade_level, academic_year=academic_year, name=name)
@@ -166,6 +183,12 @@ class SectionSerializer(serializers.ModelSerializer):
             if school_level == 'Senior High School' and not strand:
                 raise serializers.ValidationError({'strand': 'Senior High School sections must have a strand.'})
 
+            if strand and strand.code == 'TVL' and not specialization:
+                raise serializers.ValidationError({'specialization': 'TVL sections must have a specialization.'})
+
+            if specialization and specialization.strand_id != getattr(strand, 'id', None):
+                raise serializers.ValidationError({'specialization': 'The selected specialization does not belong to the selected strand.'})
+
         return attrs
 
 
@@ -173,6 +196,14 @@ class StrandSerializer(serializers.ModelSerializer):
     class Meta:
         model = Strand
         fields = ['id', 'name', 'code', 'description', 'is_active']
+
+
+class SpecializationSerializer(serializers.ModelSerializer):
+    strand_name = serializers.CharField(source='strand.name', read_only=True)
+
+    class Meta:
+        model = Specialization
+        fields = ['id', 'strand', 'strand_name', 'name', 'code', 'is_active']
 
 
 class SubjectSerializer(serializers.ModelSerializer):
@@ -419,6 +450,10 @@ class TeacherAssignmentSerializer(serializers.ModelSerializer):
                 subject_grades = [subject.grade_level_id]
             if grade_level and grade_level.id not in subject_grades:
                 raise serializers.ValidationError({'subject': 'The selected subject is not associated with this grade level.'})
+            if subject.strand_id and section.strand_id != subject.strand_id:
+                raise serializers.ValidationError({
+                    'subject': 'The selected subject belongs to a different strand than the selected section.',
+                })
 
         if assignment_type == 'SUBJECT' and teacher and academic_year and grade_level and section and subject:
             queryset = TeacherAssignment.objects.filter(

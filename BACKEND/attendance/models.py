@@ -30,6 +30,33 @@ class SchoolCalendarDay(models.Model):
         ('ACTIVITY', 'Activity'),
         ('EXAMINATION', 'Examination'),
         ('SPECIAL_NON_CLASS_DAY', 'Special Non-Class Day'),
+        ('ENROLLMENT', 'Enrollment'),
+        ('ACADEMIC_DEADLINE', 'Academic Deadline'),
+    ]
+    ENROLLMENT_TYPE_CHOICES = [
+        ('ENROLLMENT_OPENS', 'Enrollment Opens'),
+        ('ENROLLMENT_PERIOD', 'Enrollment Period'),
+        ('ENROLLMENT_DEADLINE', 'Enrollment Deadline'),
+        ('LATE_ENROLLMENT', 'Late Enrollment'),
+        ('ADDING_DROPPING', 'Adding/Dropping Period'),
+        ('SUBJECT_REGISTRATION', 'Subject Registration'),
+        ('SCHOLARSHIP_APPLICATION', 'Scholarship Application'),
+        ('CLEARANCE_PERIOD', 'Clearance Period'),
+        ('STUDENT_ORIENTATION', 'Student Orientation'),
+        ('OTHER_ENROLLMENT_ACTIVITY', 'Other Enrollment Activity'),
+    ]
+    ACADEMIC_DEADLINE_TYPE_CHOICES = [
+        ('GRADE_SUBMISSION', 'Grade Submission'),
+        ('FACULTY_EVALUATION', 'Faculty Evaluation'),
+        ('RESEARCH_SUBMISSION', 'Research Submission'),
+        ('THESIS_DEFENSE', 'Thesis Defense'),
+        ('CLEARANCE', 'Clearance'),
+        ('LIBRARY_RETURN', 'Library Return'),
+        ('SCHOLARSHIP_APPLICATION', 'Scholarship Application'),
+        ('OJT_APPLICATION', 'OJT Application'),
+        ('OJT_REQUIREMENTS', 'OJT Requirements'),
+        ('GRADUATION_REQUIREMENTS', 'Graduation Requirements'),
+        ('OTHER_ACADEMIC_DEADLINE', 'Other Academic Deadline'),
     ]
     EXAMINATION_TYPE_CHOICES = [
         ('PRELIMINARY', 'Preliminary Examination'),
@@ -68,7 +95,9 @@ class SchoolCalendarDay(models.Model):
 
     academic_year = models.ForeignKey(AcademicYear, on_delete=models.CASCADE, related_name='school_calendar_days')
     calendar_date = models.DateField()
+    end_date = models.DateField(null=True, blank=True)
     day_type = models.CharField(max_length=30, choices=DAY_TYPE_CHOICES, default='SCHOOL_DAY')
+    event_type = models.CharField(max_length=35, blank=True, default='')
     title = models.CharField(max_length=150)
     remarks = models.TextField(blank=True, default='')
     attendance_expected = models.BooleanField(default=True)
@@ -94,6 +123,14 @@ class SchoolCalendarDay(models.Model):
     subject = models.ForeignKey('academics.Subject', on_delete=models.SET_NULL, related_name='examination_calendar_days', null=True, blank=True)
     instructor = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, related_name='examination_calendar_days', null=True, blank=True)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='DRAFT')
+    submitted_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, related_name='submitted_school_calendar_days', null=True, blank=True)
+    submitted_at = models.DateTimeField(null=True, blank=True)
+    approved_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, related_name='approved_school_calendar_days', null=True, blank=True)
+    approved_at = models.DateTimeField(null=True, blank=True)
+    rejected_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, related_name='rejected_school_calendar_days', null=True, blank=True)
+    rejected_at = models.DateTimeField(null=True, blank=True)
+    rejection_reason = models.TextField(blank=True, default='')
+    approval_notes = models.TextField(blank=True, default='')
     cancellation_reason = models.TextField(blank=True, default='')
     recurrence = models.ForeignKey('RecurringSchoolCalendarEvent', on_delete=models.SET_NULL, related_name='occurrences', null=True, blank=True)
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, related_name='school_calendar_days', null=True, blank=True)
@@ -126,12 +163,29 @@ class SchoolCalendarDay(models.Model):
             raise ValidationError({'affected_department': 'Department can only be set for department scope.'})
         if self.start_time and self.end_time and self.end_time < self.start_time:
             raise ValidationError({'end_time': 'End time cannot be before start time.'})
+        if self.end_date and self.end_date < self.calendar_date:
+            raise ValidationError({'end_date': 'End date cannot be before the start date.'})
         if self.status == 'CANCELLED' and not self.cancellation_reason.strip():
             raise ValidationError({'cancellation_reason': 'Cancellation reason is required.'})
+        if self.status == 'REJECTED' and not self.rejection_reason.strip():
+            raise ValidationError({'rejection_reason': 'Rejection reason is required.'})
         if self.day_type == 'SUSPENSION' and not self.suspension_type:
             raise ValidationError({'suspension_type': 'Suspension type is required.'})
         if self.day_type == 'EXAMINATION' and not self.examination_type:
             raise ValidationError({'examination_type': 'Examination type is required for examination entries.'})
+        if self.day_type == 'ENROLLMENT' and not self.event_type:
+            raise ValidationError({'event_type': 'An enrollment activity type is required.'})
+        if self.day_type == 'ENROLLMENT' and self.event_type not in dict(self.ENROLLMENT_TYPE_CHOICES):
+            raise ValidationError({'event_type': 'Invalid enrollment activity type.'})
+        if self.day_type == 'ACADEMIC_DEADLINE' and not self.event_type:
+            raise ValidationError({'event_type': 'An academic deadline type is required.'})
+        if self.day_type == 'ACADEMIC_DEADLINE' and self.event_type not in dict(self.ACADEMIC_DEADLINE_TYPE_CHOICES):
+            raise ValidationError({'event_type': 'Invalid academic deadline type.'})
+        if self.day_type in {'ENROLLMENT', 'ACADEMIC_DEADLINE'}:
+            self.attendance_expected = False
+            self.classes_suspended = False
+        if self.day_type not in {'ENROLLMENT', 'ACADEMIC_DEADLINE'} and self.event_type:
+            raise ValidationError({'event_type': 'Event type can only be set for enrollment or academic deadline entries.'})
         if self.day_type != 'EXAMINATION' and (self.examination_type or self.examination_period or self.subject or self.instructor):
             raise ValidationError({'day_type': 'Examination details can only be set for examination entries.'})
         if self.section and self.academic_year and self.section.academic_year_id != self.academic_year_id:
@@ -153,6 +207,9 @@ class SchoolCalendarDay(models.Model):
         if self.academic_year and self.calendar_date:
             if self.calendar_date < self.academic_year.start_date or self.calendar_date > self.academic_year.end_date:
                 raise ValidationError({'calendar_date': 'The calendar date must fall within the selected academic year.'})
+        if self.academic_year and self.end_date:
+            if self.end_date < self.academic_year.start_date or self.end_date > self.academic_year.end_date:
+                raise ValidationError({'end_date': 'The end date must fall within the selected academic year.'})
 
     def is_attendance_expected(self):
         return bool(self.attendance_expected)
@@ -161,7 +218,7 @@ class SchoolCalendarDay(models.Model):
     def get_expected_school_days(cls, academic_year, start_date=None, end_date=None):
         if not academic_year:
             return 0
-        queryset = cls.objects.filter(academic_year=academic_year, attendance_expected=True)
+        queryset = cls.objects.filter(academic_year=academic_year, attendance_expected=True).exclude(status__in={'CANCELLED', 'ARCHIVED', 'REJECTED'})
         if start_date:
             queryset = queryset.filter(calendar_date__gte=start_date)
         if end_date:
@@ -170,7 +227,7 @@ class SchoolCalendarDay(models.Model):
 
     @classmethod
     def get_expected_school_day_dates(cls, academic_year, start_date=None, end_date=None):
-        queryset = cls.objects.filter(academic_year=academic_year, attendance_expected=True)
+        queryset = cls.objects.filter(academic_year=academic_year, attendance_expected=True).exclude(status__in={'CANCELLED', 'ARCHIVED', 'REJECTED'})
         if start_date:
             queryset = queryset.filter(calendar_date__gte=start_date)
         if end_date:
@@ -183,7 +240,7 @@ class SchoolCalendarDay(models.Model):
             return None
         return cls.objects.filter(
             academic_year=academic_year, calendar_date=calendar_date,
-        ).order_by('attendance_expected', 'id').first()
+        ).exclude(status__in={'CANCELLED', 'ARCHIVED', 'REJECTED'}).order_by('attendance_expected', 'id').first()
 
     def __str__(self):
         return f"{self.academic_year.name} - {self.calendar_date} - {self.day_type}"

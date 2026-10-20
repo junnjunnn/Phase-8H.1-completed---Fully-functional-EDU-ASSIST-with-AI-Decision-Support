@@ -27,10 +27,18 @@ const sectionConfig = [
   { key: 'account', label: 'Account', items: ['Settings', 'Profile'] },
 ]
 
+const guidanceSectionConfig = [
+  { key: 'main', label: 'Main', items: ['Dashboard'] },
+  { key: 'student-monitoring', label: 'Student Monitoring', items: ['Students', 'Academic Records', 'Attendance', 'Behavior'] },
+  { key: 'student-support', label: 'Student Support', items: ['Predictions', 'Interventions', 'Reports'] },
+  { key: 'account', label: 'Account', items: ['Profile'] },
+]
+
 const iconMap = {
   Dashboard: HomeIcon,
   Students: UserGroupIcon,
   Academics: AcademicCapIcon,
+  'Academic Records': AcademicCapIcon,
   Attendance: CalendarDaysIcon,
   Behavior: ClipboardDocumentListIcon,
   Interventions: ShieldCheckIcon,
@@ -78,7 +86,9 @@ export function SidebarNav({ collapsed, onToggleCollapse }) {
   }), [user?.role, user?.role_name, user?.profile?.role_name])
 
   const groupedItems = useMemo(() => {
-    const groups = sectionConfig.map((section) => ({
+    const role = (user?.role_name || user?.role || user?.profile?.role_name || 'NONE').toUpperCase()
+    const sections = role === 'GUIDANCE' ? guidanceSectionConfig : sectionConfig
+    const groups = sections.map((section) => ({
       ...section,
       items: section.items
         .map((label) => {
@@ -89,10 +99,10 @@ export function SidebarNav({ collapsed, onToggleCollapse }) {
     }))
 
     return groups.filter((group) => group.items.length > 0)
-  }, [visibleItems])
+  }, [user?.role, user?.role_name, user?.profile?.role_name, visibleItems])
 
   return (
-    <aside className={`sidebar ${collapsed ? 'sidebar-collapsed' : ''}`} aria-label="Application sidebar">
+    <aside className={`sidebar no-print ${collapsed ? 'sidebar-collapsed' : ''}`} aria-label="Application sidebar">
       <div className="sidebar-branding">
         <button type="button" className="sidebar-collapse-button" onClick={onToggleCollapse} aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}>
           {collapsed ? <ChevronRightIcon className="icon" /> : <ChevronLeftIcon className="icon" />}

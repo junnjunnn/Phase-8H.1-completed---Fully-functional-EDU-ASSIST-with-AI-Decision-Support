@@ -55,6 +55,45 @@ function dateKey(date) {
 function monthLabel(date) { return date.toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) }
 function formatCalendarDate(value) { return value ? new Date(`${value}T00:00:00`).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }) : 'No date' }
 function displayType(type) { return TYPE_LABELS[type] || type?.replaceAll('_', ' ') || 'Calendar entry' }
+function createInitialCalendarForm(academicYear = '', calendarDate = '') {
+  return {
+    academic_year: academicYear,
+    calendar_date: calendarDate,
+    end_date: '',
+    day_type: 'HOLIDAY',
+    event_type: '',
+    title: '',
+    remarks: '',
+    attendance_expected: false,
+    classes_suspended: false,
+    scope_type: 'SCHOOL_WIDE',
+    start_time: '',
+    end_time: '',
+    reason: '',
+    suspension_type: 'OTHER',
+    affected_department: '',
+    announcement: '',
+    location: '',
+    organizer: '',
+    target_participants: '',
+    status: 'DRAFT',
+    cancellation_reason: '',
+    examination_type: '',
+    examination_period: '',
+    subject: '',
+    instructor: '',
+    affected_grade_level: '',
+    section: '',
+    recurrence_enabled: false,
+    frequency: 'WEEKLY',
+    recurrence_end_date: '',
+    recurrence_interval: 1,
+    recurrence_weekday: 4,
+    recurrence_week: 1,
+    recurrence_month: '',
+    recurrence_month_day: '',
+  }
+}
 
 export function SchoolCalendarPage() {
   const { user } = useAuth()
@@ -89,43 +128,7 @@ export function SchoolCalendarPage() {
   const [search, setSearch] = useState('')
   const [typeFilter, setTypeFilter] = useState('ALL')
   const [statusFilter, setStatusFilter] = useState('ALL')
-  const [form, setForm] = useState({
-    academic_year: '',
-    calendar_date: '',
-    end_date: '',
-    day_type: 'HOLIDAY',
-    event_type: '',
-    title: '',
-    remarks: '',
-    attendance_expected: false,
-    classes_suspended: false,
-    scope_type: 'SCHOOL_WIDE',
-    start_time: '',
-    end_time: '',
-    reason: '',
-    suspension_type: 'OTHER',
-    affected_department: '',
-    announcement: '',
-    location: '',
-    organizer: '',
-    target_participants: '',
-    status: 'DRAFT',
-    cancellation_reason: '',
-    examination_type: '',
-    examination_period: '',
-    subject: '',
-    instructor: '',
-    affected_grade_level: '',
-    section: '',
-    recurrence_enabled: false,
-    frequency: 'WEEKLY',
-    recurrence_end_date: '',
-    recurrence_interval: 1,
-    recurrence_weekday: 4,
-    recurrence_week: 1,
-    recurrence_month: '',
-    recurrence_month_day: '',
-  })
+  const [form, setForm] = useState(() => createInitialCalendarForm())
 
   useEffect(() => {
     let active = true
@@ -182,6 +185,7 @@ export function SchoolCalendarPage() {
     return searchMatch && (typeFilter === 'ALL' || entry.day_type === typeFilter) && (statusFilter === 'ALL' || entry.status === statusFilter)
   }), [calendarEntries, search, typeFilter, statusFilter])
   const entriesByDate = useMemo(() => visibleEntries.reduce((result, entry) => { (result[entry.calendar_date] ||= []).push(entry); return result }, {}), [visibleEntries])
+  const allEntriesByDate = useMemo(() => calendarEntries.reduce((result, entry) => { (result[entry.calendar_date] ||= []).push(entry); return result }, {}), [calendarEntries])
   const monthDays = useMemo(() => {
     const first = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 1)
     const start = new Date(first)
@@ -190,6 +194,31 @@ export function SchoolCalendarPage() {
   }, [currentMonth])
   const monthEntries = useMemo(() => visibleEntries.filter((entry) => entry.calendar_date?.startsWith(`${currentMonth.getFullYear()}-${String(currentMonth.getMonth() + 1).padStart(2, '0')}`)), [visibleEntries, currentMonth])
   const summary = { school: monthEntries.filter((entry) => entry.day_type === 'SCHOOL_DAY').length, holiday: monthEntries.filter((entry) => entry.day_type === 'HOLIDAY').length, suspension: monthEntries.filter((entry) => entry.day_type === 'SUSPENSION').length, nonClass: monthEntries.filter((entry) => ['SPECIAL_NON_CLASS_DAY', 'WEEKEND'].includes(entry.day_type)).length }
+
+  function startNewEvent(calendarDate = '') {
+    setEditingId(null)
+    setConflictDetails([])
+    setError('')
+    setSuccessMessage('')
+    setForm(createInitialCalendarForm(String(selectedAcademicYearId || ''), calendarDate))
+    setShowForm(true)
+  }
+
+  function closeEventForm() {
+    setEditingId(null)
+    setForm(createInitialCalendarForm(String(selectedAcademicYearId || '')))
+    setShowForm(false)
+  }
+
+  function updateEventScope(scopeType) {
+    setForm((previous) => ({
+      ...previous,
+      scope_type: scopeType,
+      section: '',
+      affected_grade_level: '',
+      affected_department: '',
+    }))
+  }
 
   useEffect(() => {
     if (!selectedAcademicYearId) return
@@ -247,21 +276,7 @@ export function SchoolCalendarPage() {
       setSuccessMessage(editingId ? 'School calendar entry updated.' : 'School calendar entry saved.')
       const data = await getSchoolCalendarDays({ academic_year: payloadAcademicYear, ordering: 'calendar_date' })
       setCalendarEntries(normalizeListResponse(data).items)
-      setForm((previous) => ({
-        ...previous,
-        academic_year: String(payloadAcademicYear),
-        calendar_date: '',
-        end_date: '',
-        day_type: 'HOLIDAY',
-        event_type: '',
-        title: '',
-        remarks: '',
-        attendance_expected: false,
-        classes_suspended: false,
-        scope_type: 'SCHOOL_WIDE',
-        affected_grade_level: '', section: '', examination_type: '', examination_period: '', subject: '', instructor: '',
-        start_time: '', end_time: '', reason: '', suspension_type: 'OTHER', affected_department: '', announcement: '', location: '', organizer: '', target_participants: '', status: 'DRAFT', cancellation_reason: '', recurrence_enabled: false, recurrence_end_date: '', recurrence_interval: 1, recurrence_weekday: 4, recurrence_week: 1, recurrence_month: '', recurrence_month_day: '',
-      }))
+      setForm(createInitialCalendarForm(String(payloadAcademicYear)))
       setEditingId(null)
       setShowForm(false)
       setSelectedAcademicYearId(String(payloadAcademicYear))
@@ -287,6 +302,17 @@ export function SchoolCalendarPage() {
     ]
     const editableEntry = Object.fromEntries(editableFields.map((field) => [field, entry[field] ?? '']))
     setForm({ ...form, ...editableEntry, academic_year: String(entry.academic_year) })
+  }
+
+  function selectCalendarDate(dateValue, entries) {
+    if (bulkSelectionMode) {
+      toggleBulkDate(dateValue)
+    } else if (entries.length) {
+      setSelectedEntry(entries[0])
+    } else {
+      setSelectedEntry(null)
+      startNewEvent(dateValue)
+    }
   }
 
   async function submitEntryForApproval(entry) {
@@ -420,7 +446,7 @@ export function SchoolCalendarPage() {
         eyebrow="Academic operations"
         title="School Calendar"
         description="Manage holidays, suspensions, and non-class days"
-        actions={<button type="button" className="btn btn-primary" onClick={() => { setEditingId(null); setShowForm(true) }}><PlusIcon className="icon" /> Add Event</button>}
+        actions={<button type="button" className="btn btn-primary" onClick={() => startNewEvent()}><PlusIcon className="icon" /> Add Event</button>}
       />
 
       {error ? <ErrorBanner message={error} /> : null}
@@ -429,14 +455,14 @@ export function SchoolCalendarPage() {
 
       <div className="calendar-filter-bar"><label><span>Search events</span><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search title or location" /></label><label><span>Event type</span><select value={typeFilter} onChange={(event) => setTypeFilter(event.target.value)}><option value="ALL">All types</option>{DAY_TYPES.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label><label><span>Status</span><select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}><option value="ALL">All statuses</option>{Object.entries(STATUS_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label><label><span>Academic year</span><select value={selectedAcademicYearId} onChange={(event) => { setSelectedAcademicYearId(event.target.value); setForm((previous) => ({ ...previous, academic_year: event.target.value })) }}>{academicYears.map((year) => <option key={year.id} value={year.id}>{year.name}</option>)}</select></label></div>
       <section className="calendar-summary">{[['school', 'School Days', summary.school, 'Attendance expected'], ['holiday', 'Holidays', summary.holiday, 'No attendance'], ['suspension', 'Suspensions', summary.suspension, 'No attendance'], ['non-class', 'Non-Class Days', summary.nonClass, 'No attendance']].map(([key, label, count, note]) => <div className={`calendar-stat calendar-stat--${key}`} key={key}><strong>{count}</strong><span>{label}</span><small>{monthLabel(currentMonth)} · {note}</small></div>)}</section>
-      <section className="calendar-layout"><div className="calendar-main panel-card"><div className="calendar-nav"><button type="button" className="icon-button icon-button--light" onClick={() => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1, 1))} aria-label="Previous month"><ChevronLeftIcon className="icon" /></button><div><p className="eyebrow">Monthly view</p><h2>{monthLabel(currentMonth)}</h2></div><button type="button" className="icon-button icon-button--light" onClick={() => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 1))} aria-label="Next month"><ChevronRightIcon className="icon" /></button><select aria-label="Calendar view"><option>Month</option></select><button type="button" className="btn btn-outline btn-sm" onClick={() => setCurrentMonth(new Date(new Date().getFullYear(), new Date().getMonth(), 1))}>Today</button><button type="button" className="btn btn-outline btn-sm" onClick={() => setBulkSelectionMode((previous) => !previous)}>{bulkSelectionMode ? 'Exit bulk mode' : 'Bulk edit'}</button></div>{bulkSelectionMode ? <div className="bulk-selection-toolbar"><div><strong>{bulkSelectedDates.length} date{bulkSelectedDates.length === 1 ? '' : 's'} selected</strong><div className="form-help">Click dates in the calendar to add or remove them from the bulk selection.</div></div><div className="bulk-selection-actions"><button type="button" className="btn btn-outline btn-sm" onClick={clearBulkSelection}>Clear Selection</button><button type="button" className="btn btn-outline btn-sm" onClick={cancelBulkSelection}>Cancel</button>{bulkSelectedDates.length > 0 ? <button type="button" className="btn btn-primary btn-sm" onClick={() => setBulkEditorOpen(true)}>Modify Selected Dates</button> : null}</div></div> : null}<div className="calendar-grid" role="grid" aria-label={monthLabel(currentMonth)}><div className="calendar-weekdays">{['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'].map((day) => <span key={day}>{day}</span>)}</div><div className="calendar-days">{monthDays.map((date) => { const key = dateKey(date); const entries = entriesByDate[key] || []; const isBulkSelected = bulkSelectedDates.includes(key); return <button type="button" role="gridcell" className={`calendar-day ${date.getMonth() !== currentMonth.getMonth() ? 'calendar-day--outside' : ''} ${date.getDay() === 0 || date.getDay() === 6 ? 'calendar-day--weekend' : ''} ${key === dateKey(new Date()) ? 'calendar-day--today' : ''} ${selectedEntry?.calendar_date === key ? 'calendar-day--selected' : ''} ${isBulkSelected ? 'calendar-day--bulk-selected' : ''}`} key={key} onClick={() => { if (bulkSelectionMode) { toggleBulkDate(key) } else { setSelectedEntry(entries[0] || null) } }}><span className="calendar-date">{date.getDate()}</span><span className="calendar-markers">{entries.slice(0, 4).map((entry) => <i className={`calendar-marker calendar-marker--${TYPE_CLASS[entry.day_type] || 'event'}`} key={entry.id} title={`${displayType(entry.day_type)}: ${entry.title}`} />)}</span><span className="calendar-cell-titles">{entries.slice(0, 2).map((entry) => <span key={entry.id}>{entry.title}</span>)}</span></button> })}</div></div><div className="calendar-legend"><span><i className="calendar-marker calendar-marker--school-day" /> School Day</span><span><i className="calendar-marker calendar-marker--holiday" /> Holiday</span><span><i className="calendar-marker calendar-marker--suspension" /> Suspension</span><span><i className="calendar-marker calendar-marker--non-class" /> Non-Class Day</span><span><i className="calendar-marker calendar-marker--event" /> Special Event</span></div></div><aside className="calendar-details panel-card">{selectedEntry ? <><div className="details-heading"><div><p className="eyebrow">Selected event</p><h2>{selectedEntry.title || displayType(selectedEntry.day_type)}</h2></div><button type="button" className="icon-button icon-button--light" onClick={() => setSelectedEntry(null)} aria-label="Close event details"><XMarkIcon className="icon" /></button></div>{(entriesByDate[selectedEntry.calendar_date] || []).length > 1 ? <div className="date-event-list"><p className="form-help">Events on this date</p>{entriesByDate[selectedEntry.calendar_date].map((entry) => <button type="button" className={`date-event-option ${entry.id === selectedEntry.id ? 'date-event-option--active' : ''}`} key={entry.id} onClick={() => setSelectedEntry(entry)}><span className={`calendar-marker calendar-marker--${TYPE_CLASS[entry.day_type] || 'event'}`} />{entry.title}</button>)}</div> : null}<div className="event-badge-row"><span className={`event-badge event-badge--${TYPE_CLASS[selectedEntry.day_type] || 'event'}`}>{displayType(selectedEntry.day_type)}</span><span className="badge badge--status">{STATUS_LABELS[selectedEntry.status] || selectedEntry.status}</span></div><dl className="event-facts"><div><dt>Date</dt><dd>{formatCalendarDate(selectedEntry.calendar_date)}{selectedEntry.end_date ? ` to ${formatCalendarDate(selectedEntry.end_date)}` : ''}</dd></div><div><dt>Attendance</dt><dd className={selectedEntry.attendance_expected ? 'attendance-yes' : 'attendance-no'}>{selectedEntry.attendance_expected ? 'Attendance expected' : 'No attendance expected'}</dd></div><div><dt>Time</dt><dd>{selectedEntry.start_time ? `${selectedEntry.start_time} - ${selectedEntry.end_time || 'No end time'}` : 'All day'}</dd></div><div><dt>Location</dt><dd>{selectedEntry.location || 'Not specified'}</dd></div><div><dt>Academic year</dt><dd>{academicYears.find((year) => year.id === selectedEntry.academic_year)?.name || 'Not specified'}</dd></div></dl><p className="event-description">{selectedEntry.remarks || selectedEntry.reason || 'No additional details.'}</p><button type="button" className="btn btn-primary btn-sm" onClick={() => editEntry(selectedEntry)}>Edit event</button></> : <EmptyState title="Select a date" message="Choose a date to inspect its events and workflow status." />}</aside></section>
+      <section className="calendar-layout"><div className="calendar-main panel-card"><div className="calendar-nav"><button type="button" className="icon-button icon-button--light" onClick={() => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1, 1))} aria-label="Previous month"><ChevronLeftIcon className="icon" /></button><div><p className="eyebrow">Monthly view</p><h2>{monthLabel(currentMonth)}</h2></div><button type="button" className="icon-button icon-button--light" onClick={() => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 1))} aria-label="Next month"><ChevronRightIcon className="icon" /></button><select aria-label="Calendar view"><option>Month</option></select><button type="button" className="btn btn-outline btn-sm" onClick={() => setCurrentMonth(new Date(new Date().getFullYear(), new Date().getMonth(), 1))}>Today</button><button type="button" className="btn btn-outline btn-sm" onClick={() => setBulkSelectionMode((previous) => !previous)}>{bulkSelectionMode ? 'Exit bulk mode' : 'Bulk edit'}</button></div>{bulkSelectionMode ? <div className="bulk-selection-toolbar"><div><strong>{bulkSelectedDates.length} date{bulkSelectedDates.length === 1 ? '' : 's'} selected</strong><div className="form-help">Click dates in the calendar to add or remove them from the bulk selection.</div></div><div className="bulk-selection-actions"><button type="button" className="btn btn-outline btn-sm" onClick={clearBulkSelection}>Clear Selection</button><button type="button" className="btn btn-outline btn-sm" onClick={cancelBulkSelection}>Cancel</button>{bulkSelectedDates.length > 0 ? <button type="button" className="btn btn-primary btn-sm" onClick={() => setBulkEditorOpen(true)}>Modify Selected Dates</button> : null}</div></div> : null}<div className="calendar-grid" role="grid" aria-label={monthLabel(currentMonth)}><div className="calendar-weekdays">{['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'].map((day) => <span key={day}>{day}</span>)}</div><div className="calendar-days">{monthDays.map((date) => { const key = dateKey(date); const entries = entriesByDate[key] || []; const isBulkSelected = bulkSelectedDates.includes(key); return <button type="button" role="gridcell" className={`calendar-day ${date.getMonth() !== currentMonth.getMonth() ? 'calendar-day--outside' : ''} ${date.getDay() === 0 || date.getDay() === 6 ? 'calendar-day--weekend' : ''} ${key === dateKey(new Date()) ? 'calendar-day--today' : ''} ${selectedEntry?.calendar_date === key ? 'calendar-day--selected' : ''} ${isBulkSelected ? 'calendar-day--bulk-selected' : ''}`} key={key} onClick={() => selectCalendarDate(key, allEntriesByDate[key] || [])}><span className="calendar-date">{date.getDate()}</span><span className="calendar-markers">{entries.slice(0, 4).map((entry) => <i className={`calendar-marker calendar-marker--${TYPE_CLASS[entry.day_type] || 'event'}`} key={entry.id} title={`${displayType(entry.day_type)}: ${entry.title}`} />)}</span><span className="calendar-cell-titles">{entries.slice(0, 2).map((entry) => <span key={entry.id}>{entry.title}</span>)}</span></button> })}</div></div><div className="calendar-legend"><span><i className="calendar-marker calendar-marker--school-day" /> School Day</span><span><i className="calendar-marker calendar-marker--holiday" /> Holiday</span><span><i className="calendar-marker calendar-marker--suspension" /> Suspension</span><span><i className="calendar-marker calendar-marker--non-class" /> Non-Class Day</span><span><i className="calendar-marker calendar-marker--event" /> Special Event</span></div></div><aside className="calendar-details panel-card">{selectedEntry ? <><div className="details-heading"><div><p className="eyebrow">Selected event</p><h2>{selectedEntry.title || displayType(selectedEntry.day_type)}</h2></div><button type="button" className="icon-button icon-button--light" onClick={() => setSelectedEntry(null)} aria-label="Close event details"><XMarkIcon className="icon" /></button></div>{(allEntriesByDate[selectedEntry.calendar_date] || []).length > 1 ? <div className="date-event-list"><p className="form-help">Events on this date</p>{allEntriesByDate[selectedEntry.calendar_date].map((entry) => <button type="button" className={`date-event-option ${entry.id === selectedEntry.id ? 'date-event-option--active' : ''}`} key={entry.id} onClick={() => setSelectedEntry(entry)}><span className={`calendar-marker calendar-marker--${TYPE_CLASS[entry.day_type] || 'event'}`} />{entry.title}</button>)}</div> : null}<div className="event-badge-row"><span className={`event-badge event-badge--${TYPE_CLASS[selectedEntry.day_type] || 'event'}`}>{displayType(selectedEntry.day_type)}</span><span className="badge badge--status">{STATUS_LABELS[selectedEntry.status] || selectedEntry.status}</span></div><dl className="event-facts"><div><dt>Date</dt><dd>{formatCalendarDate(selectedEntry.calendar_date)}{selectedEntry.end_date ? ` to ${formatCalendarDate(selectedEntry.end_date)}` : ''}</dd></div><div><dt>Attendance</dt><dd className={selectedEntry.attendance_expected ? 'attendance-yes' : 'attendance-no'}>{selectedEntry.attendance_expected ? 'Attendance expected' : 'No attendance expected'}</dd></div><div><dt>Time</dt><dd>{selectedEntry.start_time ? `${selectedEntry.start_time} - ${selectedEntry.end_time || 'No end time'}` : 'All day'}</dd></div><div><dt>Location</dt><dd>{selectedEntry.location || 'Not specified'}</dd></div><div><dt>Academic year</dt><dd>{academicYears.find((year) => year.id === selectedEntry.academic_year)?.name || 'Not specified'}</dd></div></dl><p className="event-description">{selectedEntry.remarks || selectedEntry.reason || 'No additional details.'}</p><button type="button" className="btn btn-primary btn-sm" onClick={() => editEntry(selectedEntry)}>Edit event</button><button type="button" className="btn btn-outline btn-sm" onClick={() => startNewEvent(selectedEntry.calendar_date)}>Add another event on this date</button></> : <EmptyState title="Select a date" message="Choose a date to inspect its events and workflow status." />}</aside></section>
       <section className={`panel-card record-panel calendar-editor ${showForm ? 'calendar-editor--open' : ''}`}>
         <div className="section-header">
           <div>
             <p className="eyebrow">Academic year context</p>
             <h2>School day classification</h2>
           </div>
-          {showForm ? <button type="button" className="icon-button icon-button--light" onClick={() => { setShowForm(false); setEditingId(null) }} aria-label="Close event form"><XMarkIcon className="icon" /></button> : null}
+          {showForm ? <button type="button" className="icon-button icon-button--light" onClick={closeEventForm} aria-label="Close event form"><XMarkIcon className="icon" /></button> : null}
         </div>
 
         <form className="form-grid" onSubmit={handleSubmit}>
@@ -499,8 +525,10 @@ export function SchoolCalendarPage() {
           {EVENT_TYPES[form.day_type] ? <label><span>{form.day_type === 'ENROLLMENT' ? 'Enrollment activity' : 'Academic deadline'}</span><select value={form.event_type} onChange={(event) => setForm({ ...form, event_type: event.target.value })} required><option value="">Select type</option>{EVENT_TYPES[form.day_type].map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label> : null}
           <label>
             <span>Scope</span>
-            <select value={form.scope_type} onChange={(event) => setForm({ ...form, scope_type: event.target.value })}>
+            <select value={form.scope_type} onChange={(event) => updateEventScope(event.target.value)}>
               <option value="SCHOOL_WIDE">School-wide</option>
+              <option value="GRADE_LEVEL">Grade level</option>
+              <option value="DEPARTMENT">Department</option>
               <option value="SECTION_SPECIFIC">Section-specific</option>
             </select>
           </label>
@@ -523,7 +551,7 @@ export function SchoolCalendarPage() {
 
           <div className="section-actions form-grid-full">
             <button type="submit" className="action-button">{editingId ? 'Update calendar entry' : 'Save calendar entry'}</button>
-            {editingId ? <button type="button" className="action-button secondary-button" onClick={() => setEditingId(null)}>Cancel edit</button> : null}
+            {editingId ? <button type="button" className="action-button secondary-button" onClick={closeEventForm}>Cancel edit</button> : null}
             <button type="button" className="action-button secondary-button" onClick={handleImportPhilippineHolidays}>
               Import Philippine Holidays
             </button>

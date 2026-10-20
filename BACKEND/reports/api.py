@@ -1,5 +1,9 @@
+import csv
+from io import StringIO
+
 from django.contrib.auth import get_user_model
-from django.db.models import Avg, Count, Max, Min, Sum
+from django.db.models import Avg, Count, F, Max, Min, Sum
+from django.http import HttpResponse
 from django.utils import timezone
 from rest_framework import permissions, viewsets
 from rest_framework.decorators import action
@@ -13,6 +17,7 @@ from interventions.models import Intervention
 from predictions.models import RiskPrediction
 from students.models import Student
 from audit.models import AuditLog
+from common.authorization import active_enrollment_queryset
 
 
 class ReportsViewSet(viewsets.ViewSet):
@@ -60,7 +65,7 @@ class ReportsViewSet(viewsets.ViewSet):
 
     def _base_enrollment_queryset(self):
         qs = Enrollment.objects.select_related('student', 'academic_year', 'grade_level', 'section').prefetch_related('academic_records', 'attendance_records', 'behavioral_assessments', 'risk_predictions', 'interventions')
-        return self._get_queryset_for_scope(qs)
+        return active_enrollment_queryset(self._get_queryset_for_scope(qs))
 
     def _teacher_subject_is_authorized(self):
         subject_id = self.request.query_params.get('subject')
@@ -87,7 +92,11 @@ class ReportsViewSet(viewsets.ViewSet):
         }
 
     def _academic_reports(self, enrollments):
-        academic_records = AcademicRecord.objects.filter(enrollment__in=enrollments)
+        academic_records = AcademicRecord.objects.filter(
+            enrollment__in=enrollments,
+            academic_year__is_active=True,
+            academic_year_id=F('enrollment__academic_year_id'),
+        )
         summary = academic_records.aggregate(
             average_grade=Avg('grade'),
             highest_grade=Max('grade'),
@@ -101,6 +110,7 @@ class ReportsViewSet(viewsets.ViewSet):
                 'average_grade': round(float(summary['average_grade'] or 0), 2),
                 'highest_grade': float(summary['highest_grade'] or 0),
                 'lowest_grade': float(summary['lowest_grade'] or 0),
+                'total_records': summary['total_records'],
                 'passing_rate': round((passing / summary['total_records'] * 100) if summary['total_records'] else 0, 2),
                 'failing_rate': round((failing / summary['total_records'] * 100) if summary['total_records'] else 0, 2),
             },
@@ -131,7 +141,11 @@ class ReportsViewSet(viewsets.ViewSet):
         }
 
     def _behavior_reports(self, enrollments):
-        assessments = BehavioralAssessment.objects.filter(enrollment__in=enrollments)
+        assessments = BehavioralAssessment.objects.filter(
+            enrollment__in=enrollments,
+            academic_year__is_active=True,
+            academic_year_id=F('enrollment__academic_year_id'),
+        )
         summary = assessments.aggregate(average_score=Avg('numeric_score'), total_assessments=Count('id'))
         return {
             'summary': {
@@ -177,8 +191,35 @@ class ReportsViewSet(viewsets.ViewSet):
             ),
         }
 
-    @action(detail=False, methods=['get'])
-    def center(self, request):
+    def _csv_rows(self, payload, category, academic_year_name):
+        report_labels = {
+            'student': 'Student Reports',
+            'academic': 'Academic Reports',
+            'attendance': 'Attendance Reports',
+            'behavior': 'Behavior Reports',
+            'ai': 'AI Reports',
+            'intervention': 'Intervention Reports',
+        }
+        sections = {
+            'student': payload['student_reports'],
+            'academic': payload['academic_reports']['summary'],
+            'attendance': payload['attendance_reports']['summary'],
+            'behavior': payload['behavior_reports']['summary'],
+            'ai': payload['ai_reports']['summary'],
+            'intervention': payload['intervention_reports']['summary'],
+        }
+        output = StringIO(newline='')
+        writer = csv.writer(output, lineterminator='\r\n')
+        writer.writerow(['Report Type', 'Academic Year', 'Reporting Period', 'Generated At', 'Metric', 'Value'])
+        report_type = report_labels[category]
+        academic_year = academic_year_name or 'All active academic years'
+        period = f"{self.request.query_params.get('date_from') or 'All dates'} to {self.request.query_params.get('date_to') or 'Present'}"
+        generated_at = timezone.localtime().isoformat(timespec='seconds')
+        for metric, value in sections[category].items():
+            writer.writerow([report_type, academic_year, period, generated_at, metric.replace('_', ' ').title(), value])
+        return output.getvalue()
+
+    def _report_payload(self):
         qs = self._base_enrollment_queryset()
         if not self._teacher_subject_is_authorized():
             qs = qs.none()
@@ -193,7 +234,7 @@ class ReportsViewSet(viewsets.ViewSet):
         ai_reports = self._ai_reports(qs)
         intervention_reports = self._intervention_reports(qs)
 
-        response = {
+        return {
             'summary': {
                 'student_count': student_reports['student_count'],
                 'enrollment_count': student_reports['enrollment_count'],
@@ -211,15 +252,17 @@ class ReportsViewSet(viewsets.ViewSet):
             'intervention_reports': intervention_reports,
         }
 
-        return Response(response)
+    @action(detail=False, methods=['get'])
+    def center(self, request):
+        return Response(self._report_payload())
 
     @action(detail=False, methods=['get'])
     def export(self, request):
         if not request.user or not getattr(request.user, 'is_authenticated', False):
             return Response({'detail': 'Authentication required for report export.'}, status=401)
 
-        payload = self.center(request).data
-        export_format = (request.query_params.get('format') or 'csv').lower()
+        payload = self._report_payload()
+        export_format = (request.query_params.get('export_format') or request.query_params.get('format') or 'csv').lower()
         if export_format == 'pdf':
             AuditLog.objects.create(
                 user=request.user,
@@ -251,6 +294,17 @@ class ReportsViewSet(viewsets.ViewSet):
                 'download_file': 'report-center.xlsx',
             })
 
+        if export_format != 'csv':
+            return Response({'detail': 'Unsupported report export format.'}, status=400)
+
+        category = request.query_params.get('category') or 'student'
+        if category not in {'student', 'academic', 'attendance', 'behavior', 'ai', 'intervention'}:
+            return Response({'detail': 'Unsupported report category.'}, status=400)
+        academic_year_id = request.query_params.get('academic_year')
+        academic_year_name = AcademicYear.objects.filter(pk=academic_year_id).values_list('name', flat=True).first() if academic_year_id else None
+        response = HttpResponse(self._csv_rows(payload, category, academic_year_name), content_type='text/csv; charset=utf-8')
+        response['Content-Disposition'] = f'attachment; filename="{category}_report_{timezone.localdate().isoformat()}.csv"'
+
         AuditLog.objects.create(
             user=request.user,
             action='EXPORT_REPORT',
@@ -259,9 +313,4 @@ class ReportsViewSet(viewsets.ViewSet):
             object_id='report-center',
             ip_address=request.META.get('REMOTE_ADDR'),
         )
-        return Response({
-            'format': export_format,
-            'data': payload,
-            'message': 'CSV export is prepared.',
-            'download_file': 'report-center.csv',
-        })
+        return response

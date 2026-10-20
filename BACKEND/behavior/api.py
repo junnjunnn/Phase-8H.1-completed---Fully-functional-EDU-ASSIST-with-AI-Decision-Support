@@ -9,6 +9,8 @@ from django_filters.rest_framework import DjangoFilterBackend
 from audit.models import AuditLog
 from accounts.permissions import IsAuthorizedStaff, IsSchoolAdmin
 from accounts.utils import get_authorized_enrollment_queryset
+from academics.models import Enrollment
+from common.authorization import active_enrollment_queryset, archived_enrollment_queryset
 from .models import CoreValue, BehaviorIndicator, BehavioralRating, BehavioralAssessment
 from .serializers import (
     CoreValueSerializer,
@@ -92,7 +94,16 @@ class BehavioralAssessmentViewSet(mixins.ListModelMixin, mixins.RetrieveModelMix
     ordering = ['-assessment_date']
 
     def get_queryset(self):
-        return get_authorized_enrollment_queryset(self.request.user, super().get_queryset(), enrollment_field='enrollment')
+        queryset = get_authorized_enrollment_queryset(self.request.user, super().get_queryset(), enrollment_field='enrollment')
+        status = self.request.query_params.get('status', 'active').lower()
+        enrollments = Enrollment.objects.all()
+        if status == 'active':
+            enrollments = active_enrollment_queryset(enrollments)
+        elif status == 'archived':
+            enrollments = archived_enrollment_queryset(enrollments)
+        elif status != 'all':
+            raise ValidationError({'status': 'Status must be active, archived, or all.'})
+        return queryset.filter(enrollment__in=enrollments)
 
     def perform_create(self, serializer):
         instance = serializer.save(assessed_by=self.request.user if self.request.user.is_authenticated else None)

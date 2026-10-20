@@ -4,6 +4,7 @@ from rest_framework.test import APIClient
 
 from academics.models import AcademicYear, GradeLevel, Section, Subject, TeacherAssignment, Enrollment
 from accounts.models import UserProfile
+from common.authorization import authorized_students_queryset
 from students.models import Student
 
 
@@ -45,6 +46,14 @@ class TeacherContextPhase2Tests(TestCase):
         response = self.client.get('/api/teacher-assignments/')
         self.assertEqual(response.status_code, 200)
         self.assertEqual([item['section_name'] for item in response.data['results']], ['Bonifacio'])
+
+    def test_authorized_students_queryset_unions_adviser_and_subject_sections(self):
+        enrolled_subject_student = Student.objects.create(first_name='Subject', last_name='Roster', student_status='active')
+        Enrollment.objects.create(student=enrolled_subject_student, academic_year=self.year, grade_level=self.grade, section=self.subject_section, enrollment_status='active')
+
+        authorized_ids = set(authorized_students_queryset(self.teacher, Student.objects.all()).values_list('id', flat=True))
+
+        self.assertIn(enrolled_subject_student.id, authorized_ids)
 
     def test_teacher_enrollment_scope_includes_advisory_but_not_unrelated(self):
         self.authenticate()

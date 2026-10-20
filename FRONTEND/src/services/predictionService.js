@@ -20,6 +20,11 @@ export async function getAdviserDashboard(params = {}) {
   return response.data
 }
 
+export async function getRegistrarDashboard(params = {}) {
+  const response = await apiClient.get('/registrar-dashboard/', { params })
+  return response.data
+}
+
 export async function generatePrediction(studentId) {
   const response = await apiClient.post(`/predictions/predict/${studentId}/`)
   return response.data

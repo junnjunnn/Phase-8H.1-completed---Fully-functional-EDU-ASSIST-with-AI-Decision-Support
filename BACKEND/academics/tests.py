@@ -6,6 +6,7 @@ from rest_framework.test import APIClient
 from accounts.models import UserProfile
 from academics.models import AcademicYear, GradeLevel, Section, Enrollment, Subject, AcademicRecord, TeacherAssignment, Strand
 from academics.serializers import SubjectSerializer
+from predictions.services.prediction_service import PredictionService
 from students.models import Student
 
 
@@ -255,6 +256,17 @@ class AcademicsAPITests(TestCase):
         self.assertEqual(AcademicRecord.objects.filter(enrollment=self.enrollment_a, subject=self.subject, academic_year=self.academic_year, grading_period_type='Quarter', quarter=1).count(), 1)
         self.assertEqual(AcademicRecord.objects.filter(enrollment=self.enrollment_a, subject=self.subject, academic_year=self.academic_year, grading_period_type='Quarter', quarter=2).count(), 1)
 
+    def test_grade_level_school_level_filter_returns_only_requested_school_level(self):
+        self.client.force_authenticate(user=self.superadmin)
+
+        response = self.client.get('/api/grade-levels/', {'school_level': 'elementary'})
+        self.assertEqual(response.status_code, 200)
+        ids = {item['id'] for item in response.data['results']}
+        elementary_ids = set(GradeLevel.objects.filter(school_level='Elementary').values_list('id', flat=True))
+        self.assertTrue(ids.issubset(elementary_ids))
+        self.assertFalse(ids.intersection(set(GradeLevel.objects.filter(school_level='Junior High School').values_list('id', flat=True))))
+        self.assertFalse(ids.intersection(set(GradeLevel.objects.filter(school_level='Senior High School').values_list('id', flat=True))))
+
     def test_superadmin_sees_all_academic_records(self):
         self.client.force_authenticate(user=self.superadmin)
         response = self.client.get('/api/academic-records/')
@@ -336,6 +348,415 @@ class AcademicsAPITests(TestCase):
         })
         self.assertEqual(response.status_code, 400)
         self.assertIn('already exists', str(response.data))
+
+
+class AcademicCalculationPolicyTests(TestCase):
+    """Document the current academic behavior without changing production logic.
+
+    These tests protect the existing repository contract and intentionally do not
+    invent a canonical annual-average, semester-aggregation, or subject-selection
+    policy. Unresolved policy decisions must remain unresolved until explicit
+    project evidence exists.
+    """
+
+    def setUp(self):
+        self.client = APIClient()
+        self.superadmin = get_user_model().objects.create_user(username='policy_admin', password='SuperPass1!')
+        UserProfile.objects.create(user=self.superadmin, role_name='SUPER_ADMIN')
+
+        self.grade_level = GradeLevel.objects.get(code='G11')
+        self.current_year = AcademicYear.objects.create(name='2025-2026', start_date='2025-06-01', end_date='2026-03-31', is_active=True)
+        self.previous_year = AcademicYear.objects.create(name='2024-2025', start_date='2024-06-01', end_date='2025-03-31', is_active=False)
+
+        self.student = Student.objects.create(first_name='Policy', last_name='Student', gender='Female', student_status='active')
+        self.current_enrollment = Enrollment.objects.create(
+            student=self.student,
+            academic_year=self.current_year,
+            grade_level=self.grade_level,
+            section=Section.objects.create(name='A', grade_level=self.grade_level, academic_year=self.current_year),
+            enrollment_status='active',
+        )
+        self.previous_enrollment = Enrollment.objects.create(
+            student=self.student,
+            academic_year=self.previous_year,
+            grade_level=self.grade_level,
+            section=Section.objects.create(name='B', grade_level=self.grade_level, academic_year=self.previous_year),
+            enrollment_status='active',
+        )
+
+        self.subject_math = Subject.objects.create(code='POLY-MATH', name='Mathematics', category='Learning Area', grade_level=self.grade_level)
+        self.subject_english = Subject.objects.create(code='POLY-ENG', name='English', category='Learning Area', grade_level=self.grade_level)
+
+    def test_general_average_uses_valid_final_grade_values(self):
+        AcademicRecord.objects.create(
+            enrollment=self.current_enrollment,
+            subject=self.subject_math,
+            academic_year=self.current_year,
+            grading_period_type='Quarter',
+            quarter=1,
+            final_grade=90.00,
+            grade=90.00,
+        )
+        AcademicRecord.objects.create(
+            enrollment=self.current_enrollment,
+            subject=self.subject_english,
+            academic_year=self.current_year,
+            grading_period_type='Quarter',
+            quarter=1,
+            final_grade=82.50,
+            grade=82.50,
+        )
+        AcademicRecord.objects.create(
+            enrollment=self.current_enrollment,
+            subject=self.subject_math,
+            academic_year=self.current_year,
+            grading_period_type='Quarter',
+            quarter=2,
+            final_grade=None,
+            grade=70.00,
+        )
+
+        records = AcademicRecord.objects.filter(enrollment=self.current_enrollment)
+        grades = [float(record.final_grade) for record in records if record.final_grade is not None]
+        general_average = round(sum(grades) / len(grades), 2)
+
+        self.assertEqual(grades, [90.0, 82.5])
+        self.assertEqual(general_average, 86.25)
+
+    def test_general_average_keeps_zero_as_valid_and_excludes_null_only(self):
+        # No canonical annual-average policy exists. This test protects the currently
+        # verified arithmetic-mean contract for the loaded record set only.
+        AcademicRecord.objects.create(
+            enrollment=self.current_enrollment,
+            subject=self.subject_math,
+            academic_year=self.current_year,
+            grading_period_type='Quarter',
+            quarter=1,
+            final_grade=90.00,
+            grade=90.00,
+        )
+        AcademicRecord.objects.create(
+            enrollment=self.current_enrollment,
+            subject=self.subject_english,
+            academic_year=self.current_year,
+            grading_period_type='Quarter',
+            quarter=1,
+            final_grade=0.00,
+            grade=0.00,
+        )
+        AcademicRecord.objects.create(
+            enrollment=self.current_enrollment,
+            subject=self.subject_math,
+            academic_year=self.current_year,
+            grading_period_type='Quarter',
+            quarter=2,
+            final_grade=None,
+            grade=82.50,
+        )
+
+        grades = [float(record.final_grade) for record in AcademicRecord.objects.filter(enrollment=self.current_enrollment) if record.final_grade is not None]
+        general_average = round(sum(grades) / len(grades), 2)
+
+        self.assertEqual(grades, [90.0, 0.0])
+        self.assertEqual(general_average, 45.0)
+
+    def test_failed_subject_threshold_uses_final_grade_threshold(self):
+        AcademicRecord.objects.create(
+            enrollment=self.current_enrollment,
+            subject=self.subject_math,
+            academic_year=self.current_year,
+            grading_period_type='Quarter',
+            quarter=1,
+            final_grade=74.99,
+            grade=74.99,
+        )
+        AcademicRecord.objects.create(
+            enrollment=self.current_enrollment,
+            subject=self.subject_english,
+            academic_year=self.current_year,
+            grading_period_type='Quarter',
+            quarter=1,
+            final_grade=75.00,
+            grade=75.00,
+        )
+        AcademicRecord.objects.create(
+            enrollment=self.current_enrollment,
+            subject=self.subject_math,
+            academic_year=self.current_year,
+            grading_period_type='Quarter',
+            quarter=2,
+            final_grade=None,
+            grade=80.00,
+        )
+
+        records = AcademicRecord.objects.filter(enrollment=self.current_enrollment)
+        failed = [record for record in records if record.final_grade is not None and record.final_grade < 75]
+        passing = [record for record in records if record.final_grade is not None and record.final_grade >= 75]
+        missing = [record for record in records if record.final_grade is None]
+
+        self.assertEqual(len(failed), 1)
+        self.assertEqual(float(failed[0].final_grade), 74.99)
+        self.assertEqual(len(passing), 1)
+        self.assertEqual(float(passing[0].final_grade), 75.00)
+        self.assertEqual(len(missing), 1)
+
+    def test_failed_subject_count_stays_distinct_by_subject_name_under_current_contract(self):
+        # No canonical subject-grade selection rule exists yet. This test protects the
+        # current distinct-subject behavior and intentionally avoids introducing an
+        # annual or canonical subject-aggregation policy.
+        AcademicRecord.objects.create(
+            enrollment=self.current_enrollment,
+            subject=self.subject_math,
+            academic_year=self.current_year,
+            grading_period_type='Quarter',
+            quarter=1,
+            final_grade=72.00,
+            grade=72.00,
+        )
+        AcademicRecord.objects.create(
+            enrollment=self.current_enrollment,
+            subject=self.subject_math,
+            academic_year=self.current_year,
+            grading_period_type='Quarter',
+            quarter=2,
+            final_grade=74.00,
+            grade=74.00,
+        )
+        AcademicRecord.objects.create(
+            enrollment=self.current_enrollment,
+            subject=self.subject_english,
+            academic_year=self.current_year,
+            grading_period_type='Quarter',
+            quarter=1,
+            final_grade=80.00,
+            grade=80.00,
+        )
+
+        failed_subjects = {
+            record.subject.name
+            for record in AcademicRecord.objects.filter(enrollment=self.current_enrollment)
+            if record.final_grade is not None and record.final_grade < 75
+        }
+
+        self.assertEqual(failed_subjects, {'Mathematics'})
+        self.assertEqual(len(failed_subjects), 1)
+
+    def test_multiple_records_per_subject_are_allowed_across_periods(self):
+        AcademicRecord.objects.create(
+            enrollment=self.current_enrollment,
+            subject=self.subject_math,
+            academic_year=self.current_year,
+            grading_period_type='Quarter',
+            quarter=1,
+            grade=84.00,
+            final_grade=84.00,
+        )
+        AcademicRecord.objects.create(
+            enrollment=self.current_enrollment,
+            subject=self.subject_math,
+            academic_year=self.current_year,
+            grading_period_type='Quarter',
+            quarter=2,
+            grade=88.00,
+            final_grade=88.00,
+        )
+
+        records = AcademicRecord.objects.filter(enrollment=self.current_enrollment, subject=self.subject_math)
+        self.assertEqual(records.count(), 2)
+        self.assertEqual({record.quarter for record in records}, {1, 2})
+
+    def test_academic_year_filtering_is_explicit_in_api_when_provided(self):
+        self.client.force_authenticate(user=self.superadmin)
+
+        AcademicRecord.objects.create(
+            enrollment=self.previous_enrollment,
+            subject=self.subject_math,
+            academic_year=self.previous_year,
+            grading_period_type='Quarter',
+            quarter=1,
+            grade=76.00,
+            final_grade=76.00,
+        )
+        AcademicRecord.objects.create(
+            enrollment=self.current_enrollment,
+            subject=self.subject_math,
+            academic_year=self.current_year,
+            grading_period_type='Quarter',
+            quarter=1,
+            grade=88.00,
+            final_grade=88.00,
+        )
+
+        all_records = self.client.get('/api/academic-records/', {'enrollment__student': self.student.id})
+        filtered_records = self.client.get('/api/academic-records/', {'enrollment__student': self.student.id, 'academic_year': self.current_year.id})
+
+        self.assertEqual(all_records.status_code, 200)
+        self.assertEqual(filtered_records.status_code, 200)
+        self.assertEqual({item['academic_year'] for item in all_records.data['results']}, {self.previous_year.id, self.current_year.id})
+        self.assertEqual({item['academic_year'] for item in filtered_records.data['results']}, {self.current_year.id})
+
+    def test_quarter_and_semester_fields_are_mutually_exclusive_and_periods_remain_distinct(self):
+        # No quarter-to-semester aggregation rule exists yet; the model continues to
+        # treat quarter and semester records as distinct period rows.
+        with self.assertRaises(ValidationError):
+            AcademicRecord(
+                enrollment=self.current_enrollment,
+                subject=self.subject_math,
+                academic_year=self.current_year,
+                grading_period_type='Quarter',
+                quarter=1,
+                semester=1,
+                grade=85.00,
+            ).clean()
+
+        with self.assertRaises(ValidationError):
+            AcademicRecord(
+                enrollment=self.current_enrollment,
+                subject=self.subject_math,
+                academic_year=self.current_year,
+                grading_period_type='Semester',
+                quarter=1,
+                semester=1,
+                grade=85.00,
+            ).clean()
+
+        q1 = AcademicRecord.objects.create(
+            enrollment=self.current_enrollment,
+            subject=self.subject_math,
+            academic_year=self.current_year,
+            grading_period_type='Quarter',
+            quarter=1,
+            grade=84.00,
+            final_grade=84.00,
+        )
+        q2 = AcademicRecord.objects.create(
+            enrollment=self.current_enrollment,
+            subject=self.subject_english,
+            academic_year=self.current_year,
+            grading_period_type='Quarter',
+            quarter=2,
+            grade=88.00,
+            final_grade=88.00,
+        )
+        s1 = AcademicRecord.objects.create(
+            enrollment=self.current_enrollment,
+            subject=self.subject_math,
+            academic_year=self.current_year,
+            grading_period_type='Semester',
+            semester=1,
+            grade=86.00,
+            final_grade=86.00,
+        )
+
+        quarter_records = AcademicRecord.objects.filter(enrollment=self.current_enrollment, grading_period_type='Quarter')
+        semester_records = AcademicRecord.objects.filter(enrollment=self.current_enrollment, grading_period_type='Semester')
+
+        self.assertEqual({record.id for record in quarter_records}, {q1.id, q2.id})
+        self.assertEqual({record.id for record in semester_records}, {s1.id})
+        self.assertEqual({record.quarter for record in quarter_records}, {1, 2})
+        self.assertEqual({record.semester for record in semester_records}, {1})
+
+    def test_quarter_and_semester_filters_remain_distinct(self):
+        q1 = AcademicRecord.objects.create(
+            enrollment=self.current_enrollment,
+            subject=self.subject_math,
+            academic_year=self.current_year,
+            grading_period_type='Quarter',
+            quarter=1,
+            grade=84.00,
+            final_grade=84.00,
+        )
+        q2 = AcademicRecord.objects.create(
+            enrollment=self.current_enrollment,
+            subject=self.subject_english,
+            academic_year=self.current_year,
+            grading_period_type='Quarter',
+            quarter=2,
+            grade=88.00,
+            final_grade=88.00,
+        )
+        s1 = AcademicRecord.objects.create(
+            enrollment=self.current_enrollment,
+            subject=self.subject_math,
+            academic_year=self.current_year,
+            grading_period_type='Semester',
+            semester=1,
+            grade=86.00,
+            final_grade=86.00,
+        )
+
+        quarter_records = AcademicRecord.objects.filter(enrollment=self.current_enrollment, grading_period_type='Quarter')
+        semester_records = AcademicRecord.objects.filter(enrollment=self.current_enrollment, grading_period_type='Semester')
+
+        self.assertEqual({record.id for record in quarter_records}, {q1.id, q2.id})
+        self.assertEqual({record.id for record in semester_records}, {s1.id})
+        self.assertEqual({record.quarter for record in quarter_records}, {1, 2})
+        self.assertEqual({record.semester for record in semester_records}, {1})
+
+    def test_failed_subject_distinctness_counts_subject_names_not_period_records(self):
+        AcademicRecord.objects.create(
+            enrollment=self.current_enrollment,
+            subject=self.subject_math,
+            academic_year=self.current_year,
+            grading_period_type='Quarter',
+            quarter=1,
+            final_grade=72.00,
+            grade=72.00,
+        )
+        AcademicRecord.objects.create(
+            enrollment=self.current_enrollment,
+            subject=self.subject_math,
+            academic_year=self.current_year,
+            grading_period_type='Quarter',
+            quarter=2,
+            final_grade=74.00,
+            grade=74.00,
+        )
+        AcademicRecord.objects.create(
+            enrollment=self.current_enrollment,
+            subject=self.subject_english,
+            academic_year=self.current_year,
+            grading_period_type='Quarter',
+            quarter=1,
+            final_grade=80.00,
+            grade=80.00,
+        )
+
+        failed_subjects = {
+            record.subject.name
+            for record in AcademicRecord.objects.filter(enrollment=self.current_enrollment)
+            if record.final_grade is not None and record.final_grade < 75
+        }
+
+        self.assertEqual(failed_subjects, {'Mathematics'})
+        self.assertEqual(len(failed_subjects), 1)
+
+    def test_prediction_uses_latest_enrollment_raw_records_for_feature_construction(self):
+        older_subject = Subject.objects.create(code='POLY-OLD', name='Mathematics', category='Learning Area', grade_level=self.grade_level)
+        latest_subject = Subject.objects.create(code='POLY-LATEST', name='Mathematics', category='Learning Area', grade_level=self.grade_level)
+
+        AcademicRecord.objects.create(
+            enrollment=self.previous_enrollment,
+            subject=older_subject,
+            academic_year=self.previous_year,
+            grading_period_type='Quarter',
+            quarter=1,
+            grade=96.00,
+            final_grade=96.00,
+        )
+        AcademicRecord.objects.create(
+            enrollment=self.current_enrollment,
+            subject=latest_subject,
+            academic_year=self.current_year,
+            grading_period_type='Quarter',
+            quarter=1,
+            grade=68.00,
+            final_grade=68.00,
+        )
+
+        _, feature_values = PredictionService().build_feature_vector(self.student.id)
+        self.assertEqual(feature_values['general_average'], 68.0)
+        self.assertEqual(feature_values['failed_subjects'], 1)
 
 
 class AcademicMasterDataTests(TestCase):
@@ -1483,7 +1904,7 @@ class Sprint3Phase1ArchivedDataProtectionTests(TestCase):
     def test_archived_year_enrollments_still_queryable(self):
         """Existing enrollments in archived year should still be queryable."""
         self.client.force_authenticate(user=self.admin)
-        response = self.client.get('/api/enrollments/')
+        response = self.client.get('/api/enrollments/', {'status': 'archived'})
         self.assertEqual(response.status_code, 200)
         enrollment_ids = {item['id'] for item in response.data['results']}
         self.assertIn(self.archived_enrollment.id, enrollment_ids)
@@ -1491,7 +1912,7 @@ class Sprint3Phase1ArchivedDataProtectionTests(TestCase):
     def test_archived_year_academic_records_still_queryable(self):
         """Existing academic records in archived year should still be queryable."""
         self.client.force_authenticate(user=self.admin)
-        response = self.client.get('/api/academic-records/')
+        response = self.client.get('/api/academic-records/', {'status': 'archived'})
         self.assertEqual(response.status_code, 200)
         record_ids = {item['id'] for item in response.data['results']}
         self.assertIn(self.archived_record.id, record_ids)

@@ -416,6 +416,9 @@ export function StudentDetailPage() {
       setPredictionError('You do not have permission to generate a prediction.')
       return
     }
+    if (generatingPrediction) {
+      return
+    }
 
     setGeneratingPrediction(true)
     setGenerationMessage('')

@@ -18,15 +18,24 @@ class AuditLog(models.Model):
         ('EXPORT_REPORT', 'EXPORT_REPORT'),
         ('PREDICTION_GENERATED', 'PREDICTION_GENERATED'),
         ('INTERVENTION_CREATED', 'INTERVENTION_CREATED'),
+        ('SUBMITTED_FOR_APPROVAL', 'SUBMITTED_FOR_APPROVAL'),
         ('APPROVED', 'APPROVED'),
+        ('REJECTED', 'REJECTED'),
+        ('REAPPROVAL_REQUIRED', 'REAPPROVAL_REQUIRED'),
         ('PUBLISHED', 'PUBLISHED'),
         ('CANCELLED', 'CANCELLED'),
     ]
     user = models.ForeignKey(get_user_model(), null=True, blank=True, on_delete=models.SET_NULL, related_name='audit_logs')
-    action = models.CharField(max_length=30, choices=ACTION_CHOICES)
+    action = models.CharField(max_length=40, choices=ACTION_CHOICES)
     module = models.CharField(max_length=100)
     object_type = models.CharField(max_length=100, blank=True, default='')
     object_id = models.CharField(max_length=100, blank=True, default='')
+    object_name = models.CharField(max_length=200, blank=True, default='')
+    object_date = models.DateField(null=True, blank=True)
+    previous_status = models.CharField(max_length=30, blank=True, default='')
+    new_status = models.CharField(max_length=30, blank=True, default='')
+    reason = models.TextField(blank=True, default='')
+    details = models.JSONField(default=dict, blank=True)
     timestamp = models.DateTimeField(auto_now_add=True)
     ip_address = models.GenericIPAddressField(null=True, blank=True)
 

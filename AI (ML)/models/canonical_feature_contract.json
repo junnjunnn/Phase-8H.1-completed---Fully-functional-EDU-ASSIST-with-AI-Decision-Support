@@ -24,14 +24,72 @@
     "number_of_interventions"
   ],
   "categorical_values": {
-    "school_year": ["2025-2026", "2026-2027", "Current", "New School Year"],
-    "grade_level": ["Grade 1", "Grade 2", "Grade 3", "Grade 4", "Grade 5", "Grade 6", "Grade 7", "Grade 8", "Grade 9", "Grade 10", "Grade 11", "Grade 12"],
-    "section": ["A", "B", "C", "D", "Moonstone"],
-    "behavior_core_value": ["Maka-Diyos (Love for God)", "Makatao (Love for Fellowmen)", "Maka-Kalikasan (Love for Nature)", "Makabansa (Love for Country)"],
-    "behavior_indicator": ["Expresses one's spiritual beliefs while respecting the spiritual beliefs of others", "Shows adherence to ethical principles by upholding truth", "Is sensitive to individual, social, and cultural differences", "Demonstrate contributions toward solidarity", "Cares for the environment and utilizes resources wisely, judiciously, and economically", "Demonstrates pride in being a Filipino; exercises the rights and responsibilities of a Filipino Citizen", "Demonstrates appropriate behavior in carrying out activities in the school, community, and country"],
-    "behavior_teacher_rating": ["AO", "NO", "RO", "SO"],
-    "intervention_type": ["Academic Monitoring", "Attendance Monitoring", "Behavioral Monitoring", "Counseling", "Guidance Referral", "Mentoring", "No Intervention", "Parent/Guardian Conference", "Tutoring"],
-    "intervention_outcome": ["Improved", "No Change", "Not Yet Evaluated", "Ongoing", "Worsened"]
+    "school_year": [
+      "2025-2026",
+      "2026-2027",
+      "Current",
+      "New School Year"
+    ],
+    "grade_level": [
+      "Grade 1",
+      "Grade 2",
+      "Grade 3",
+      "Grade 4",
+      "Grade 5",
+      "Grade 6",
+      "Grade 7",
+      "Grade 8",
+      "Grade 9",
+      "Grade 10",
+      "Grade 11",
+      "Grade 12"
+    ],
+    "section": [
+      "A",
+      "B",
+      "C",
+      "D",
+      "Moonstone"
+    ],
+    "behavior_core_value": [
+      "Maka-Diyos",
+      "Makatao",
+      "Makakalikasan",
+      "Makabansa"
+    ],
+    "behavior_indicator": [
+      "Expresses one's spiritual beliefs while respecting the spiritual beliefs of others",
+      "Shows adherence to ethical principles by upholding truth",
+      "Is sensitive to individual, social, and cultural differences",
+      "Demonstrate contributions toward solidarity",
+      "Cares for the environment and utilizes resources wisely, judiciously, and economically",
+      "Demonstrates pride in being a Filipino; exercises the rights and responsibilities of a Filipino Citizen",
+      "Demonstrates appropriate behavior in carrying out activities in the school, community, and country"
+    ],
+    "behavior_teacher_rating": [
+      "AO",
+      "NO",
+      "RO",
+      "SO"
+    ],
+    "intervention_type": [
+      "Academic Monitoring",
+      "Attendance Monitoring",
+      "Behavioral Monitoring",
+      "Counseling",
+      "Guidance Referral",
+      "Mentoring",
+      "No Intervention",
+      "Parent/Guardian Conference",
+      "Tutoring"
+    ],
+    "intervention_outcome": [
+      "Improved",
+      "No Change",
+      "Not Yet Evaluated",
+      "Ongoing",
+      "Worsened"
+    ]
   },
   "subject_feature_map": {
     "Mathematics": "mathematics_grade",
@@ -47,5 +105,19 @@
     "TLE": "tle_grade",
     "EDUCATION": "education_grade"
   },
-  "unknown_category_policy": "reject"
+  "unknown_category_policy": "one_hot_ignore",
+  "dynamic_categorical_columns": [
+    "school_year",
+    "grade_level",
+    "section",
+    "intervention_type",
+    "intervention_outcome"
+  ],
+  "fixed_categorical_columns": [
+    "behavior_core_value",
+    "behavior_indicator",
+    "behavior_teacher_rating"
+  ],
+  "encoding_strategy": "OneHotEncoder(handle_unknown='ignore', sparse_output=False)",
+  "open_world_dynamic_policy": "all-zero unknown one-hot block"
 }

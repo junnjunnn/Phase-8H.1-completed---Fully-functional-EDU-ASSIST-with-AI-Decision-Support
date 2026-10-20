@@ -301,7 +301,7 @@ export function SubjectsPage() {
                   <tr>
                     <th scope="col">Code</th>
                     <th scope="col">Name</th>
-                    <th scope="col">Educational Level</th>
+                    <th scope="col">Applicable Grade Levels</th>
                     <th scope="col">Category</th>
                     <th scope="col">Strand</th>
                     <th scope="col">Status</th>
@@ -313,9 +313,9 @@ export function SubjectsPage() {
                     <tr key={subject.id}>
                       <td>{subject.code || '—'}</td>
                       <td>{subject.name || '—'}</td>
-                      <td>{subject.academic_division || subject.grade_level_school_level || '—'}</td>
+                      <td>{[...new Set(subject.grade_level_names?.length ? subject.grade_level_names : (subject.grade_level_name ? [subject.grade_level_name] : []))].filter(Boolean).join(', ') || 'No grade levels configured'}</td>
                       <td>{subject.category || '—'}</td>
-                      <td>{subject.academic_division === 'SENIOR_HIGH_SCHOOL' || subject.grade_level_school_level === 'Senior High School' ? (getNameById(strands, subject.strand) || '—') : 'Not applicable'}</td>
+                      <td>{subject.strand_name || 'No Strand assigned'}</td>
                       <td><span className={subject.is_active ? 'status-pill status-pill--success' : 'status-pill status-pill--neutral'}>{subject.is_active ? 'Active' : 'Archived'}</span></td>
                       <td>
                         <div className="section-actions" style={{ justifyContent: 'flex-end', gap: '0.5rem' }}>

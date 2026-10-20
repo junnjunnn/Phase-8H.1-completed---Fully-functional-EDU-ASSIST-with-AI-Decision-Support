@@ -67,6 +67,27 @@ class BehavioralAssessmentAPITests(TestCase):
         self.assertIn(self.assessment_a.id, assessment_ids)
         self.assertNotIn(self.assessment_b.id, assessment_ids)
 
+    def test_behavior_status_filter_separates_current_and_historical_records(self):
+        self.student_a.student_status = 'archived'
+        self.student_a.save(update_fields=['student_status'])
+        self.client.force_authenticate(user=self.superadmin)
+
+        active_response = self.client.get('/api/behavioral-assessments/?status=active')
+        archived_response = self.client.get('/api/behavioral-assessments/?status=archived')
+        all_response = self.client.get('/api/behavioral-assessments/?status=all')
+
+        active_ids = {item['id'] for item in active_response.data['results']}
+        archived_items = archived_response.data['results']
+        archived_ids = {item['id'] for item in archived_items}
+        all_ids = {item['id'] for item in all_response.data['results']}
+        self.assertNotIn(self.assessment_a.id, active_ids)
+        self.assertIn(self.assessment_b.id, active_ids)
+        self.assertIn(self.assessment_a.id, archived_ids)
+        self.assertNotIn(self.assessment_b.id, archived_ids)
+        self.assertEqual(all_ids, {self.assessment_a.id, self.assessment_b.id})
+        self.assertEqual(archived_items[0]['student_name'], 'Alice Anderson')
+        self.assertEqual(BehavioralAssessment.objects.count(), 2)
+
     def test_superadmin_sees_all_behavioral_assessments(self):
         self.client.force_authenticate(user=self.superadmin)
         response = self.client.get('/api/behavioral-assessments/')
@@ -155,6 +176,62 @@ class BehavioralAssessmentAPITests(TestCase):
         }, format='json')
         self.assertEqual(response.status_code, 400)
         self.assertIn('permission', str(response.data).lower())
+
+    def test_current_behavior_excludes_archived_student_and_context(self):
+        self.client.force_authenticate(user=self.superadmin)
+
+        lifecycle_changes = [
+            ('student_status', self.student_a, 'archived'),
+            ('enrollment_status', self.enrollment_a, 'withdrawn'),
+            ('section_active', self.enrollment_a.section, False),
+            ('grade_active', self.enrollment_a.grade_level, False),
+            ('year_active', self.enrollment_a.academic_year, False),
+        ]
+        for change_name, instance, value in lifecycle_changes:
+            with self.subTest(change=change_name):
+                field = change_name.split('_', 1)[0]
+                if change_name == 'student_status':
+                    instance.student_status = value
+                    instance.save(update_fields=['student_status'])
+                elif change_name == 'enrollment_status':
+                    instance.enrollment_status = value
+                    instance.save(update_fields=['enrollment_status'])
+                else:
+                    setattr(instance, 'is_active', value)
+                    instance.save(update_fields=['is_active'])
+
+                response = self.client.get('/api/behavioral-assessments/')
+                self.assertEqual(response.status_code, 200)
+                assessment_ids = {item['id'] for item in response.data['results']}
+                self.assertNotIn(self.assessment_a.id, assessment_ids)
+
+                if change_name == 'student_status':
+                    instance.student_status = 'active'
+                    instance.save(update_fields=['student_status'])
+                elif change_name == 'enrollment_status':
+                    instance.enrollment_status = 'active'
+                    instance.save(update_fields=['enrollment_status'])
+                else:
+                    instance.is_active = True
+                    instance.save(update_fields=['is_active'])
+
+    def test_archived_student_behavior_is_rejected_and_preserved(self):
+        self.student_a.student_status = 'archived'
+        self.student_a.save(update_fields=['student_status'])
+        self.client.force_authenticate(user=self.superadmin)
+
+        response = self.client.post('/api/behavioral-assessments/', {
+            'enrollment': self.enrollment_a.id,
+            'academic_year': self.academic_year.id,
+            'grading_period_type': 'Quarter',
+            'quarter': 2,
+            'core_value': self.core_value.id,
+            'behavior_indicator': self.behavior_indicator.id,
+            'rating': self.rating.id,
+        }, format='json')
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(BehavioralAssessment.objects.filter(pk=self.assessment_a.id).count(), 1)
 
     def test_adviser_can_assess_students_in_advisory_section(self):
         adviser = self.user_model.objects.create_user(username='adviser_behavior', password='AdviserPass1!')
@@ -253,16 +330,16 @@ class BehavioralAssessmentAPITests(TestCase):
     def test_canonical_core_values_are_active_after_sync(self):
         """Verify that canonical DepEd core values are active after sync."""
         call_command('sync_deped_behavior')
-        
+
         canonical_names = {
-            'Maka-Diyos (Love for God)',
-            'Makatao (Love for Fellowmen)',
-            'Maka-Kalikasan (Love for Nature)',
-            'Makabansa (Love for Country)',
+            'Maka-Diyos',
+            'Makatao',
+            'Makakalikasan',
+            'Makabansa',
         }
         active_values = CoreValue.objects.filter(is_active=True)
         active_names = {cv.name for cv in active_values}
-        
+
         for name in canonical_names:
             self.assertIn(name, active_names, f"Canonical value '{name}' should be active")
 
@@ -301,9 +378,9 @@ class BehavioralAssessmentAPITests(TestCase):
         """Verify that new assessments can use Maka-Diyos core value."""
         call_command('sync_deped_behavior')
         
-        cv = CoreValue.objects.get(name='Maka-Diyos (Love for God)')
+        cv = CoreValue.objects.get(name='Maka-Diyos')
         indicator = cv.indicators.first()
-        
+
         self.client.force_authenticate(user=self.teacher)
         response = self.client.post('/api/behavioral-assessments/', {
             'enrollment': self.enrollment_a.id,
@@ -315,18 +392,18 @@ class BehavioralAssessmentAPITests(TestCase):
             'rating': self.rating.id,
             'assessment_date': '2025-11-01',
         }, format='json')
-        
+
         self.assertEqual(response.status_code, 201)
         assessment = BehavioralAssessment.objects.get(pk=response.data['id'])
-        self.assertEqual(assessment.core_value.name, 'Maka-Diyos (Love for God)')
+        self.assertEqual(assessment.core_value.name, 'Maka-Diyos')
 
     def test_can_create_behavioral_assessment_with_makatao(self):
         """Verify that new assessments can use Makatao core value."""
         call_command('sync_deped_behavior')
         
-        cv = CoreValue.objects.get(name='Makatao (Love for Fellowmen)')
+        cv = CoreValue.objects.get(name='Makatao')
         indicator = cv.indicators.first()
-        
+
         self.client.force_authenticate(user=self.teacher)
         response = self.client.post('/api/behavioral-assessments/', {
             'enrollment': self.enrollment_a.id,
@@ -338,16 +415,16 @@ class BehavioralAssessmentAPITests(TestCase):
             'rating': self.rating.id,
             'assessment_date': '2025-11-01',
         }, format='json')
-        
+
         self.assertEqual(response.status_code, 201)
 
     def test_can_create_behavioral_assessment_with_maka_kalikasan(self):
         """Verify that new assessments can use Maka-Kalikasan core value."""
         call_command('sync_deped_behavior')
         
-        cv = CoreValue.objects.get(name='Maka-Kalikasan (Love for Nature)')
+        cv = CoreValue.objects.get(name='Makakalikasan')
         indicator = cv.indicators.first()
-        
+
         self.client.force_authenticate(user=self.teacher)
         response = self.client.post('/api/behavioral-assessments/', {
             'enrollment': self.enrollment_a.id,
@@ -359,16 +436,16 @@ class BehavioralAssessmentAPITests(TestCase):
             'rating': self.rating.id,
             'assessment_date': '2025-11-01',
         }, format='json')
-        
+
         self.assertEqual(response.status_code, 201)
 
     def test_can_create_behavioral_assessment_with_makabansa(self):
         """Verify that new assessments can use Makabansa core value."""
         call_command('sync_deped_behavior')
         
-        cv = CoreValue.objects.get(name='Makabansa (Love for Country)')
+        cv = CoreValue.objects.get(name='Makabansa')
         indicator = cv.indicators.first()
-        
+
         self.client.force_authenticate(user=self.teacher)
         response = self.client.post('/api/behavioral-assessments/', {
             'enrollment': self.enrollment_a.id,
@@ -380,17 +457,17 @@ class BehavioralAssessmentAPITests(TestCase):
             'rating': self.rating.id,
             'assessment_date': '2025-11-01',
         }, format='json')
-        
+
         self.assertEqual(response.status_code, 201)
 
     def test_can_create_behavioral_assessment_with_ao_rating(self):
         """Verify that AO (Always Observed) rating works."""
         call_command('sync_deped_behavior')
         
-        cv = CoreValue.objects.get(name='Maka-Diyos (Love for God)')
+        cv = CoreValue.objects.get(name='Maka-Diyos')
         indicator = cv.indicators.first()
         rating = BehavioralRating.objects.get(code='AO')
-        
+
         self.client.force_authenticate(user=self.teacher)
         response = self.client.post('/api/behavioral-assessments/', {
             'enrollment': self.enrollment_a.id,
@@ -402,7 +479,7 @@ class BehavioralAssessmentAPITests(TestCase):
             'rating': rating.id,
             'assessment_date': '2025-11-01',
         }, format='json')
-        
+
         self.assertEqual(response.status_code, 201)
         self.assertEqual(response.data['rating_code'], 'AO')
 
@@ -410,10 +487,10 @@ class BehavioralAssessmentAPITests(TestCase):
         """Verify that SO (Sometimes Observed) rating works."""
         call_command('sync_deped_behavior')
         
-        cv = CoreValue.objects.get(name='Makatao (Love for Fellowmen)')
+        cv = CoreValue.objects.get(name='Makatao')
         indicator = cv.indicators.first()
         rating = BehavioralRating.objects.get(code='SO')
-        
+
         self.client.force_authenticate(user=self.teacher)
         response = self.client.post('/api/behavioral-assessments/', {
             'enrollment': self.enrollment_a.id,
@@ -425,7 +502,7 @@ class BehavioralAssessmentAPITests(TestCase):
             'rating': rating.id,
             'assessment_date': '2025-11-01',
         }, format='json')
-        
+
         self.assertEqual(response.status_code, 201)
         self.assertEqual(response.data['rating_code'], 'SO')
 
@@ -433,10 +510,10 @@ class BehavioralAssessmentAPITests(TestCase):
         """Verify that RO (Rarely Observed) rating works."""
         call_command('sync_deped_behavior')
         
-        cv = CoreValue.objects.get(name='Maka-Kalikasan (Love for Nature)')
+        cv = CoreValue.objects.get(name='Makakalikasan')
         indicator = cv.indicators.first()
         rating = BehavioralRating.objects.get(code='RO')
-        
+
         self.client.force_authenticate(user=self.teacher)
         response = self.client.post('/api/behavioral-assessments/', {
             'enrollment': self.enrollment_a.id,
@@ -448,7 +525,7 @@ class BehavioralAssessmentAPITests(TestCase):
             'rating': rating.id,
             'assessment_date': '2025-11-01',
         }, format='json')
-        
+
         self.assertEqual(response.status_code, 201)
         self.assertEqual(response.data['rating_code'], 'RO')
 
@@ -456,10 +533,10 @@ class BehavioralAssessmentAPITests(TestCase):
         """Verify that NO (Not Observed) rating works."""
         call_command('sync_deped_behavior')
         
-        cv = CoreValue.objects.get(name='Makabansa (Love for Country)')
+        cv = CoreValue.objects.get(name='Makabansa')
         indicator = cv.indicators.first()
         rating = BehavioralRating.objects.get(code='NO')
-        
+
         self.client.force_authenticate(user=self.teacher)
         response = self.client.post('/api/behavioral-assessments/', {
             'enrollment': self.enrollment_a.id,
@@ -471,7 +548,7 @@ class BehavioralAssessmentAPITests(TestCase):
             'rating': rating.id,
             'assessment_date': '2025-11-01',
         }, format='json')
-        
+
         self.assertEqual(response.status_code, 201)
         self.assertEqual(response.data['rating_code'], 'NO')
 
@@ -509,10 +586,10 @@ class BehavioralAssessmentAPITests(TestCase):
         self.assertNotIn('Discipline', names)
         
         # Should contain canonical values
-        self.assertIn('Maka-Diyos (Love for God)', names)
-        self.assertIn('Makatao (Love for Fellowmen)', names)
-        self.assertIn('Maka-Kalikasan (Love for Nature)', names)
-        self.assertIn('Makabansa (Love for Country)', names)
+        self.assertIn('Maka-Diyos', names)
+        self.assertIn('Makatao', names)
+        self.assertIn('Makakalikasan', names)
+        self.assertIn('Makabansa', names)
 
     def test_behavior_indicators_endpoint_filters_to_active_by_default(self):
         """Verify that behavior indicators endpoint returns only active indicators by default."""
@@ -552,10 +629,10 @@ class BehavioralAssessmentAPITests(TestCase):
         section.save(update_fields=['adviser'])
         
         # Create a canonical behavior record for this student
-        cv = CoreValue.objects.get(name='Maka-Diyos (Love for God)')
+        cv = CoreValue.objects.get(name='Maka-Diyos')
         indicator = cv.indicators.first()
         rating = BehavioralRating.objects.get(code='AO')
-        
+
         BehavioralAssessment.objects.create(
             enrollment=self.enrollment_a,
             academic_year=self.academic_year,
@@ -567,13 +644,13 @@ class BehavioralAssessmentAPITests(TestCase):
             assessed_by=adviser,
             assessment_date='2025-11-20',
         )
-        
+
         # Adviser should see this record
         self.client.force_authenticate(user=adviser)
         response = self.client.get('/api/behavioral-assessments/')
-        
+
         assessment_ids = {item['id'] for item in response.data['results']}
-        canonical_record = BehavioralAssessment.objects.get(core_value__name='Maka-Diyos (Love for God)')
+        canonical_record = BehavioralAssessment.objects.get(core_value__name='Maka-Diyos')
         self.assertIn(canonical_record.id, assessment_ids)
 
     def test_adviser_cannot_view_other_advisers_student_behavior_records(self):
@@ -594,10 +671,10 @@ class BehavioralAssessmentAPITests(TestCase):
         section_b.save(update_fields=['adviser'])
         
         # Create a canonical record for student_a
-        cv = CoreValue.objects.get(name='Maka-Diyos (Love for God)')
+        cv = CoreValue.objects.get(name='Maka-Diyos')
         indicator = cv.indicators.first()
         rating = BehavioralRating.objects.get(code='AO')
-        
+
         record_a = BehavioralAssessment.objects.create(
             enrollment=self.enrollment_a,
             academic_year=self.academic_year,
