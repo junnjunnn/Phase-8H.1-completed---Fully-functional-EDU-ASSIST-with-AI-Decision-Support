@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { MagnifyingGlassIcon } from '@heroicons/react/24/outline'
 import { EmptyState } from '../../components/common/EmptyState'
 import { ErrorBanner } from '../../components/feedback/ErrorBanner'
 import { PageHeader } from '../../components/common/PageHeader'
@@ -51,7 +52,7 @@ export function AuditLogsPage() {
       <div className="panel-card">
         <div className="panel-header">
           <div className="search-input-group">
-            <span className="search-icon" aria-hidden="true">🔎</span>
+            <MagnifyingGlassIcon className="icon search-icon" aria-hidden="true" />
             <input
               aria-label="Search audit logs"
               placeholder="Search by action, module, user, or object"

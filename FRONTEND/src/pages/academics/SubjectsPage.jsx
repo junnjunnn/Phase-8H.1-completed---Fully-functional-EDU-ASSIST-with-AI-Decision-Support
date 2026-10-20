@@ -5,6 +5,8 @@ import { PageHeader } from '../../components/common/PageHeader'
 import { getApiErrorMessage } from '../../services/api'
 import { createSubject, getAcademicDivisions, getGradeLevels, getStrands, getSubjects, updateSubject } from '../../services/academicsService'
 import { notifySubjectsUpdated } from '../../services/referenceService'
+import { ExcelImportPanel } from '../../components/common/ExcelImportPanel'
+import { useAuth } from '../../context/AuthContext'
 
 function normalizeListResponse(data) {
   const items = data?.results || data || []
@@ -17,6 +19,7 @@ function getNameById(items, id) {
 }
 
 export function SubjectsPage() {
+  const { user } = useAuth()
   const [gradeLevels, setGradeLevels] = useState([])
   const [academicDivisions, setAcademicDivisions] = useState([])
   const [strands, setStrands] = useState([])
@@ -175,7 +178,23 @@ export function SubjectsPage() {
 
   return (
     <div className="page-stack subjects-page">
-      <PageHeader eyebrow="Subjects" title="Manage subjects" description="Create and maintain subject records with grade level and strand assignments." />
+      <PageHeader eyebrow="Subjects" title="Manage subjects" description="Create and maintain subject records with grade level and strand assignments. Subject-to-grade associations are configurable references and may not represent the complete, officially confirmed curriculum." />
+
+      {['SUPER_ADMIN', 'SCHOOL_ADMIN'].includes(user?.role_name || user?.profile?.role_name) ? (
+        <ExcelImportPanel
+          title="Subject registration"
+          templateUrl="/subjects/import/template/"
+          previewUrl="/subjects/import/preview/"
+          confirmUrl="/subjects/import/confirm/"
+          filename="edu-assist-subject-import-template.xlsx"
+          instructions="Only supplied grade-level and strand codes are associated. Existing subjects and inferred curriculum mappings are never overwritten."
+          onCompleted={async () => {
+            const refreshed = await getSubjects()
+            setSubjects(normalizeListResponse(refreshed).items)
+            notifySubjectsUpdated()
+          }}
+        />
+      ) : null}
 
       {error ? <ErrorBanner message={error} /> : null}
 

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
+import { MagnifyingGlassIcon } from '@heroicons/react/24/outline'
 import { useAuth } from '../../context/AuthContext'
 import { EmptyState } from '../../components/common/EmptyState'
 import { ErrorBanner } from '../../components/feedback/ErrorBanner'
@@ -269,7 +270,7 @@ export function PredictionsPage() {
             <h2>Latest risk alerts</h2>
           </div>
           <div className="search-input-group">
-            <span className="search-icon" aria-hidden="true">🔎</span>
+            <MagnifyingGlassIcon className="icon search-icon" aria-hidden="true" />
             <input
               aria-label="Search predictions"
               placeholder="Search by student name or risk level"

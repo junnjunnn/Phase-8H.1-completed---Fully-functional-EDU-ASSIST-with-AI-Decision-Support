@@ -471,7 +471,7 @@ export function GradeEncodingPage() {
     <div className="page-stack grade-encoding-page">
       <PageHeader
         eyebrow="Academic workflow"
-        title="CLASS RECORD"
+        title="Class record"
         description="Open a single authorized class, review the roster, and encode grades in a gradebook-style workflow."
         actions={(
           <Link className="action-button action-button--secondary" to="/academics">

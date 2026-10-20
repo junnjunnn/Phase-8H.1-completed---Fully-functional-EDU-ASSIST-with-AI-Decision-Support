@@ -2,8 +2,10 @@ import { useEffect, useMemo, useState } from 'react'
 import { EmptyState } from '../../components/common/EmptyState'
 import { ErrorBanner } from '../../components/feedback/ErrorBanner'
 import { PageHeader } from '../../components/common/PageHeader'
+import { ExcelImportPanel } from '../../components/common/ExcelImportPanel'
 import { getApiErrorMessage } from '../../services/api'
 import { createGradeLevel, getGradeLevels, updateGradeLevel } from '../../services/academicsService'
+import { useAuth } from '../../context/AuthContext'
 
 function normalizeListResponse(data) {
   const items = data?.results || data || []
@@ -11,6 +13,7 @@ function normalizeListResponse(data) {
 }
 
 export function GradeLevelsPage() {
+  const { user } = useAuth()
   const [gradeLevels, setGradeLevels] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -108,6 +111,21 @@ export function GradeLevelsPage() {
   return (
     <div className="page-stack grade-levels-page">
       <PageHeader eyebrow="Grade Levels" title="Manage grade levels" description="Define grade level records for your academic structure." />
+
+      {['SUPER_ADMIN', 'SCHOOL_ADMIN'].includes(user?.role_name || user?.profile?.role_name) ? (
+        <ExcelImportPanel
+          title="Grade-level configuration"
+          templateUrl="/grade-levels/import/template/"
+          previewUrl="/grade-levels/import/preview/"
+          confirmUrl="/grade-levels/import/confirm/"
+          filename="edu-assist-grade-level-import-template.xlsx"
+          instructions="New records are active by default. Existing grade levels are not changed."
+          onCompleted={async () => {
+            const refreshed = await getGradeLevels({ status: 'all' })
+            setGradeLevels(normalizeListResponse(refreshed).items)
+          }}
+        />
+      ) : null}
 
       {error ? <ErrorBanner message={error} /> : null}
 

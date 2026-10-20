@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
+import { MagnifyingGlassIcon } from '@heroicons/react/24/outline'
 import { EmptyState } from '../../components/common/EmptyState'
 import { useAuth } from '../../context/AuthContext'
 import { ErrorBanner } from '../../components/feedback/ErrorBanner'
@@ -161,7 +162,7 @@ export function BehaviorPage() {
               </select>
             </label>
             <div className="search-input-group">
-            <span className="search-icon" aria-hidden="true">🔎</span>
+            <MagnifyingGlassIcon className="icon search-icon" aria-hidden="true" />
             <input
               aria-label="Search behavioral assessments"
               placeholder="Search by student or behavior indicator"

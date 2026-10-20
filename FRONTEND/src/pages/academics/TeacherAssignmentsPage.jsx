@@ -3,6 +3,7 @@ import { EmptyState } from '../../components/common/EmptyState'
 import { ErrorBanner } from '../../components/feedback/ErrorBanner'
 import { PageHeader } from '../../components/common/PageHeader'
 import { ConfirmDialog } from '../../components/common/ConfirmDialog'
+import { ExcelImportPanel } from '../../components/common/ExcelImportPanel'
 import { getApiErrorMessage } from '../../services/api'
 import {
   getAcademicYears,
@@ -13,6 +14,7 @@ import {
 import { getUsers as getUserProfiles } from '../../services/userService'
 import { subscribeSubjectsUpdated, unsubscribeSubjectsUpdated } from '../../services/referenceService'
 import apiClient from '../../services/api'
+import { useAuth } from '../../context/AuthContext'
 
 function normalizeListResponse(data) {
   const items = data?.results || data || []
@@ -20,6 +22,7 @@ function normalizeListResponse(data) {
 }
 
 export function TeacherAssignmentsPage() {
+  const { user } = useAuth()
   const [assignments, setAssignments] = useState([])
   const [teachers, setTeachers] = useState([])
   const [academicYears, setAcademicYears] = useState([])
@@ -283,7 +286,23 @@ export function TeacherAssignmentsPage() {
 
   return (
     <div className="page-stack teacher-assignments-page">
-      <PageHeader eyebrow="Teacher assignments" title="Assign teachers to classes and subjects" description="Create, edit, and manage assignments for academic years, sections, and subjects." />
+      <PageHeader eyebrow="Teacher assignments" title="Assign teachers to classes and subjects" description="Create, edit, and manage assignments for academic years, sections, and subjects. Configure teacher and adviser assignments for the relevant year; the previous year's document does not confirm current assignments." />
+
+      {['SUPER_ADMIN', 'SCHOOL_ADMIN'].includes(user?.role_name || user?.profile?.role_name) ? (
+        <ExcelImportPanel
+          title="Teacher and adviser assignments"
+          templateUrl="/teacher-assignments/import/template/"
+          previewUrl="/teacher-assignments/import/preview/"
+          confirmUrl="/teacher-assignments/import/confirm/"
+          filename="edu-assist-teacher-assignment-import-template.xlsx"
+          instructions="Imported teachers must already be active. Teacher accounts created by bulk registration need an administrator-set password and activation first."
+          onCompleted={async () => {
+            const refreshed = await apiClient.get('/teacher-assignments/')
+            setAssignments(normalizeListResponse(refreshed.data).items)
+          }}
+        />
+      ) : null}
+
       {error ? <ErrorBanner message={error} /> : null}
       <div className="record-summary-grid">
         <article className="detail-card stat-card-accent">
@@ -357,10 +376,11 @@ export function TeacherAssignmentsPage() {
           </label>
           <label>
             <span>Assignment type</span>
-            <select value={form.assignment_type} onChange={(event) => setForm({ ...form, assignment_type: event.target.value, subjects: [] })} required>
+            <select value={form.assignment_type} onChange={(event) => setForm({ ...form, assignment_type: event.target.value, subjects: [] })} required disabled={Boolean(form.id)}>
               <option value="SUBJECT">Subject Teacher</option>
               <option value="ADVISER">Class Adviser</option>
             </select>
+            {form.id ? <small className="small-muted">Create a separate assignment to change assignment type.</small> : null}
           </label>
           {form.assignment_type === 'SUBJECT' ? <div className="form-field">
             <span className="form-field__label">Subjects</span>

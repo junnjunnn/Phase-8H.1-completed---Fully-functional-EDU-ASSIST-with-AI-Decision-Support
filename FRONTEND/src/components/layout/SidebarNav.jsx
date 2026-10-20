@@ -127,7 +127,13 @@ export function SidebarNav({ collapsed, onToggleCollapse }) {
                 const Icon = iconMap[item.label]
                 return (
                   <li key={item.label}>
-                    <NavLink to={item.path} className={({ isActive: active }) => (active ? 'nav-link active' : 'nav-link')} end={item.path === '/dashboard'}>
+                    <NavLink
+                      to={item.path}
+                      className={({ isActive: active }) => (active ? 'nav-link active' : 'nav-link')}
+                      end={item.path === '/dashboard'}
+                      title={collapsed ? item.label : undefined}
+                      aria-label={collapsed ? item.label : undefined}
+                    >
                       <span className="nav-link-icon" aria-hidden="true"><Icon className="icon" /></span>
                       {!collapsed ? <span>{isAdviser && item.label === 'Dashboard' ? 'Adviser Dashboard' : item.label}</span> : null}
                     </NavLink>

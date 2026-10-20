@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { MagnifyingGlassIcon } from '@heroicons/react/24/outline'
 import { EmptyState } from '../../components/common/EmptyState'
 import { ErrorBanner } from '../../components/feedback/ErrorBanner'
 import { PageHeader } from '../../components/common/PageHeader'
@@ -158,7 +159,7 @@ export function InterventionsPage() {
             <h2>Recent interventions</h2>
           </div>
           <div className="search-input-group">
-            <span className="search-icon" aria-hidden="true">🔎</span>
+            <MagnifyingGlassIcon className="icon search-icon" aria-hidden="true" />
             <input
               aria-label="Search interventions"
               placeholder="Search by student, type or notes"

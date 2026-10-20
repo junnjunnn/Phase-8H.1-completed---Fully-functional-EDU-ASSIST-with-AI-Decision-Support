@@ -95,7 +95,7 @@ export function AcademicYearsPage() {
 
   return (
     <div className="page-stack academic-years-page">
-      <PageHeader eyebrow="Academic Years" title="Manage academic years" description="Create and maintain school years, including active and archived terms." />
+      <PageHeader eyebrow="Academic Years" title="Manage academic years" description="Create and maintain school years, including active and archived terms. Dates shown are configured academic-year dates and may not yet be confirmed by the school." />
 
       {error ? <ErrorBanner message={error} /> : null}
 

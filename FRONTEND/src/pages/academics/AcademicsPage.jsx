@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { MagnifyingGlassIcon } from '@heroicons/react/24/outline'
 import { EmptyState } from '../../components/common/EmptyState'
 import { ErrorBanner } from '../../components/feedback/ErrorBanner'
 import { PageHeader } from '../../components/common/PageHeader'
@@ -184,7 +185,7 @@ export function AcademicsPage() {
           <div className="section-actions">
             <a className="action-button" href="/academics/encode">Encode grades</a>
             <div className="search-input-group">
-              <span className="search-icon" aria-hidden="true">🔎</span>
+              <MagnifyingGlassIcon className="icon search-icon" aria-hidden="true" />
               <input
                 aria-label="Search academic records"
                 placeholder="Search student name or subject"

@@ -1,9 +1,11 @@
 from rest_framework import serializers
 from rest_framework.validators import UniqueTogetherValidator
+from django.db import transaction
 from .academic_divisions import division_for_grade_levels, grade_levels_for_division, normalize_academic_division
 from django.contrib.auth import get_user_model
 
 from common.authorization import authorized_enrollment_queryset, get_user_scope
+from .adviser_assignments import assign_section_adviser, remove_section_adviser
 from .models import AcademicRecord, AcademicYear, Enrollment, GradeLevel, Section, Specialization, Strand, Subject, TeacherAssignment
 
 
@@ -190,6 +192,28 @@ class SectionSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError({'specialization': 'The selected specialization does not belong to the selected strand.'})
 
         return attrs
+
+    def create(self, validated_data):
+        adviser = validated_data.pop('adviser', None)
+        with transaction.atomic():
+            instance = super().create(validated_data)
+            if adviser:
+                assign_section_adviser(instance, adviser)
+                instance.refresh_from_db(fields=['adviser'])
+        return instance
+
+    def update(self, instance, validated_data):
+        adviser_was_supplied = 'adviser' in validated_data
+        adviser = validated_data.pop('adviser', None)
+        with transaction.atomic():
+            instance = super().update(instance, validated_data)
+            if adviser_was_supplied:
+                if adviser:
+                    assign_section_adviser(instance, adviser)
+                else:
+                    remove_section_adviser(instance, clear_legacy=True)
+                instance.refresh_from_db(fields=['adviser'])
+        return instance
 
 
 class StrandSerializer(serializers.ModelSerializer):
@@ -396,12 +420,12 @@ class TeacherAssignmentSerializer(serializers.ModelSerializer):
         return None
 
     def get_is_adviser(self, obj):
-        return obj.assignment_type == 'ADVISER' or obj.section.adviser_id == obj.teacher_id
+        return obj.assignment_type == 'ADVISER'
 
     def get_role(self, obj):
         if obj.assignment_type == 'ADVISER':
             return 'Class Adviser'
-        return 'Adviser and Subject Teacher' if obj.section.adviser_id == obj.teacher_id else 'Subject Teacher'
+        return 'Subject Teacher'
 
     def validate(self, attrs):
         teacher = attrs.get('teacher') or getattr(self.instance, 'teacher', None)
@@ -471,7 +495,10 @@ class TeacherAssignmentSerializer(serializers.ModelSerializer):
             queryset = TeacherAssignment.objects.filter(assignment_type='ADVISER', academic_year=academic_year, section=section, is_active=True)
             if self.instance:
                 queryset = queryset.exclude(pk=self.instance.pk)
-            if attrs.get('is_active', getattr(self.instance, 'is_active', True)) and queryset.exists():
+            if (
+                attrs.get('is_active', getattr(self.instance, 'is_active', True))
+                and queryset.exclude(teacher=teacher).exists()
+            ):
                 raise serializers.ValidationError({'section': 'This section already has an active class adviser for the academic year.'})
 
         return attrs

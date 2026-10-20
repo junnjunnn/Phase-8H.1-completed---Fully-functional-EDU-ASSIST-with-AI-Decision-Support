@@ -8,7 +8,12 @@ from django.db import connection
 from django.views.decorators.http import require_GET
 from rest_framework.routers import DefaultRouter
 
-from students.api import StudentViewSet
+from students.api import (
+    StudentImportConfirmView,
+    StudentImportPreviewView,
+    StudentImportTemplateView,
+    StudentViewSet,
+)
 from academics.api import (
     AcademicYearViewSet,
     GradeLevelViewSet,
@@ -19,6 +24,18 @@ from academics.api import (
     TeacherAssignmentViewSet,
     EnrollmentViewSet,
     AcademicRecordViewSet,
+)
+from academics.subject_bulk_import import SubjectImportConfirmView, SubjectImportTemplateView, SubjectImportView
+from academics.configuration_bulk_import import (
+    GradeLevelImportConfirmView,
+    GradeLevelImportTemplateView,
+    GradeLevelImportView,
+    SectionImportConfirmView,
+    SectionImportTemplateView,
+    SectionImportView,
+    TeacherAssignmentImportConfirmView,
+    TeacherAssignmentImportTemplateView,
+    TeacherAssignmentImportView,
 )
 from attendance.api import AttendanceRecordViewSet, RecurringSchoolCalendarEventViewSet, SchoolCalendarDayViewSet
 from predictions.api import AdviserDashboardViewSet, DashboardViewSet, RegistrarDashboardViewSet
@@ -87,6 +104,21 @@ urlpatterns = [
     path('admin/', admin.site.urls),
     path('api/health/', health_check, name='health-check'),
     path('api/auth/', include('accounts.urls')),
+    path('api/students/import/template/', StudentImportTemplateView.as_view(), name='student-import-template'),
+    path('api/students/import/preview/', StudentImportPreviewView.as_view(), name='student-import-preview'),
+    path('api/students/import/confirm/', StudentImportConfirmView.as_view(), name='student-import-confirm'),
+    path('api/subjects/import/template/', SubjectImportTemplateView.as_view(), name='subject-import-template'),
+    path('api/subjects/import/preview/', SubjectImportView.as_view(), name='subject-import-preview'),
+    path('api/subjects/import/confirm/', SubjectImportConfirmView.as_view(), name='subject-import-confirm'),
+    path('api/grade-levels/import/template/', GradeLevelImportTemplateView.as_view(), name='grade-level-import-template'),
+    path('api/grade-levels/import/preview/', GradeLevelImportView.as_view(), name='grade-level-import-preview'),
+    path('api/grade-levels/import/confirm/', GradeLevelImportConfirmView.as_view(), name='grade-level-import-confirm'),
+    path('api/sections/import/template/', SectionImportTemplateView.as_view(), name='section-import-template'),
+    path('api/sections/import/preview/', SectionImportView.as_view(), name='section-import-preview'),
+    path('api/sections/import/confirm/', SectionImportConfirmView.as_view(), name='section-import-confirm'),
+    path('api/teacher-assignments/import/template/', TeacherAssignmentImportTemplateView.as_view(), name='teacher-assignment-import-template'),
+    path('api/teacher-assignments/import/preview/', TeacherAssignmentImportView.as_view(), name='teacher-assignment-import-preview'),
+    path('api/teacher-assignments/import/confirm/', TeacherAssignmentImportConfirmView.as_view(), name='teacher-assignment-import-confirm'),
     path('api/predictions/predict/<int:student_id>/', predict_student_view, name='predict-student'),
     path('api/', include(router.urls)),
 ]

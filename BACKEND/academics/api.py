@@ -7,14 +7,13 @@ from django.db.models import Exists, OuterRef, Q
 from rest_framework.filters import OrderingFilter, SearchFilter
 from django_filters.rest_framework import DjangoFilterBackend
 
-from django.contrib.auth import get_user_model
-
 from audit.models import AuditLog
 from accounts.permissions import IsAuthorizedStaff, IsAcademicReferenceAccessAllowed, IsEnrollmentAccessAllowed, IsRegistrarOrSchoolAdmin, IsSchoolAdmin, IsTeacherOrSchoolAdmin
 from accounts.utils import get_authorized_enrollment_queryset, get_user_scope
 from common.authorization import active_enrollment_queryset, archived_enrollment_queryset, filter_lifecycle_queryset, requested_lifecycle_status, teacher_assignment_queryset, teacher_section_queryset
 from .models import AcademicRecord, AcademicYear, Enrollment, GradeLevel, Section, Specialization, Strand, Subject, TeacherAssignment
 from .academic_divisions import ACADEMIC_DIVISIONS, grade_levels_for_division
+from .adviser_assignments import assign_section_adviser, remove_section_adviser
 from .serializers import AcademicRecordSerializer, AcademicYearSerializer, EnrollmentSerializer, GradeLevelSerializer, SectionSerializer, SpecializationSerializer, StrandSerializer, SubjectSerializer, TeacherAssignmentSerializer
 
 
@@ -158,30 +157,8 @@ class SectionViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins.Cr
         return queryset
 
 
-    def _sync_teacher_assignment(self, section, adviser):
-        previous_adviser_id = None
-        if section.pk:
-            previous_adviser_id = Section.objects.filter(pk=section.pk).values_list('adviser_id', flat=True).first()
-
-        if adviser and getattr(adviser, 'pk', None):
-            adviser_profile = getattr(adviser, 'profile', None)
-            if adviser_profile:
-                adviser_profile.assigned_sections.add(section)
-
-        if previous_adviser_id and adviser and previous_adviser_id != adviser.pk:
-            previous_user = get_user_model().objects.filter(pk=previous_adviser_id).first()
-            previous_profile = getattr(previous_user, 'profile', None)
-            if previous_profile:
-                previous_profile.assigned_sections.remove(section)
-        elif previous_adviser_id and not adviser:
-            previous_user = get_user_model().objects.filter(pk=previous_adviser_id).first()
-            previous_profile = getattr(previous_user, 'profile', None)
-            if previous_profile:
-                previous_profile.assigned_sections.remove(section)
-
     def perform_create(self, serializer):
         instance = serializer.save()
-        self._sync_teacher_assignment(instance, instance.adviser)
         AuditLog.objects.create(
             user=self.request.user if self.request.user.is_authenticated else None,
             action='CREATE',
@@ -192,7 +169,6 @@ class SectionViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins.Cr
 
     def perform_update(self, serializer):
         instance = serializer.save()
-        self._sync_teacher_assignment(instance, instance.adviser)
         AuditLog.objects.create(
             user=self.request.user if self.request.user.is_authenticated else None,
             action='UPDATE',
@@ -303,6 +279,23 @@ class TeacherAssignmentViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin,
         payload = request.data.copy()
         subjects = payload.pop('subjects', None)
         if subjects is None:
+            if request.data.get('assignment_type', 'SUBJECT') == 'ADVISER':
+                serializer = self.get_serializer(data=request.data)
+                serializer.is_valid(raise_exception=True)
+                instance, created = assign_section_adviser(
+                    serializer.validated_data['section'],
+                    serializer.validated_data['teacher'],
+                )
+                serializer.instance = instance
+                if created:
+                    AuditLog.objects.create(
+                        user=request.user if request.user.is_authenticated else None,
+                        action='CREATE',
+                        module=self.serializer_class.Meta.model._meta.app_label,
+                        object_type=self.serializer_class.Meta.model.__name__,
+                        object_id=str(instance.pk),
+                    )
+                return Response(serializer.data, status=201 if created else 200)
             return super().create(request, *args, **kwargs)
         if not isinstance(subjects, list) or not subjects:
             raise ValidationError({'subjects': 'Select at least one subject.'})
@@ -320,6 +313,49 @@ class TeacherAssignmentViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin,
 
         response_serializer = self.get_serializer(created, many=True)
         return Response(response_serializer.data, status=201)
+
+    def update(self, request, *args, **kwargs):
+        partial = kwargs.pop('partial', False)
+        instance = self.get_object()
+        requested_type = request.data.get('assignment_type', instance.assignment_type)
+
+        if requested_type != instance.assignment_type:
+            raise ValidationError({
+                'assignment_type': 'Create a separate assignment instead of changing an assignment type.',
+            })
+        if instance.assignment_type != 'ADVISER':
+            return super().update(request, partial=partial, **kwargs)
+
+        serializer = self.get_serializer(instance, data=request.data, partial=partial)
+        serializer.is_valid(raise_exception=True)
+        values = serializer.validated_data
+
+        if values.get('is_active', instance.is_active):
+            assignment, changed = assign_section_adviser(
+                values.get('section', instance.section),
+                values.get('teacher', instance.teacher),
+                replacing_assignment=instance,
+            )
+        else:
+            removed_assignments = (
+                remove_section_adviser(instance.section, teacher_id=instance.teacher_id)
+                if instance.is_active else []
+            )
+            changed = any(item.pk == instance.pk for item in removed_assignments)
+            if changed:
+                instance.is_active = False
+            assignment = instance
+
+        serializer.instance = assignment
+        if changed:
+            AuditLog.objects.create(
+                user=request.user if request.user.is_authenticated else None,
+                action='UPDATE',
+                module=self.serializer_class.Meta.model._meta.app_label,
+                object_type=self.serializer_class.Meta.model.__name__,
+                object_id=str(assignment.pk),
+            )
+        return Response(serializer.data)
 
     @action(detail=False, methods=['get'], url_path='my-context')
     def my_context(self, request):

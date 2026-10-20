@@ -7,6 +7,7 @@ from common.authorization import authorized_students_queryset, requested_lifecyc
 from academics.models import AcademicYear, Enrollment, GradeLevel, Section
 from .models import Student
 from .serializers import StudentSerializer
+from .bulk_import import StudentImportConfirmView, StudentImportPreviewView, StudentImportTemplateView
 
 
 class StudentViewSet(AuditMixin, mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins.CreateModelMixin, mixins.UpdateModelMixin, viewsets.GenericViewSet):

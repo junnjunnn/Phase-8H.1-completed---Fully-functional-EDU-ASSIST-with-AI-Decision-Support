@@ -3,8 +3,10 @@ import { EmptyState } from '../../components/common/EmptyState'
 import { ErrorBanner } from '../../components/feedback/ErrorBanner'
 import { PageHeader } from '../../components/common/PageHeader'
 import AdviserSelect from '../../components/AdviserSelect'
+import { ExcelImportPanel } from '../../components/common/ExcelImportPanel'
 import { getApiErrorMessage } from '../../services/api'
 import { createSection, getAcademicYears, getGradeLevels, getSections, getSpecializations, getStrands, updateSection } from '../../services/academicsService'
+import { useAuth } from '../../context/AuthContext'
 
 function normalizeListResponse(data) {
   const items = data?.results || data || []
@@ -17,6 +19,7 @@ function getNameById(items, id) {
 }
 
 export function SectionsPage() {
+  const { user } = useAuth()
   const [academicYears, setAcademicYears] = useState([])
   const [gradeLevels, setGradeLevels] = useState([])
   const [strands, setStrands] = useState([])
@@ -176,7 +179,22 @@ export function SectionsPage() {
 
   return (
     <div className="page-stack sections-page">
-      <PageHeader eyebrow="Sections" title="Manage sections" description="Organize sections with associated year, grade level, adviser, and capacity." />
+      <PageHeader eyebrow="Sections" title="Manage sections" description="Organize sections with associated year, grade level, adviser, and capacity. Configure advisers for the relevant academic year; the previous year's document does not confirm current assignments." />
+
+      {['SUPER_ADMIN', 'SCHOOL_ADMIN'].includes(user?.role_name || user?.profile?.role_name) ? (
+        <ExcelImportPanel
+          title="Section configuration"
+          templateUrl="/sections/import/template/"
+          previewUrl="/sections/import/preview/"
+          confirmUrl="/sections/import/confirm/"
+          filename="edu-assist-section-import-template.xlsx"
+          instructions="Imports create new sections only. Adviser assignments are handled separately through the teacher-assignment import and existing adviser rules."
+          onCompleted={async () => {
+            const refreshed = await getSections({ status: 'all' })
+            setSections(normalizeListResponse(refreshed).items)
+          }}
+        />
+      ) : null}
 
       {error ? <ErrorBanner message={error} /> : null}
 

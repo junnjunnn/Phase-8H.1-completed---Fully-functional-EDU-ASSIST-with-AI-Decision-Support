@@ -21,6 +21,7 @@ class SectionAdmin(admin.ModelAdmin):
     list_display = ('name', 'grade_level', 'academic_year', 'is_active')
     list_filter = ('academic_year', 'grade_level', 'is_active')
     search_fields = ('name',)
+    readonly_fields = ('adviser',)
 
 
 @admin.register(Strand)

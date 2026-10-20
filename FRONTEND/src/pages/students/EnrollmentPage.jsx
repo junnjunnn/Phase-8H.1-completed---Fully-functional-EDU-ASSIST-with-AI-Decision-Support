@@ -359,25 +359,14 @@ export function EnrollmentPage() {
           </div>
         </div>
 
-        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '1.5rem' }}>
+        <div className="enrollment-steps">
           {enrollmentSteps.map((step, index) => {
             const isActive = index === currentStep
             const isComplete = index < currentStep
             return (
               <div
                 key={step}
-                style={{
-                  flex: '1 1 120px',
-                  minWidth: '120px',
-                  padding: '0.7rem 0.9rem',
-                  borderRadius: '12px',
-                  border: `1px solid ${isActive ? '#1d4ed8' : isComplete ? '#16a34a' : '#dfe3ee'}`,
-                  background: isActive ? '#eff6ff' : isComplete ? '#f0fdf4' : '#ffffff',
-                  color: isActive ? '#1d4ed8' : '#374151',
-                  fontWeight: isActive ? 700 : 500,
-                  textAlign: 'center',
-                  fontSize: '0.86rem',
-                }}
+                className={`enrollment-step${isActive ? ' enrollment-step--active' : ''}${isComplete ? ' enrollment-step--complete' : ''}`}
               >
                 {index + 1}. {step}
               </div>
@@ -402,6 +391,7 @@ export function EnrollmentPage() {
                     <button
                       key={year.id}
                       type="button"
+                      className={`enrollment-option${isSelected ? ' enrollment-option--selected' : ''}`}
                       onClick={() => {
                         setSelectedYearId(String(year.id))
                         setSelectedGradeId('')
@@ -412,17 +402,9 @@ export function EnrollmentPage() {
                         setSectionSearch('')
                         setStudentSearch('')
                       }}
-                      style={{
-                        padding: '1rem',
-                        borderRadius: '12px',
-                        border: isSelected ? '2px solid #1d4ed8' : '1px solid #dfe3ee',
-                        background: isSelected ? '#eff6ff' : '#fff',
-                        textAlign: 'left',
-                        cursor: 'pointer',
-                      }}
                     >
                       <div style={{ fontWeight: 700, marginBottom: '0.35rem' }}>{year.name}</div>
-                      <div style={{ fontSize: '0.8rem', color: '#374151' }}>Current school year</div>
+                      <div style={{ fontSize: '0.8rem', color: 'var(--color-text-secondary)' }}>Current school year</div>
                     </button>
                   )
                 })
@@ -442,6 +424,7 @@ export function EnrollmentPage() {
                   <button
                     key={level.value}
                     type="button"
+                    className={`enrollment-option${selected ? ' enrollment-option--selected' : ''}`}
                     onClick={() => {
                       setSelectedLevel(level.value)
                       setSelectedGradeId('')
@@ -451,17 +434,9 @@ export function EnrollmentPage() {
                       setSectionSearch('')
                       setStudentSearch('')
                     }}
-                    style={{
-                      padding: '1rem',
-                      borderRadius: '12px',
-                      border: selected ? '2px solid #1d4ed8' : '1px solid #dfe3ee',
-                      background: selected ? '#eff6ff' : '#fff',
-                      textAlign: 'left',
-                      cursor: 'pointer',
-                    }}
                   >
                     <div style={{ fontWeight: 700 }}>{level.label}</div>
-                    <div style={{ fontSize: '0.8rem', color: '#6b7280' }}>{level.value}</div>
+                    <div style={{ fontSize: '0.8rem', color: 'var(--color-text-secondary)' }}>{level.value}</div>
                   </button>
                 )
               })}
@@ -481,6 +456,7 @@ export function EnrollmentPage() {
                   <button
                     key={grade.id}
                     type="button"
+                    className={`enrollment-option${String(grade.id) === String(selectedGradeId) ? ' enrollment-option--selected' : ''}`}
                     onClick={() => {
                       setSelectedGradeId(String(grade.id))
                       setSelectedStrandId('')
@@ -489,17 +465,9 @@ export function EnrollmentPage() {
                       setSectionSearch('')
                       setStudentSearch('')
                     }}
-                    style={{
-                      padding: '1rem',
-                      borderRadius: '12px',
-                      border: String(grade.id) === String(selectedGradeId) ? '2px solid #1d4ed8' : '1px solid #dfe3ee',
-                      background: String(grade.id) === String(selectedGradeId) ? '#eff6ff' : '#fff',
-                      textAlign: 'left',
-                      cursor: 'pointer',
-                    }}
                   >
                     <div style={{ fontWeight: 700 }}>{grade.name}</div>
-                    <div style={{ fontSize: '0.8rem', color: '#6b7280' }}>{grade.school_level}</div>
+                    <div style={{ fontSize: '0.8rem', color: 'var(--color-text-secondary)' }}>{grade.school_level}</div>
                   </button>
                 ))
               )}
@@ -521,20 +489,12 @@ export function EnrollmentPage() {
                     <button
                       key={name}
                       type="button"
+                      className={`enrollment-option${selected ? ' enrollment-option--selected' : ''}`}
                       onClick={() => setSelectedStrandId(strandValue)}
                       disabled={!match}
-                      style={{
-                        padding: '1rem',
-                        borderRadius: '12px',
-                        border: selected ? '2px solid #1d4ed8' : '1px solid #dfe3ee',
-                        background: selected ? '#eff6ff' : '#fff',
-                        textAlign: 'left',
-                        cursor: match ? 'pointer' : 'not-allowed',
-                        opacity: match ? 1 : 0.6,
-                      }}
                     >
                       <div style={{ fontWeight: 700 }}>{name}</div>
-                      <div style={{ fontSize: '0.8rem', color: '#6b7280' }}>{match ? 'Available strand' : 'Not configured'}</div>
+                      <div style={{ fontSize: '0.8rem', color: 'var(--color-text-secondary)' }}>{match ? 'Available strand' : 'Not configured'}</div>
                     </button>
                   )
                 })}
@@ -582,26 +542,19 @@ export function EnrollmentPage() {
                     <button
                       key={section.id}
                       type="button"
+                      className={`enrollment-option${selected ? ' enrollment-option--selected' : ''}`}
                       onClick={() => setSelectedSectionId(String(section.id))}
-                      style={{
-                        padding: '1rem',
-                        borderRadius: '12px',
-                        border: selected ? '2px solid #1d4ed8' : '1px solid #dfe3ee',
-                        background: selected ? '#eff6ff' : '#fff',
-                        textAlign: 'left',
-                        cursor: 'pointer',
-                      }}
                     >
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
                         <strong style={{ fontSize: '1rem' }}>{section.name}</strong>
-                        <span style={{ fontSize: '0.8rem', color: '#1f2937', background: '#f3f4f6', padding: '0.25rem 0.5rem', borderRadius: '999px' }}>
+                        <span style={{ fontSize: '0.8rem', color: 'var(--color-text-primary)', background: 'var(--color-surface-muted)', padding: '0.25rem 0.5rem', borderRadius: '999px' }}>
                           {availableSlots} slots left
                         </span>
                       </div>
-                      <div style={{ fontSize: '0.8rem', color: '#374151', marginBottom: '0.25rem' }}>
+                      <div style={{ fontSize: '0.8rem', color: 'var(--color-text-secondary)', marginBottom: '0.25rem' }}>
                         Adviser: {section.adviser_name || 'Not assigned'}
                       </div>
-                      <div style={{ fontSize: '0.8rem', color: '#374151', display: 'flex', justifyContent: 'space-between', gap: '0.5rem' }}>
+                      <div style={{ fontSize: '0.8rem', color: 'var(--color-text-secondary)', display: 'flex', justifyContent: 'space-between', gap: '0.5rem' }}>
                         <span>Capacity: {section.capacity || 0}</span>
                         <span>Current enrollees: {currentCount}</span>
                       </div>
@@ -639,18 +592,11 @@ export function EnrollmentPage() {
                     <button
                       key={student.id}
                       type="button"
+                      className={`enrollment-option${selected ? ' enrollment-option--selected' : ''}`}
                       onClick={() => setSelectedStudentIds((current) => selected ? current.filter((id) => String(id) !== String(student.id)) : [...current, String(student.id)])}
-                      style={{
-                        padding: '1rem',
-                        borderRadius: '12px',
-                        border: selected ? '2px solid #1d4ed8' : '1px solid #dfe3ee',
-                        background: selected ? '#eff6ff' : '#fff',
-                        textAlign: 'left',
-                        cursor: 'pointer',
-                      }}
                     >
                       <div style={{ fontWeight: 700 }}>{student.first_name || ''} {student.last_name || ''}</div>
-                      <div style={{ fontSize: '0.8rem', color: '#374151' }}>LRN: {student.lrn || '—'}</div>
+                      <div style={{ fontSize: '0.8rem', color: 'var(--color-text-secondary)' }}>LRN: {student.lrn || '—'}</div>
                     </button>
                   )
                 })
@@ -720,4 +666,3 @@ export function EnrollmentPage() {
     </div>
   )
 }
-

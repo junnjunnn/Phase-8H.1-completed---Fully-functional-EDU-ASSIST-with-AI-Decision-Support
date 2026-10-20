@@ -8,7 +8,18 @@ import { PageHeader } from '../../components/common/PageHeader'
 import { ConfirmDialog } from '../../components/common/ConfirmDialog'
 import { useAuth } from '../../context/AuthContext'
 import { getApiErrorMessage } from '../../services/api'
-import { createEnrollment, createStudent, getAcademicYears, getGradeLevels, getSections, getStudents, updateStudent } from '../../services/studentService'
+import {
+  confirmStudentImport,
+  createEnrollment,
+  createStudent,
+  downloadStudentImportTemplate,
+  getAcademicYears,
+  getGradeLevels,
+  getSections,
+  getStudents,
+  previewStudentImport,
+  updateStudent,
+} from '../../services/studentService'
 
 function statusBadgeClass(status) {
   const normalized = (status || '').toLowerCase()
@@ -59,6 +70,13 @@ export function StudentsPage() {
   })
   const [registerErrors, setRegisterErrors] = useState({})
   const [submitting, setSubmitting] = useState(false)
+  const [showImportModal, setShowImportModal] = useState(false)
+  const [importFile, setImportFile] = useState(null)
+  const [importPreview, setImportPreview] = useState(null)
+  const [importResult, setImportResult] = useState(null)
+  const [importError, setImportError] = useState('')
+  const [importLoading, setImportLoading] = useState(false)
+  const [confirmingImport, setConfirmingImport] = useState(false)
   const [academicYears, setAcademicYears] = useState([])
   const [gradeLevels, setGradeLevels] = useState([])
   const [sections, setSections] = useState([])
@@ -347,12 +365,86 @@ export function StudentsPage() {
     }
   }
 
+  function openImportModal() {
+    setImportFile(null)
+    setImportPreview(null)
+    setImportResult(null)
+    setImportError('')
+    setShowImportModal(true)
+  }
+
+  async function handleTemplateDownload() {
+    setImportError('')
+    try {
+      await downloadStudentImportTemplate()
+    } catch (err) {
+      setImportError(getApiErrorMessage(err))
+    }
+  }
+
+  async function handleImportPreview(event) {
+    event.preventDefault()
+    if (!importFile) {
+      setImportError('Choose an .xlsx file before creating a preview.')
+      return
+    }
+    setImportLoading(true)
+    setImportError('')
+    setImportResult(null)
+    try {
+      setImportPreview(await previewStudentImport(importFile))
+    } catch (err) {
+      setImportPreview(null)
+      setImportError(getApiErrorMessage(err))
+    } finally {
+      setImportLoading(false)
+    }
+  }
+
+  async function handleImportConfirm() {
+    if (!importPreview?.import_token || !importPreview.valid_count || !importFile) {
+      setImportError('There are no eligible records to import. Create a new preview.')
+      return
+    }
+    setConfirmingImport(true)
+    setImportError('')
+    try {
+      const result = await confirmStudentImport(importFile, importPreview.import_token)
+      setImportResult(result)
+      setImportPreview(null)
+      setImportFile(null)
+      if (result.imported_count) {
+        const refreshed = await getStudents({ search })
+        setStudents(refreshed.results || [])
+        setPagination({ count: refreshed.count || 0, next: refreshed.next, previous: refreshed.previous })
+      }
+    } catch (err) {
+      setImportError(getApiErrorMessage(err))
+    } finally {
+      setConfirmingImport(false)
+    }
+  }
+
+  function closeImportModal() {
+    if (importLoading || confirmingImport) return
+    setShowImportModal(false)
+    setImportFile(null)
+    setImportPreview(null)
+    setImportResult(null)
+    setImportError('')
+  }
+
   return (
     <div className="page-stack students-page">
       <PageHeader eyebrow="Student management" title="Students" description="Manage the current learner roster and move quickly into enrollment, profile review, or student status updates." actions={canCreateStudent ? (
-        <button type="button" className="action-button action-button--primary" onClick={() => { resetRegisterForm(); setShowRegisterModal(true) }}>
-          <PlusIcon className="icon" /> Register New Student
-        </button>
+        <div className="section-actions">
+          <button type="button" className="action-button action-button--neutral" onClick={openImportModal}>
+            Bulk registration (Excel)
+          </button>
+          <button type="button" className="action-button action-button--primary" onClick={() => { resetRegisterForm(); setShowRegisterModal(true) }}>
+            <PlusIcon className="icon" /> Register New Student
+          </button>
+        </div>
       ) : null} />
 
       <div className="panel-card students-panel">
@@ -620,6 +712,140 @@ export function StudentsPage() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {showImportModal && (
+        <div className="modal-backdrop" role="presentation" onClick={closeImportModal}>
+          <div className="modal-card" role="dialog" aria-modal="true" aria-labelledby="student-import-title" onClick={(event) => event.stopPropagation()}>
+            <div className="modal-header">
+              <div>
+                <p className="eyebrow">Student registration</p>
+                <h2 id="student-import-title">Bulk registration from Excel</h2>
+              </div>
+              <button type="button" className="icon-button" aria-label="Close bulk registration" onClick={closeImportModal}>×</button>
+            </div>
+
+            {importError ? <ErrorBanner message={importError} /> : null}
+            <div className="section-description">
+              This imports student records only. Enrollment into a section and academic year remains a separate workflow.
+            </div>
+            <div className="section-actions" style={{ margin: '1rem 0' }}>
+              <button type="button" className="action-button action-button--neutral" onClick={handleTemplateDownload}>
+                Download Excel template
+              </button>
+              <span className="small-muted">.xlsx only · maximum file size 2 MB · maximum 2,000 student rows</span>
+            </div>
+
+            {!importResult ? (
+              <>
+                <form className="registration-form" onSubmit={handleImportPreview}>
+                  <label>
+                    <span>Select student workbook (.xlsx)</span>
+                    <input
+                      type="file"
+                      accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                      onChange={(event) => {
+                        setImportFile(event.target.files?.[0] || null)
+                        setImportPreview(null)
+                        setImportError('')
+                      }}
+                      disabled={importLoading || confirmingImport}
+                    />
+                  </label>
+                  <p className="small-muted">
+                    Required columns: LRN, first name, last name, gender, birth date, address, guardian name, and parent contact.
+                    Middle name, suffix, and email are optional. New registrations are set to Active.
+                  </p>
+                  <div className="modal-actions">
+                    <button type="button" className="action-button action-button--neutral" onClick={closeImportModal} disabled={importLoading}>Cancel</button>
+                    <button type="submit" className="action-button action-button--primary" disabled={!importFile || importLoading}>
+                      {importLoading ? <LoadingSpinner label="Validating..." /> : 'Preview records'}
+                    </button>
+                  </div>
+                </form>
+
+                {importPreview ? (
+                  <div className="registration-form">
+                    <div className="record-summary-grid">
+                      <article className="detail-card">
+                        <p className="stat-label">Eligible to import</p>
+                        <p className="stat-value">{importPreview.valid_count}</p>
+                      </article>
+                      <article className="detail-card">
+                        <p className="stat-label">Rows needing correction</p>
+                        <p className="stat-value">{importPreview.rejected_count}</p>
+                      </article>
+                    </div>
+                    <p className="small-muted">
+                      Review the row statuses before confirming. The workbook is re-uploaded and revalidated at confirmation; invalid or duplicate rows will not be imported.
+                      {importPreview.expires_in_seconds ? ' The preview expires after 30 minutes.' : ''}
+                    </p>
+                    <div className="students-table-wrapper" style={{ maxHeight: '20rem', overflow: 'auto' }}>
+                      <table className="students-table">
+                        <thead>
+                          <tr>
+                            <th scope="col">Excel row</th>
+                            <th scope="col">LRN</th>
+                            <th scope="col">Student</th>
+                            <th scope="col">Status and feedback</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {importPreview.rows.map((row) => (
+                            <tr key={row.row}>
+                              <td>{row.row}</td>
+                              <td>{row.lrn || '—'}</td>
+                              <td>{`${row.first_name || ''} ${row.last_name || ''}`.trim() || '—'}</td>
+                              <td>
+                                <strong>
+                                  {row.status === 'valid' ? 'Valid' : row.status === 'duplicate_file' ? 'Duplicate LRN in file' : row.status === 'duplicate_existing' ? 'Already registered' : 'Invalid'}
+                                </strong>
+                                {row.errors.length ? <ul>{row.errors.map((message, index) => <li key={`${row.row}-${index}`}>{message}</li>)}</ul> : null}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    <div className="modal-actions">
+                      <button type="button" className="action-button action-button--neutral" onClick={() => { setImportPreview(null); setImportFile(null) }}>Choose another file</button>
+                      <button type="button" className="action-button action-button--primary" onClick={handleImportConfirm} disabled={!importPreview.valid_count || confirmingImport}>
+                        {confirmingImport ? <LoadingSpinner label="Importing..." /> : `Confirm import of ${importPreview.valid_count} student${importPreview.valid_count === 1 ? '' : 's'}`}
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
+              </>
+            ) : (
+              <div className="registration-form">
+                <div className={importResult.imported_count ? 'status-banner status-banner--success' : 'status-banner'}>
+                  Import complete: {importResult.imported_count} student{importResult.imported_count === 1 ? '' : 's'} imported; {importResult.rejected_count} row{importResult.rejected_count === 1 ? '' : 's'} rejected.
+                </div>
+                {importResult.imported_rows.length ? <p>Imported Excel rows: {importResult.imported_rows.join(', ')}</p> : null}
+                {importResult.rejected_rows.length ? (
+                  <div className="students-table-wrapper" style={{ maxHeight: '20rem', overflow: 'auto' }}>
+                    <table className="students-table">
+                      <thead>
+                        <tr><th scope="col">Excel row</th><th scope="col">Result</th></tr>
+                      </thead>
+                      <tbody>
+                        {importResult.rejected_rows.map((row) => (
+                          <tr key={row.row}>
+                            <td>{row.row}</td>
+                            <td><ul>{row.errors.map((message, index) => <li key={`${row.row}-${index}`}>{message}</li>)}</ul></td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : null}
+                <div className="modal-actions">
+                  <button type="button" className="action-button action-button--primary" onClick={closeImportModal}>Done</button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}

@@ -75,7 +75,15 @@ export function AuthProvider({ children }) {
     setLoading(true)
     try {
       const result = await loginRequest(username, password)
-      const profile = await refreshUser()
+      let profile
+      try {
+        profile = await refreshUser()
+      } catch (error) {
+        const profileError = new Error('Unable to load the current user.')
+        profileError.authStage = 'current-user'
+        profileError.originalError = error
+        throw profileError
+      }
       setUser(profile)
       setIsAuthenticated(true)
       return result

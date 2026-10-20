@@ -25,7 +25,7 @@ function getRoleLabel(role) {
   return String(role).replace('_', ' ')
 }
 
-function ChartCard({ title, data = [], color = '#113f8a' }) {
+function ChartCard({ title, data = [], color = 'var(--color-primary)' }) {
   const maxValue = Math.max(...data.map((item) => Number(item.value || 0)), 1)
 
   return (

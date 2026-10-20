@@ -4,6 +4,7 @@ import { AuthProvider } from './context/AuthContext'
 import { ErrorBoundary } from './components/feedback/ErrorBoundary'
 import { AppRoutes } from './routes/AppRoutes'
 import './App.css'
+import './styles/professional-polish.css'
 
 function getStoredTheme() {
   try {
