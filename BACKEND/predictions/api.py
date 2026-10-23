@@ -123,9 +123,19 @@ class DashboardViewSet(viewsets.ViewSet):
         )
 
         total_students = student_qs.count()
-        attendance_totals = attendance_qs.aggregate(
+        mixed_granularity_enrollment_ids = attendance_qs.values('enrollment_id').annotate(
+            dated_records=Count('id', filter=Q(attendance_date__isnull=False)),
+            period_records=Count('id', filter=Q(attendance_date__isnull=True)),
+        ).filter(dated_records__gt=0, period_records__gt=0).values_list('enrollment_id', flat=True)
+        mixed_granularity_enrollment_count = len(list(mixed_granularity_enrollment_ids))
+        attendance_summary_qs = attendance_qs.exclude(
+            enrollment_id__in=mixed_granularity_enrollment_ids,
+        )
+        attendance_totals = attendance_summary_qs.aggregate(
             present=Sum('days_present'),
             absent=Sum('absences'),
+            excused=Sum('excused_absences'),
+            unclassified_excused_records=Count('id', filter=Q(excused_absences__isnull=True)),
             late=Sum('times_tardy'),
         )
         total_predictions = prediction_qs.count()
@@ -234,12 +244,20 @@ class DashboardViewSet(viewsets.ViewSet):
             'total_students': total_students,
             'total_predictions': total_predictions,
             'attendance_summary': {
-                'record_count': attendance_qs.count(),
+                'record_count': attendance_summary_qs.count(),
+                'excluded_mixed_granularity_enrollments': mixed_granularity_enrollment_count,
                 'present': int(attendance_totals['present'] or 0),
                 'absent': int(attendance_totals['absent'] or 0),
+                'excused': int(attendance_totals['excused'] or 0),
+                'unclassified_excused_records': int(attendance_totals['unclassified_excused_records'] or 0),
                 'late': int(attendance_totals['late'] or 0),
                 'school_days': school_days,
-                'attendance_percentage': round((int(attendance_totals['present'] or 0) / school_days) * 100, 2) if school_days else 0,
+                'scheduled_learner_days': None,
+                'attendance_percentage': None,
+                'attendance_rate_note': (
+                    'Counter totals exclude enrollments with both dated and period-level records because totals may overlap. '
+                    'A school-wide percentage is unavailable because a safe scheduled learner-day denominator cannot be derived.'
+                ),
             },
             'school_days': school_days,
             'academic_year': school_day_summary['academic_year'].name if school_day_summary['academic_year'] else None,
@@ -353,7 +371,7 @@ class AdviserDashboardViewSet(viewsets.ViewSet):
                 | Q(student__last_name__icontains=search)
                 | Q(student__lrn__icontains=search)
             ) if search else active_enrollment_queryset(Enrollment.objects.filter(section__in=sections))
-        ).select_related('student', 'grade_level', 'section', 'section__academic_year', 'section__strand')
+        ).select_related('student', 'grade_level', 'section', 'section__academic_year', 'strand')
         enrollments = enrollments.order_by('student__last_name', 'student__first_name')
         today = timezone.localdate()
         risk_distribution = {}
@@ -365,6 +383,9 @@ class AdviserDashboardViewSet(viewsets.ViewSet):
         class_averages = []
         total_school_days = 0
         total_days_present = 0
+        total_excused_absences = 0
+        total_unclassified_excused_records = 0
+        mixed_granularity_enrollment_count = 0
         attention_students = []
         roster_students = []
 
@@ -380,17 +401,35 @@ class AdviserDashboardViewSet(viewsets.ViewSet):
                 class_averages.append(average)
 
             attendance_records = enrollment.attendance_records.all()
+            enrollment_attendance_record_count = attendance_records.count()
             attendance = attendance_records.aggregate(
                 present=Sum('days_present'),
                 absences=Sum('absences'),
+                excused=Sum('excused_absences'),
+                unclassified_excused_records=Count('id', filter=Q(excused_absences__isnull=True)),
                 tardy=Sum('times_tardy'),
                 school_days=Sum('school_days'),
+                dated_records=Count('id', filter=Q(attendance_date__isnull=False)),
+                period_records=Count('id', filter=Q(attendance_date__isnull=True)),
             )
-            applicable_school_days = school_days or attendance['school_days']
-            attendance_percentage = round((int(attendance['present'] or 0) / applicable_school_days) * 100, 2) if applicable_school_days else None
-            attendance_record_count += attendance_records.count()
-            total_school_days += applicable_school_days or 0
-            total_days_present += int(attendance['present'] or 0)
+            mixed_granularity = attendance['dated_records'] > 0 and attendance['period_records'] > 0
+            if mixed_granularity:
+                mixed_granularity_enrollment_count += 1
+                attendance_percentage = None
+                applicable_school_days = 0
+            elif enrollment_attendance_record_count:
+                applicable_school_days = attendance['school_days']
+                attendance_percentage = round((int(attendance['present'] or 0) / applicable_school_days) * 100, 2) if applicable_school_days else None
+            else:
+                applicable_school_days = 0
+                attendance_percentage = None
+            attendance_record_count += enrollment_attendance_record_count
+            if not mixed_granularity and applicable_school_days:
+                total_school_days += applicable_school_days
+                total_days_present += int(attendance['present'] or 0)
+            if not mixed_granularity:
+                total_excused_absences += int(attendance['excused'] or 0)
+            total_unclassified_excused_records += int(attendance['unclassified_excused_records'] or 0)
 
             behavior_records = enrollment.behavioral_assessments.filter(
                 academic_year__is_active=True,
@@ -437,13 +476,16 @@ class AdviserDashboardViewSet(viewsets.ViewSet):
                     'section': enrollment.section.name if enrollment.section else 'Unassigned',
                     'academic_year': enrollment.section.academic_year.name if enrollment.section else None,
                     'school_level': enrollment.grade_level.school_level,
-                    'strand': enrollment.section.strand.name if enrollment.section and enrollment.section.strand else None,
+                    'strand': enrollment.strand.name if enrollment.strand else None,
                     'enrollment_status': enrollment.enrollment_status,
                     'general_average': average,
                     'attendance_percentage': attendance_percentage,
-                    'school_days': school_days or None,
-                    'days_present': int(attendance['present'] or 0) if school_days else None,
-                    'times_tardy': int(attendance['tardy'] or 0) if school_days else None,
+                    'school_days': applicable_school_days or None,
+                    'days_present': int(attendance['present'] or 0) if enrollment_attendance_record_count and not mixed_granularity else None,
+                    'excused_absences': int(attendance['excused'] or 0) if enrollment_attendance_record_count and not mixed_granularity else None,
+                    'unclassified_excused_records': int(attendance['unclassified_excused_records'] or 0),
+                    'attendance_granularity_mixed': mixed_granularity,
+                    'times_tardy': int(attendance['tardy'] or 0) if enrollment_attendance_record_count and not mixed_granularity else None,
                     'behavior_average': behavior_average,
                     'behavior_records': behavior_records.count(),
                     'risk_level': prediction['risk_level'] if prediction else None,
@@ -468,6 +510,11 @@ class AdviserDashboardViewSet(viewsets.ViewSet):
                 'academic_concerns': academic_concerns,
                 'class_general_average': round(sum(class_averages) / len(class_averages), 2) if class_averages else None,
                 'attendance_rate': round((total_days_present / total_school_days) * 100, 2) if total_school_days else None,
+                'attendance_rate_excluded_mixed_granularity_enrollments': mixed_granularity_enrollment_count,
+                'attendance_rate_note': (
+                    'Enrollments with both dated and period-level records are excluded from attendance rates because their totals may overlap.'
+                    if mixed_granularity_enrollment_count else None
+                ),
                 'school_days': school_days,
                 'attendance_concerns': None,
                 'behavioral_concerns': None,
@@ -481,6 +528,9 @@ class AdviserDashboardViewSet(viewsets.ViewSet):
                 'students_with_records': len({enrollment.student_id for enrollment in enrollments if enrollment.attendance_records.exists()}),
                 'record_count': attendance_record_count,
                 'school_days': school_days,
+                'excused_absences': total_excused_absences,
+                'unclassified_excused_records': total_unclassified_excused_records,
+                'mixed_granularity_enrollment_count': mixed_granularity_enrollment_count,
             },
             'school_days': school_days,
             'academic_year': school_day_summary['academic_year'].name if school_day_summary['academic_year'] else None,

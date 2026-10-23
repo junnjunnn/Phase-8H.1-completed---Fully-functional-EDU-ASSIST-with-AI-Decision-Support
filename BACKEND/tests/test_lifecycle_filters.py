@@ -1,5 +1,6 @@
 from django.contrib.auth import get_user_model
 from django.test import TestCase
+from django.urls import resolve
 from rest_framework.test import APIClient
 
 from accounts.models import UserProfile
@@ -54,6 +55,10 @@ class LifecycleFilterTests(TestCase):
         self.assertEqual(self.ids('/api/academic-years/', 'all'), {self.active_year.id, self.archived_year.id})
         self.assertEqual(self.ids('/api/grade-levels/', 'archived'), {self.archived_grade.id})
         self.assertEqual(self.ids('/api/sections/', 'archived'), {self.archived_section.id})
+
+    def test_grade_level_restore_route_is_registered(self):
+        match = resolve(f'/api/grade-levels/{self.archived_grade.id}/restore/')
+        self.assertEqual(match.func.actions['post'], 'restore')
 
     def test_students_and_enrollments_preserve_historical_context(self):
         self.assertEqual(self.ids('/api/students/', 'active'), {self.active_student.id})

@@ -38,6 +38,42 @@ class AttendanceRecordAPITests(TestCase):
         self.attendance_a = AttendanceRecord.objects.create(enrollment=self.enrollment_a, month='June', school_days=20, days_present=18, absences=2, times_tardy=1)
         self.attendance_b = AttendanceRecord.objects.create(enrollment=self.enrollment_b, month='June', school_days=20, days_present=19, absences=1, times_tardy=0)
 
+    def test_bulk_attendance_preserves_excused_absence_and_legacy_unknown(self):
+        self.client.force_authenticate(user=self.superadmin)
+
+        response = self.client.post('/api/attendance-records/bulk/', [{
+            'enrollment': self.enrollment_a.id,
+            'attendance_date': '2025-06-02',
+            'month': '2025-06-02',
+            'school_days': 1,
+            'days_present': 0,
+            'absences': 0,
+            'excused_absences': 1,
+            'times_tardy': 0,
+        }], format='json')
+        legacy_response = self.client.get(f'/api/attendance-records/{self.attendance_a.id}/')
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data['results'][0]['excused_absences'], 1)
+        self.assertEqual(legacy_response.status_code, 200)
+        self.assertIsNone(legacy_response.data['excused_absences'])
+
+    def test_dated_attendance_rejects_contradictory_absence_classifications(self):
+        self.client.force_authenticate(user=self.superadmin)
+
+        response = self.client.post('/api/attendance-records/bulk/', [{
+            'enrollment': self.enrollment_a.id,
+            'attendance_date': '2025-06-03',
+            'month': '2025-06-03',
+            'school_days': 1,
+            'days_present': 1,
+            'absences': 1,
+            'excused_absences': 0,
+            'times_tardy': 0,
+        }], format='json')
+
+        self.assertEqual(response.status_code, 400)
+
     def test_teacher_only_sees_assigned_section_attendance_records(self):
         self.client.force_authenticate(user=self.teacher)
         response = self.client.get('/api/attendance-records/')

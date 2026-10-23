@@ -2,7 +2,7 @@ import csv
 from io import StringIO
 
 from django.contrib.auth import get_user_model
-from django.db.models import Avg, Count, F, Max, Min, Sum
+from django.db.models import Avg, Count, F, Max, Min, Q, Sum
 from django.http import HttpResponse
 from django.utils import timezone
 from rest_framework import permissions, viewsets
@@ -32,6 +32,7 @@ class ReportsViewSet(viewsets.ViewSet):
         year_id = params.get('academic_year')
         grade_id = params.get('grade_level')
         section_id = params.get('section')
+        strand_id = params.get('strand')
         subject_id = params.get('subject')
         teacher_id = params.get('teacher')
         risk_level = params.get('risk_level')
@@ -46,6 +47,8 @@ class ReportsViewSet(viewsets.ViewSet):
             filters['grade_level_id'] = grade_id
         if section_id:
             filters['section_id'] = section_id
+        if strand_id:
+            filters['strand_id'] = strand_id
         if subject_id:
             filters['academic_records__subject_id'] = subject_id
         if teacher_id:
@@ -115,29 +118,63 @@ class ReportsViewSet(viewsets.ViewSet):
                 'failing_rate': round((failing / summary['total_records'] * 100) if summary['total_records'] else 0, 2),
             },
             'subject_breakdown': list(
-                academic_records.values('subject__name').annotate(record_count=Count('id'), average_grade=Avg('grade')).order_by('-record_count')[:8]
+                academic_records.values(
+                    'subject__name',
+                    'subject__code',
+                    'subject__official_subject_code',
+                ).annotate(
+                    record_count=Count('id'),
+                    average_grade=Avg('grade'),
+                ).order_by('-record_count')[:8]
             ),
         }
 
     def _attendance_reports(self, enrollments):
         attendance_records = AttendanceRecord.objects.filter(enrollment__in=enrollments)
-        summary = attendance_records.aggregate(
+        mixed_enrollment_ids = list(attendance_records.values('enrollment_id').annotate(
+            dated_records=Count('id', filter=Q(attendance_date__isnull=False)),
+            period_records=Count('id', filter=Q(attendance_date__isnull=True)),
+        ).filter(dated_records__gt=0, period_records__gt=0).values_list('enrollment_id', flat=True))
+        mixed_granularity_enrollment_count = len(mixed_enrollment_ids)
+        mixed_record_granularity = mixed_granularity_enrollment_count > 0
+        ranking_records = attendance_records.exclude(enrollment_id__in=mixed_enrollment_ids)
+        summary = ranking_records.aggregate(
             total_present=Sum('days_present'),
             total_absent=Sum('absences'),
+            total_excused=Sum('excused_absences'),
             total_late=Sum('times_tardy'),
             total_school_days=Sum('school_days'),
         )
-        attendance_percentage = 0
-        if summary['total_school_days']:
+        unclassified_excused_records = attendance_records.filter(excused_absences__isnull=True).count()
+        attendance_percentage = None
+        if mixed_record_granularity:
+            attendance_percentage = None
+        elif summary['total_school_days'] and summary['total_present'] is not None:
             attendance_percentage = round((summary['total_present'] / summary['total_school_days']) * 100, 2)
         return {
             'summary': {
                 'present_count': int(summary['total_present'] or 0),
                 'absent_count': int(summary['total_absent'] or 0),
+                'excused_absences_count': int(summary['total_excused'] or 0),
+                'unclassified_excused_record_count': unclassified_excused_records,
                 'late_count': int(summary['total_late'] or 0),
                 'attendance_percentage': attendance_percentage,
+                'mixed_granularity_enrollment_count': mixed_granularity_enrollment_count,
+                'attendance_counts_note': (
+                    'Present, absent, excused, late, and ranking totals exclude enrollments with both dated and period-level records; unclassified status is counted across all records.'
+                    if mixed_record_granularity else None
+                ),
+                'attendance_percentage_note': (
+                    'Unavailable: this report contains both dated and period-level records for at least one enrollment, '
+                    'so the scheduled learner-day total may double-count days.'
+                    if mixed_record_granularity else None
+                ),
             },
-            'ranking': list(attendance_records.values('enrollment__student__first_name', 'enrollment__student__last_name').annotate(present=Sum('days_present'), school_days=Sum('school_days')).order_by('-present')[:10]),
+            'ranking': list(ranking_records.values('enrollment__student__first_name', 'enrollment__student__last_name').annotate(present=Sum('days_present'), school_days=Sum('school_days')).order_by('-present')[:10]),
+            'ranking_note': (
+                'Enrollments with both dated and period-level attendance records are excluded because their totals may overlap.'
+                if mixed_record_granularity else None
+            ),
         }
 
     def _behavior_reports(self, enrollments):

@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+# Creates synthetic demonstration setup data, not verified school configuration.
 import os
 import django
 

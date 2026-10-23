@@ -8,7 +8,7 @@ import { PageHeader } from '../../components/common/PageHeader'
 import { FilterBar, KpiCard, SearchBar, SectionHeader } from '../../components/design-system/DesignSystem'
 import { getApiErrorMessage } from '../../services/api'
 import { exportReport, getReportCenter } from '../../services/reportService'
-import { getTeacherContext } from '../../services/academicsService'
+import { getStrands, getTeacherContext } from '../../services/academicsService'
 import { ReportPrintDocument } from '../../components/reports/ReportPrintDocument'
 
 const categories = [
@@ -62,12 +62,14 @@ export function ReportsPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [teacherContext, setTeacherContext] = useState(null)
+  const [strands, setStrands] = useState([])
   const [filtersOpen, setFiltersOpen] = useState(false)
   const [activeCategory, setActiveCategory] = useState('student')
   const [filters, setFilters] = useState({
     academic_year: '',
     grade_level: '',
     section: '',
+    strand: '',
     subject: '',
     teacher: '',
     risk_level: '',
@@ -93,6 +95,21 @@ export function ReportsPage() {
     if (role !== 'TEACHER') return
     getTeacherContext().then(setTeacherContext).catch(() => setTeacherContext(null))
   }, [user])
+
+  useEffect(() => {
+    let active = true
+    getStrands()
+      .then((response) => {
+        if (active) {
+          const items = response?.results || response || []
+          setStrands(Array.isArray(items) ? items : [])
+        }
+      })
+      .catch((requestError) => {
+        if (active) setError(getApiErrorMessage(requestError))
+      })
+    return () => { active = false }
+  }, [])
 
   // Only update active category when it actually differs to avoid synchronous setState loops
   const _lastCategoryRef = useRef(null)
@@ -141,7 +158,7 @@ export function ReportsPage() {
   }
 
   function clearFilters() {
-    setFilters({ academic_year: '', grade_level: '', section: '', subject: '', teacher: '', risk_level: '', status: '', date_from: '', date_to: '', search: '' })
+    setFilters({ academic_year: '', grade_level: '', section: '', strand: '', subject: '', teacher: '', risk_level: '', status: '', date_from: '', date_to: '', search: '' })
   }
 
   const handleExport = async (format) => {
@@ -217,8 +234,15 @@ export function ReportsPage() {
           {teacherContext ? <select name="section" value={filters.section} onChange={handleChange}><option value="">All assigned sections</option>{[...new Map([...(teacherContext.advisory_classes || []), ...(teacherContext.subject_assignments || [])].map((item) => [item.section, `${item.grade_level_name} · ${item.section_name}`])).entries()].map(([id, name]) => <option key={id} value={id}>{name}</option>)}</select> : <input name="section" value={filters.section} onChange={handleChange} placeholder="Section A" />}
         </label>
         <label>
+          Student strand
+          <select name="strand" value={filters.strand} onChange={handleChange}>
+            <option value="">All strands</option>
+            {strands.map((strand) => <option key={strand.id} value={strand.id}>{strand.name}</option>)}
+          </select>
+        </label>
+        <label>
           Subject
-          {teacherContext ? <select name="subject" value={filters.subject || ''} onChange={handleChange}><option value="">All assigned subjects</option>{[...new Map((teacherContext.subject_assignments || []).map((item) => [item.subject, item.subject_name])).entries()].map(([id, name]) => <option key={id} value={id}>{name}</option>)}</select> : <input name="subject" value={filters.subject || ''} onChange={handleChange} placeholder="Subject ID" />}
+          {teacherContext ? <select name="subject" value={filters.subject || ''} onChange={handleChange}><option value="">All assigned subjects</option>{[...new Map((teacherContext.subject_assignments || []).map((item) => [item.subject, item])).entries()].map(([id, item]) => <option key={id} value={id}>{item.subject_name}{item.official_subject_code ? ` (Official: ${item.official_subject_code})` : ''}{item.subject_code ? ` (System ID: ${item.subject_code})` : ''}</option>)}</select> : <input name="subject" value={filters.subject || ''} onChange={handleChange} placeholder="Subject record ID (not a subject code)" />}
         </label>
         {!isTeacher ? <label>
           Teacher
@@ -290,11 +314,16 @@ export function ReportsPage() {
           <section className="dashboard-summary-grid" aria-label="Report summaries">
             <KpiCard label="Students" value={studentReports.student_count ?? 0} tone="primary" />
             <KpiCard label="Enrollments" value={studentReports.enrollment_count ?? 0} tone="primary" />
-            <KpiCard label="Attendance %" value={`${attendanceReports.summary?.attendance_percentage ?? 0}%`} tone="success" />
+            <KpiCard
+              label="Attendance %"
+              value={attendanceReports.summary?.attendance_percentage == null ? 'Unavailable' : `${attendanceReports.summary.attendance_percentage}%`}
+              tone="success"
+            />
             <KpiCard label="Behavior average" value={behaviorReports.summary?.behavior_average ?? 0} tone="warning" />
             <KpiCard label="Predictions" value={aiReports.summary?.prediction_count ?? 0} tone="info" />
             <KpiCard label="Interventions" value={interventionReports.summary?.total ?? 0} tone="neutral" />
           </section>
+          {attendanceReports.summary?.attendance_percentage_note ? <p className="support-copy">{attendanceReports.summary.attendance_percentage_note}</p> : null}
 
           {activeCategory === 'student' ? (
             <section className="panel-card">
@@ -386,8 +415,10 @@ export function ReportsPage() {
                   <tbody>
                     <tr>
                       <td>Attendance percentage</td>
-                      <td>{attendanceReports.summary?.attendance_percentage ?? 0}%</td>
+                      <td>{attendanceReports.summary?.attendance_percentage == null ? 'Unavailable' : `${attendanceReports.summary.attendance_percentage}%`}</td>
                     </tr>
+                    {attendanceReports.summary?.attendance_percentage_note ? <tr><td colSpan="2">{attendanceReports.summary.attendance_percentage_note}</td></tr> : null}
+                    {attendanceReports.summary?.attendance_counts_note ? <tr><td colSpan="2">{attendanceReports.summary.attendance_counts_note}</td></tr> : null}
                     <tr>
                       <td>Present count</td>
                       <td>{attendanceReports.summary?.present_count ?? 0}</td>
@@ -395,6 +426,14 @@ export function ReportsPage() {
                     <tr>
                       <td>Absent count</td>
                       <td>{attendanceReports.summary?.absent_count ?? 0}</td>
+                    </tr>
+                    <tr>
+                      <td>Excused absences (classified)</td>
+                      <td>{attendanceReports.summary?.excused_absences_count ?? 0}</td>
+                    </tr>
+                    <tr>
+                      <td>Records with unclassified excused status</td>
+                      <td>{attendanceReports.summary?.unclassified_excused_record_count ?? 0}</td>
                     </tr>
                     <tr>
                       <td>Late count</td>
@@ -520,6 +559,7 @@ export function ReportsPage() {
                 }))}
                 color="#0f766e"
               />
+              {attendanceReports.ranking_note ? <p className="support-copy">{attendanceReports.ranking_note}</p> : null}
               <ChartCard
                 title="Intervention activity"
                 data={(interventionReports.teacher_activity || []).map((entry) => ({

@@ -77,6 +77,8 @@ This document defines the AI dataset design for EDU ASSIST using a synthetic-onl
 - excused_absences: Helps distinguish between unavoidable absences and potentially avoidable absentee patterns.
 - attendance_rate: Strong summary metric for school participation and academic consistency.
 
+The live application prediction feature builder currently supplies `0` for `excused_absences`; adding the attendance field does not change prediction inputs. Prediction integration requires a separate review of feature generation, training-data compatibility, and model validity before this feature is populated.
+
 ### Behavior
 
 - behavior_core_value: Captures the specific core value being evaluated and helps connect behavior with school expectations.

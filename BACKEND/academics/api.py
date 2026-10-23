@@ -1,4 +1,4 @@
-from rest_framework import mixins, permissions, viewsets
+from rest_framework import mixins, permissions, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.response import Response
@@ -29,8 +29,6 @@ class AcademicYearViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixi
 
     def get_queryset(self):
         queryset = super().get_queryset()
-        if self.request.method in ['PUT', 'PATCH']:
-            return queryset
         status = requested_lifecycle_status(self.request, self.request.query_params.get('include_archived') == 'true')
         return filter_lifecycle_queryset(queryset, status, lambda qs: qs.filter(is_active=True), lambda qs: qs.filter(is_active=False))
 
@@ -67,6 +65,8 @@ class GradeLevelViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins
 
     def get_queryset(self):
         queryset = super().get_queryset()
+        if self.action == 'restore' or self.request.method in ['PUT', 'PATCH']:
+            return queryset
         include_archived = self.request.query_params.get('include_archived') == 'true'
         status = requested_lifecycle_status(self.request, include_archived)
         if self.request.query_params.get('active_only') == 'true' and 'status' not in self.request.query_params:
@@ -89,6 +89,33 @@ class GradeLevelViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins
                 queryset = queryset.filter(school_level=canonical)
 
         return queryset
+
+    def restore(self, request, pk=None):
+        try:
+            grade_level = GradeLevel.objects.get(pk=pk)
+        except (GradeLevel.DoesNotExist, OverflowError, TypeError, ValueError):
+            return Response(
+                {'detail': 'Invalid or nonexistent grade level ID.'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        self.check_object_permissions(request, grade_level)
+        if grade_level.is_active:
+            return Response(
+                {'detail': 'This grade level is already active.'},
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        grade_level.is_active = True
+        grade_level.save(update_fields=['is_active'])
+        AuditLog.objects.create(
+            user=request.user,
+            action='UPDATE',
+            module='academics',
+            object_type='GradeLevel',
+            object_id=str(grade_level.pk),
+        )
+        return Response(self.get_serializer(grade_level).data)
 
     def perform_create(self, serializer):
         instance = serializer.save()
@@ -123,6 +150,8 @@ class SectionViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins.Cr
 
     def get_queryset(self):
         queryset = super().get_queryset()
+        if self.request.method in ['PUT', 'PATCH']:
+            return queryset
         include_archived = self.request.query_params.get('include_archived') == 'true'
         status = requested_lifecycle_status(self.request, include_archived)
         if self.request.query_params.get('active_only') == 'true' and 'status' not in self.request.query_params:
@@ -145,7 +174,10 @@ class SectionViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins.Cr
 
         strand = self.request.query_params.get('strand')
         if strand:
-            queryset = queryset.filter(strand_id=strand)
+            queryset = queryset.filter(
+                Q(strand_id=strand) |
+                Q(strand__isnull=True, grade_level__school_level='Senior High School')
+            )
 
         specialization = self.request.query_params.get('specialization')
         if specialization:
@@ -196,6 +228,12 @@ class StrandViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins.Cre
     serializer_class = StrandSerializer
     permission_classes = [permissions.IsAuthenticated, IsAcademicReferenceAccessAllowed]
 
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        if self.action == 'list' and self.request.query_params.get('active_only') == 'true':
+            queryset = queryset.filter(is_active=True)
+        return queryset
+
     def get_permissions(self):
         if self.request.method in ['POST', 'PUT', 'PATCH']:
             return [permissions.IsAuthenticated(), IsSchoolAdmin()]
@@ -214,6 +252,8 @@ class SubjectViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins.Cr
 
     def get_queryset(self):
         queryset = super().get_queryset()
+        if self.request.method in ['PUT', 'PATCH']:
+            return queryset
         include_archived = self.request.query_params.get('include_archived') == 'true'
         status = requested_lifecycle_status(self.request, include_archived)
         if self.request.query_params.get('active_only') == 'true' and 'status' not in self.request.query_params:
@@ -309,7 +349,15 @@ class TeacherAssignmentViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin,
                 subject_payload['subject'] = subject_id
                 serializer = self.get_serializer(data=subject_payload)
                 serializer.is_valid(raise_exception=True)
-                created.append(serializer.save())
+                instance = serializer.save()
+                AuditLog.objects.create(
+                    user=request.user,
+                    action='CREATE',
+                    module=self.serializer_class.Meta.model._meta.app_label,
+                    object_type=self.serializer_class.Meta.model.__name__,
+                    object_id=str(instance.pk),
+                )
+                created.append(instance)
 
         response_serializer = self.get_serializer(created, many=True)
         return Response(response_serializer.data, status=201)
@@ -485,7 +533,18 @@ class AcademicRecordViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mi
     serializer_class = AcademicRecordSerializer
     permission_classes = [permissions.IsAuthenticated, IsAuthorizedStaff]
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
-    filterset_fields = ['enrollment', 'enrollment__student', 'academic_year', 'subject', 'grading_period_type', 'quarter', 'semester']
+    filterset_fields = [
+        'enrollment',
+        'enrollment__student',
+        'enrollment__grade_level',
+        'enrollment__section',
+        'enrollment__strand',
+        'academic_year',
+        'subject',
+        'grading_period_type',
+        'quarter',
+        'semester',
+    ]
     search_fields = ['enrollment__student__first_name', 'enrollment__student__last_name', 'subject__name']
     ordering_fields = ['created_at', 'grade']
     ordering = ['-created_at']

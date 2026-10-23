@@ -128,7 +128,15 @@ export function GradeEncodingPage() {
             })).values()],
             [...new Map((context.subject_assignments || []).map((item) => [item.grade_level, { id: item.grade_level, name: item.grade_level_name }])).values()],
             [...new Map((context.subject_assignments || []).map((item) => [item.section, { id: item.section, name: item.section_name, academic_year: item.academic_year, grade_level: item.grade_level }])).values()],
-            [...new Map((context.subject_assignments || []).map((item) => [item.subject, { id: item.subject, name: item.subject_name, grade_level: item.grade_level }])).values()],
+            [...new Map((context.subject_assignments || []).map((item) => [item.subject, {
+              id: item.subject,
+              name: item.subject_name,
+              code: item.subject_code,
+              strand: item.subject_strand,
+              strand_name: item.subject_strand_name,
+              official_subject_code: item.official_subject_code,
+              grade_level: item.grade_level,
+            }])).values()],
           ]
           : await Promise.all([getAcademicYears(), getGradeLevels(), getSections(), getSubjects()])
 
@@ -335,6 +343,7 @@ export function GradeEncodingPage() {
 
       const enrollments = normalizeListResponse(enrollmentsData).items
       const academicRecords = normalizeListResponse(recordsData).items
+      const rosterSubject = subjects.find((subject) => String(subject.id) === String(nextFilters.subject))
 
       const recordsByEnrollment = academicRecords.reduce((accumulator, record) => {
         accumulator[record.enrollment] = record
@@ -347,7 +356,10 @@ export function GradeEncodingPage() {
         return accumulator
       }, {})
 
-      const classRows = enrollments.map((enrollment) => {
+      const eligibleEnrollments = isTeacher && rosterSubject?.strand
+        ? enrollments.filter((enrollment) => String(enrollment.strand) === String(rosterSubject.strand))
+        : enrollments
+      const classRows = eligibleEnrollments.map((enrollment) => {
         const record = recordsByEnrollment[enrollment.id]
         const student = studentMap[enrollment.student]
         return {
@@ -356,6 +368,7 @@ export function GradeEncodingPage() {
           recordId: record?.id || null,
           studentId: student?.lrn || enrollment.student,
           studentName: student ? `${student.first_name || ''} ${student.last_name || ''}`.trim() : `Student ${enrollment.student}`,
+          strandName: enrollment.strand_name || '',
           grade: record?.grade ?? '',
           remarks: record?.remarks || '',
           finalGrade: record?.final_grade ?? '',
@@ -458,7 +471,7 @@ export function GradeEncodingPage() {
 
   const encodedCount = rows.filter((row) => row.grade !== '' && row.grade !== null && row.grade !== undefined).length
   const selectedAssignmentLabel = selectedTeacherAssignment
-    ? `${selectedTeacherAssignment.grade_level_name} – ${selectedTeacherAssignment.section_name} | ${selectedTeacherAssignment.subject_name} | ${selectedTeacherAssignment.role}`
+    ? `${selectedTeacherAssignment.grade_level_name} – ${selectedTeacherAssignment.section_name} | ${selectedTeacherAssignment.subject_name}${selectedTeacherAssignment.official_subject_code ? ` (Official: ${selectedTeacherAssignment.official_subject_code})` : ''}${selectedTeacherAssignment.subject_code ? ` (System ID: ${selectedTeacherAssignment.subject_code})` : ''} | ${selectedTeacherAssignment.role}`
     : selectedGradeLevel && selectedSection && selectedSubject
       ? `${selectedGradeLevel.name} – ${selectedSection.name} | ${selectedSubject.name}`
       : 'No class selected'
@@ -508,7 +521,7 @@ export function GradeEncodingPage() {
                   <option value="">Select an authorized class</option>
                   {teacherAssignments.map((assignment) => (
                     <option key={assignment.id} value={assignment.id}>
-                      {assignment.grade_level_name} – {assignment.section_name} | {assignment.subject_name} | {assignment.role}
+                      {assignment.grade_level_name} – {assignment.section_name} | {assignment.subject_name}{assignment.official_subject_code ? ` (Official: ${assignment.official_subject_code})` : ''}{assignment.subject_code ? ` (System ID: ${assignment.subject_code})` : ''} | {assignment.role}
                     </option>
                   ))}
                 </select>
@@ -556,7 +569,7 @@ export function GradeEncodingPage() {
                   <select value={filters.subject} onChange={(event) => setFilters({ ...filters, subject: event.target.value })}>
                     <option value="">Select subject</option>
                     {filteredSubjects.map((subject) => (
-                      <option key={subject.id} value={subject.id}>{subject.name}</option>
+                      <option key={subject.id} value={subject.id}>{subject.name}{subject.official_subject_code ? ` (Official: ${subject.official_subject_code})` : ''}{subject.code ? ` (System ID: ${subject.code})` : ''}</option>
                     ))}
                   </select>
                 </label>
@@ -624,6 +637,7 @@ export function GradeEncodingPage() {
                       <div className="student-row-main">
                         <span className="student-name">{row.studentName}</span>
                         <span className="student-meta">{row.studentId}</span>
+                        {row.strandName ? <span className="student-meta">Strand: {row.strandName}</span> : null}
                       </div>
                     </td>
                     <td data-label="Grade">

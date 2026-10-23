@@ -485,7 +485,7 @@ export function SchoolCalendarPage() {
           {form.day_type === 'EXAMINATION' ? <>
             <label><span>Examination type</span><select value={form.examination_type} onChange={(event) => setForm({ ...form, examination_type: event.target.value })} required><option value="">Select examination type</option><option value="PRELIMINARY">Preliminary Examination</option><option value="MIDTERM">Midterm Examination</option><option value="SEMI_FINAL">Semi-Final Examination</option><option value="FINAL">Final Examination</option><option value="ENTRANCE">Entrance Examination</option><option value="ADMISSION_TEST">Admission Test</option><option value="QUALIFYING">Qualifying Examination</option><option value="OTHER">Other Examination</option></select></label>
             <label><span>Examination period</span><select value={form.examination_period} onChange={(event) => setForm({ ...form, examination_period: event.target.value })}><option value="">Select period</option><option value="PRELIMINARY">Preliminary</option><option value="MIDTERM">Midterm</option><option value="SEMI_FINAL">Semi-Final</option><option value="FINAL">Final</option><option value="OTHER">Other</option></select></label>
-            <label><span>Subject</span><select value={form.subject || ''} onChange={(event) => setForm({ ...form, subject: event.target.value })}><option value="">Select subject</option>{subjects.map((subject) => <option key={subject.id} value={subject.id}>{subject.code} - {subject.name}</option>)}</select></label>
+            <label><span>Subject</span><select value={form.subject || ''} onChange={(event) => setForm({ ...form, subject: event.target.value })}><option value="">Select subject</option>{subjects.map((subject) => <option key={subject.id} value={subject.id}>{subject.name}{subject.official_subject_code ? ` (Official: ${subject.official_subject_code})` : ''}{subject.code ? ` (System ID: ${subject.code})` : ''}</option>)}</select></label>
             <label><span>Instructor</span><select value={form.instructor || ''} onChange={(event) => setForm({ ...form, instructor: event.target.value })}><option value="">Select instructor</option>{teachers.map((teacher) => <option key={teacher.id} value={teacher.id}>{teacher.first_name || teacher.last_name ? `${teacher.first_name || ''} ${teacher.last_name || ''}`.trim() : teacher.username}</option>)}</select></label>
           </> : null}
           {form.day_type === 'SUSPENSION' || form.day_type === 'SCHOOL_EVENT' || form.day_type === 'ACTIVITY' || form.day_type === 'EXAMINATION' || form.day_type === 'ENROLLMENT' || form.day_type === 'ACADEMIC_DEADLINE' ? <>
@@ -555,6 +555,9 @@ export function SchoolCalendarPage() {
             <button type="button" className="action-button secondary-button" onClick={handleImportPhilippineHolidays}>
               Import Philippine Holidays
             </button>
+            <p className="form-help form-grid-full">
+              Imports the configured Philippine holiday list for dates in the selected academic year; this is not a spreadsheet upload. Existing matching holidays may be updated.
+            </p>
           </div>
         </form>
       </section>

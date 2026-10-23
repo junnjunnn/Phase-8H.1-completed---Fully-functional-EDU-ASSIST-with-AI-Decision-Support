@@ -248,6 +248,13 @@ export function AcademicsPage() {
                         </td>
                         <td data-label="Subject">
                           <span className="badge badge--subject">{record.subject_name || record.subject || '—'}</span>
+                          {record.official_subject_code || record.subject_code ? (
+                            <small>
+                              {record.official_subject_code ? `Official: ${record.official_subject_code}` : ''}
+                              {record.official_subject_code && record.subject_code ? ' · ' : ''}
+                              {record.subject_code ? `System ID: ${record.subject_code}` : ''}
+                            </small>
+                          ) : null}
                         </td>
                         <td data-label="Grade / section">
                           <div className="monitoring-meta-cell">

@@ -13,6 +13,22 @@ function normalizeListResponse(data) {
   return { items, count, next: data?.next || null, previous: data?.previous || null }
 }
 
+async function getAllAttendanceRecords(params) {
+  const records = []
+  let page = 1
+  let response
+  let normalized
+
+  do {
+    response = await getAttendanceRecords({ ...params, page })
+    normalized = normalizeListResponse(response)
+    records.push(...normalized.items)
+    page += 1
+  } while (normalized.next)
+
+  return { records, count: normalized?.count || 0 }
+}
+
 export function AttendancePage() {
   const [attendanceRecords, setAttendanceRecords] = useState([])
   const [loading, setLoading] = useState(true)
@@ -20,7 +36,7 @@ export function AttendancePage() {
   const [search, setSearch] = useState('')
   const [status, setStatus] = useState('active')
   const [pagination, setPagination] = useState({ count: 0, next: null, previous: null })
-  const [summary, setSummary] = useState({ records: 0, present: 0, absences: 0, tardies: 0, attendanceRate: 0 })
+  const [summary, setSummary] = useState({ records: 0, present: 0, absences: 0, excused: 0, unclassifiedExcusedRecords: 0, tardies: 0, attendanceRate: null })
   const [enrollments, setEnrollments] = useState([])
 
   useEffect(() => {
@@ -35,7 +51,7 @@ export function AttendancePage() {
           status === 'active'
             ? getEnrollments({ active_only: 'true', ordering: 'student__last_name,student__first_name' })
             : getEnrollments({ include_archived: 'true', ordering: 'student__last_name,student__first_name' }),
-          getAttendanceRecords({ status, search, ordering: '-created_at' }),
+          getAllAttendanceRecords({ status, search, ordering: '-created_at' }),
         ])
 
         if (!active) {
@@ -43,29 +59,56 @@ export function AttendancePage() {
         }
 
         const normalizedEnrollments = normalizeListResponse(enrollmentData)
-        const normalized = normalizeListResponse(attendanceData)
-        const records = normalized.items
-        const totals = records.reduce(
+        const records = attendanceData.records
+        const granularityByEnrollment = records.reduce((accumulator, record) => {
+          const enrollment = String(record.enrollment)
+          const granularity = accumulator[enrollment] || { dated: false, period: false }
+          if (record.attendance_date) {
+            granularity.dated = true
+          } else {
+            granularity.period = true
+          }
+          accumulator[enrollment] = granularity
+          return accumulator
+        }, {})
+        const mixedGranularityEnrollmentIds = new Set(
+          Object.entries(granularityByEnrollment)
+            .filter(([, granularity]) => granularity.dated && granularity.period)
+            .map(([enrollment]) => enrollment),
+        )
+        const consistentRecords = records.filter(
+          (record) => !mixedGranularityEnrollmentIds.has(String(record.enrollment)),
+        )
+        const totals = consistentRecords.reduce(
           (acc, record) => ({
-            records: acc.records + 1,
             present: acc.present + (Number(record.days_present) || 0),
             absences: acc.absences + (Number(record.absences) || 0),
+            excused: acc.excused + (Number(record.excused_absences) || 0),
             tardies: acc.tardies + (Number(record.times_tardy) || 0),
             schoolDays: acc.schoolDays + (Number(record.school_days) || 0),
           }),
-          { records: 0, present: 0, absences: 0, tardies: 0, schoolDays: 0 },
+          { present: 0, absences: 0, excused: 0, tardies: 0, schoolDays: 0 },
         )
+        const hasMixedGranularity = mixedGranularityEnrollmentIds.size > 0
 
         setEnrollments(normalizedEnrollments.items)
         setAttendanceRecords(records.slice(0, 12))
         setSummary({
-          records: normalized.count,
+          records: records.length,
           present: totals.present,
           absences: totals.absences,
+          excused: totals.excused,
+          unclassifiedExcusedRecords: records.filter((record) => record.excused_absences == null).length,
           tardies: totals.tardies,
-          attendanceRate: totals.schoolDays ? Math.round((totals.present / totals.schoolDays) * 100) : 0,
+          mixedGranularityEnrollmentCount: mixedGranularityEnrollmentIds.size,
+          attendanceRate: hasMixedGranularity
+            ? null
+            : totals.schoolDays ? Math.round((totals.present / totals.schoolDays) * 100) : null,
+          attendanceRateNote: hasMixedGranularity
+            ? 'Unavailable: dated and period-level records for at least one enrollment may overlap.'
+            : '',
         })
-        setPagination({ count: normalized.count, next: normalized.next, previous: normalized.previous })
+        setPagination({ count: attendanceData.count, next: null, previous: null })
       } catch (err) {
         if (!active) {
           return
@@ -124,14 +167,15 @@ export function AttendancePage() {
         <article className="detail-card stat-card-accent">
           <p className="stat-label">Attendance records</p>
           <p className="stat-value">{summary.records}</p>
-          <span className="badge badge--info">Latest snapshots</span>
+          <span className="badge badge--info">All matching records</span>
         </article>
         <article className="detail-card stat-card-accent">
           <p className="stat-label">Overall rate</p>
-          <p className="stat-value">{summary.attendanceRate}%</p>
-          <span className={`badge ${summary.attendanceRate < 80 ? 'badge--warning' : 'badge--success'}`}>
-            {summary.attendanceRate < 80 ? 'Monitor closely' : 'On track'}
+          <p className="stat-value">{summary.attendanceRate == null ? 'Unavailable' : `${summary.attendanceRate}%`}</p>
+          <span className={`badge ${summary.attendanceRate != null && summary.attendanceRate < 80 ? 'badge--warning' : 'badge--success'}`}>
+            {summary.attendanceRate == null ? 'Not calculated' : summary.attendanceRate < 80 ? 'Monitor closely' : 'On track'}
           </span>
+          {summary.attendanceRateNote ? <small>{summary.attendanceRateNote}</small> : null}
         </article>
         <article className="detail-card stat-card-accent">
           <p className="stat-label">Days present</p>
@@ -139,11 +183,23 @@ export function AttendancePage() {
           <span className="badge badge--success">Present</span>
         </article>
         <article className="detail-card stat-card-accent">
-          <p className="stat-label">Absences / tardies</p>
-          <p className="stat-value">{summary.absences} / {summary.tardies}</p>
-          <span className="badge badge--warning">Follow-up</span>
+          <p className="stat-label">Recorded absent</p>
+          <p className="stat-value">{summary.absences}</p>
+          <span className="badge badge--warning">Absences</span>
+        </article>
+        <article className="detail-card stat-card-accent">
+          <p className="stat-label">Excused / tardy</p>
+          <p className="stat-value">{summary.excused} / {summary.tardies}</p>
+          <span className="badge badge--info">
+            {summary.unclassifiedExcusedRecords ? `${summary.unclassifiedExcusedRecords} record(s) unclassified` : 'Known excused total'}
+          </span>
         </article>
       </div>
+      {summary.mixedGranularityEnrollmentCount > 0 ? (
+        <p className="support-copy">
+          Counter totals and attendance rate exclude {summary.mixedGranularityEnrollmentCount} enrollment(s) with both dated and period-level records; unclassified status is counted across all records.
+        </p>
+      ) : null}
 
       <div className="panel-card record-panel">
         <div className="section-header">
@@ -204,6 +260,7 @@ export function AttendancePage() {
                     <th scope="col">Attendance %</th>
                     <th scope="col">Present</th>
                     <th scope="col">Absent</th>
+                    <th scope="col">Excused</th>
                     <th scope="col">Late</th>
                     <th scope="col">Status</th>
                   </tr>
@@ -213,9 +270,10 @@ export function AttendancePage() {
                     const schoolDays = Number(record.school_days || 0)
                     const present = Number(record.days_present || 0)
                     const absent = Number(record.absences || 0)
+                    const excused = record.excused_absences == null ? 'Unclassified' : Number(record.excused_absences)
                     const late = Number(record.times_tardy || 0)
-                    const percentage = schoolDays > 0 ? Math.round((present / schoolDays) * 100) : 0
-                    const status = percentage < 80 ? 'Needs attention' : 'Stable'
+                    const percentage = schoolDays > 0 ? Math.round((present / schoolDays) * 100) : null
+                    const status = percentage == null ? 'Unavailable' : percentage < 80 ? 'Needs attention' : 'Stable'
                     const studentName = record.student_name || enrollmentLookup[record.enrollment] || 'Enrollment unavailable'
 
                     return (
@@ -227,12 +285,13 @@ export function AttendancePage() {
                           </div>
                         </td>
                         <td data-label="Month">{record.month || '—'}</td>
-                        <td data-label="Attendance %">{percentage}%</td>
+                        <td data-label="Attendance %">{percentage == null ? 'Unavailable' : `${percentage}%`}</td>
                         <td data-label="Present">{present}</td>
                         <td data-label="Absent">{absent}</td>
+                        <td data-label="Excused">{excused}</td>
                         <td data-label="Late">{late}</td>
                         <td data-label="Status">
-                          <span className={`badge ${status === 'Needs attention' ? 'badge--warning' : 'badge--success'}`}>{status}</span>
+                          <span className={`badge ${status === 'Needs attention' ? 'badge--warning' : status === 'Stable' ? 'badge--success' : 'badge--info'}`}>{status}</span>
                         </td>
                       </tr>
                     )

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { EmptyState } from '../../components/common/EmptyState'
 import { ErrorBanner } from '../../components/feedback/ErrorBanner'
 import { PageHeader } from '../../components/common/PageHeader'
@@ -41,7 +42,7 @@ export function TeacherAssignmentsPage() {
   const [subjectSearch, setSubjectSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
   const [page, setPage] = useState(1)
-  const [form, setForm] = useState({ id: '', assignment_type: 'SUBJECT', teacher: '', academic_year: '', grade_level: '', section: '', subjects: [], is_active: true })
+  const [form, setForm] = useState({ id: '', assignment_type: 'SUBJECT', teacher: '', grade_level: '', section: '', subjects: [], is_active: true })
   const [submitting, setSubmitting] = useState(false)
   const [formError, setFormError] = useState('')
   const [confirmOpen, setConfirmOpen] = useState(false)
@@ -57,7 +58,7 @@ export function TeacherAssignmentsPage() {
         const [assignmentData, teacherData, yearData, gradeData, sectionData, subjectData] = await Promise.all([
           apiClient.get('/teacher-assignments/'),
           getUserProfiles({ active_only: 'true', role_name: 'TEACHER' }),
-          getAcademicYears(),
+          getAcademicYears({ status: 'all' }),
           getGradeLevels({ active_only: 'true' }),
           getSections({ active_only: 'true' }),
           Promise.resolve([]),
@@ -73,8 +74,6 @@ export function TeacherAssignmentsPage() {
         setGradeLevels(normalizeListResponse(gradeData).items)
         setSections(normalizeListResponse(sectionData).items)
         setSubjects(normalizeListResponse(subjectData).items)
-        const activeYear = yearItems.find((year) => year.is_active)
-        if (activeYear) setForm((current) => ({ ...current, academic_year: String(activeYear.id) }))
       } catch (err) {
         if (!active) return
         setError(getApiErrorMessage(err))
@@ -131,7 +130,7 @@ export function TeacherAssignmentsPage() {
     }
     setHistoricalSubject(null)
     setSubjectSearch('')
-    setForm((current) => ({ ...current, section: '', academic_year: '', grade_level: '', subjects: [] }))
+    setForm((current) => ({ ...current, section: '', grade_level: '', subjects: [] }))
   }, [form.section, sections])
 
   useEffect(() => {
@@ -148,7 +147,8 @@ export function TeacherAssignmentsPage() {
       const teacherName = `${assignment.teacher_name || assignment.teacher || ''}`.toLowerCase()
       const sectionName = `${assignment.section_name || assignment.section || ''}`.toLowerCase()
       const subjectName = `${assignment.subject_name || assignment.subject || ''}`.toLowerCase()
-      const matchesSearch = !term || teacherName.includes(term) || sectionName.includes(term) || subjectName.includes(term)
+      const subjectCodes = `${assignment.official_subject_code || ''} ${assignment.subject_code || ''}`.toLowerCase()
+      const matchesSearch = !term || teacherName.includes(term) || sectionName.includes(term) || subjectName.includes(term) || subjectCodes.includes(term)
       const matchesTeacher = !teacherFilter || String(assignment.teacher) === String(teacherFilter)
       const matchesYear = !yearFilter || String(assignment.academic_year) === String(yearFilter)
       const matchesGrade = !gradeFilter || String(assignment.grade_level) === String(gradeFilter)
@@ -166,6 +166,7 @@ export function TeacherAssignmentsPage() {
   }, [filteredAssignments, page])
 
   const totalPages = Math.max(1, Math.ceil(filteredAssignments.length / pageSize))
+  const activeYearCount = academicYears.filter((year) => year.is_active).length
 
   async function handleSubmit(event) {
     event.preventDefault()
@@ -173,9 +174,11 @@ export function TeacherAssignmentsPage() {
 
     const selectedSection = sections.find((section) => String(section.id) === String(form.section))
     if (!selectedSection || !form.teacher || (form.assignment_type === 'SUBJECT' && form.subjects.length === 0)) {
-      setFormError(form.assignment_type === 'SUBJECT'
-        ? 'Select a section, teacher, and at least one subject.'
-        : 'Select a section and teacher.')
+      const missingFields = []
+      if (!selectedSection) missingFields.push('section')
+      if (!form.teacher) missingFields.push('teacher')
+      if (form.assignment_type === 'SUBJECT' && form.subjects.length === 0) missingFields.push('at least one subject')
+      setFormError(`Complete these required fields: ${missingFields.join(', ')}.`)
       return
     }
 
@@ -184,7 +187,6 @@ export function TeacherAssignmentsPage() {
     try {
       const payload = {
         teacher: Number(form.teacher),
-        academic_year: Number(selectedSection.academic_year),
         grade_level: Number(selectedSection.grade_level),
         section: Number(form.section),
         ...(form.id && form.assignment_type === 'SUBJECT' ? { subject: Number(form.subjects[0]) } : {}),
@@ -201,7 +203,7 @@ export function TeacherAssignmentsPage() {
       const refreshed = await apiClient.get('/teacher-assignments/')
       setAssignments(normalizeListResponse(refreshed.data).items)
       setHistoricalSubject(null)
-      setForm({ id: '', assignment_type: 'SUBJECT', teacher: '', academic_year: '', grade_level: '', section: '', subjects: [], is_active: true })
+      setForm({ id: '', assignment_type: 'SUBJECT', teacher: '', grade_level: '', section: '', subjects: [], is_active: true })
     } catch (err) {
       setFormError(getApiErrorMessage(err))
     } finally {
@@ -225,12 +227,18 @@ export function TeacherAssignmentsPage() {
       ? current
       : [...current, { id: assignment.teacher, username: assignment.teacher_name || 'Historical teacher', is_active: false, role_name: 'TEACHER' }])
     setHistoricalSubject(assignment.subject
-      ? { id: assignment.subject, name: assignment.subject_name || 'Archived subject', is_active: false, grade_levels: [assignment.grade_level] }
+      ? {
+        id: assignment.subject,
+        name: assignment.subject_name || 'Archived subject',
+        code: assignment.subject_code || '',
+        official_subject_code: assignment.official_subject_code || '',
+        is_active: false,
+        grade_levels: [assignment.grade_level],
+      }
       : null)
     setForm({
       id: assignment.id,
       teacher: assignment.teacher || '',
-      academic_year: assignment.academic_year || '',
       grade_level: assignment.grade_level || '',
       section: assignment.section || '',
       subjects: assignment.subject ? [assignment.subject] : [],
@@ -241,7 +249,7 @@ export function TeacherAssignmentsPage() {
 
   function cancelEdit() {
     setHistoricalSubject(null)
-    setForm({ id: '', assignment_type: 'SUBJECT', teacher: '', academic_year: '', grade_level: '', section: '', subjects: [], is_active: true })
+    setForm({ id: '', assignment_type: 'SUBJECT', teacher: '', grade_level: '', section: '', subjects: [], is_active: true })
   }
 
   async function toggleAssignmentStatus(assignment) {
@@ -269,16 +277,18 @@ export function TeacherAssignmentsPage() {
   })
   const selectableTeachers = teachers.filter((teacher) => teacher.is_active !== false || (form.id && String(teacher.id) === String(form.teacher)))
   const selectedSection = sections.find((section) => String(section.id) === String(form.section))
+  const selectedGradeLevel = gradeLevels.find((grade) => String(grade.id) === String(selectedSection?.grade_level))
+  const selectedSchoolLevel = selectedSection?.grade_level_school_level || selectedGradeLevel?.school_level || '—'
   const visibleSubjects = subjects.filter((subject) => {
     const isCurrentHistoricalSubject = form.id && String(subject.id) === String(form.subjects[0])
     const isApplicable = (subject.grade_levels || [subject.grade_level]).map(String).includes(String(form.grade_level))
-    const matchesSectionStrand = !subject.strand || String(subject.strand) === String(selectedSection?.strand)
+    const matchesSectionStrand = !subject.strand || !selectedSection?.strand || String(subject.strand) === String(selectedSection.strand)
     return form.grade_level && (subject.is_active !== false || isCurrentHistoricalSubject) && (isApplicable || isCurrentHistoricalSubject) && (matchesSectionStrand || isCurrentHistoricalSubject)
   })
   const normalizedSubjectSearch = subjectSearch.trim().toLowerCase()
   const searchedSubjects = visibleSubjects.filter((subject) => {
     if (!normalizedSubjectSearch) return true
-    return `${subject.name || ''} ${subject.code || ''}`.toLowerCase().includes(normalizedSubjectSearch)
+    return `${subject.name || ''} ${subject.official_subject_code || ''} ${subject.code || ''}`.toLowerCase().includes(normalizedSubjectSearch)
   })
   const selectedSubjects = visibleSubjects.filter((subject) =>
     form.subjects.map(String).includes(String(subject.id)),
@@ -286,9 +296,9 @@ export function TeacherAssignmentsPage() {
 
   return (
     <div className="page-stack teacher-assignments-page">
-      <PageHeader eyebrow="Teacher assignments" title="Assign teachers to classes and subjects" description="Create, edit, and manage assignments for academic years, sections, and subjects. Configure teacher and adviser assignments for the relevant year; the previous year's document does not confirm current assignments." />
+      <PageHeader eyebrow="Teacher assignments" title="Assign teachers to sections" description="Choose a section first, then select its teacher and, for subject assignments, applicable subjects." />
 
-      {['SUPER_ADMIN', 'SCHOOL_ADMIN'].includes(user?.role_name || user?.profile?.role_name) ? (
+      {['SUPER_ADMIN', 'SCHOOL_ADMIN'].includes(user?.role || user?.role_name || user?.profile?.role_name) ? (
         <ExcelImportPanel
           title="Teacher and adviser assignments"
           templateUrl="/teacher-assignments/import/template/"
@@ -304,6 +314,14 @@ export function TeacherAssignmentsPage() {
       ) : null}
 
       {error ? <ErrorBanner message={error} /> : null}
+      {activeYearCount !== 1 ? (
+        <div className="status-banner status-banner--warning">
+          {activeYearCount === 0
+            ? 'No active academic year is configured. '
+            : 'More than one active academic year is configured. '}
+          Ask an administrator to configure <Link to="/academic-years">Academic Year Management</Link> before creating assignments.
+        </div>
+      ) : null}
       <div className="record-summary-grid">
         <article className="detail-card stat-card-accent">
           <p className="stat-label">Assignments</p>
@@ -315,19 +333,21 @@ export function TeacherAssignmentsPage() {
         </article>
       </div>
 
-      <div className="panel-card record-panel">
-        <div className="section-header">
-          <div>
-            <p className="eyebrow">Create or edit assignment</p>
-            <h2>{form.id ? 'Update assignment' : 'Assign teacher to section and subject'}</h2>
-          </div>
-        </div>
+      <details className="academic-editor-panel" open={Boolean(form.id)}>
+        <summary className="academic-editor-summary">
+          <span>
+            <span className="eyebrow">Assignment details</span>
+            <strong>{form.id ? 'Update assignment' : 'Assign teacher to section and subject'}</strong>
+          </span>
+          <span className="academic-editor-prompt">{form.id ? 'Close form' : 'Open form'}</span>
+        </summary>
         <form className="form-grid assignment-form-grid" onSubmit={handleSubmit}>
-          {formError ? <ErrorBanner message={formError} /> : null}
-          <label>
-            <span>Section</span>
+          {formError ? <div className="form-grid-full"><ErrorBanner message={formError} /></div> : null}
+          <label className="assignment-section-field">
+            <span>Section and school level</span>
             <select
               value={form.section}
+              aria-describedby="assignment-school-level-help"
               onChange={(event) => {
                 const section = visibleSections.find((item) => String(item.id) === event.target.value)
                 setHistoricalSubject(null)
@@ -335,8 +355,8 @@ export function TeacherAssignmentsPage() {
                 setSubjects([])
                 setForm((current) => ({
                   ...current,
+                  teacher: '',
                   section: section ? String(section.id) : '',
-                  academic_year: section ? String(section.academic_year) : '',
                   grade_level: section ? String(section.grade_level) : '',
                   subjects: [],
                 }))
@@ -347,26 +367,34 @@ export function TeacherAssignmentsPage() {
               <option value="">Select section</option>
               {visibleSections.map((section) => {
                 const gradeName = section.grade_level_name || getNameById(gradeLevels, section.grade_level)
-                const yearName = section.academic_year_name || getNameById(academicYears, section.academic_year)
+                const schoolLevel = section.grade_level_school_level
+                  || gradeLevels.find((grade) => String(grade.id) === String(section.grade_level))?.school_level
                 const curriculum = [section.strand_name, section.specialization_name].filter(Boolean).join(' · ')
                 return (
                   <option key={section.id} value={section.id}>
-                    {[section.name, gradeName, yearName, curriculum].filter(Boolean).join(' · ')}
+                    {[schoolLevel, gradeName, section.name, section.academic_year_name, curriculum].filter(Boolean).join(' · ')}
                     {section.is_active === false ? ' (Archived)' : ''}
                   </option>
                 )
               })}
             </select>
+            <small id="assignment-school-level-help" className="small-muted">
+              School level is determined by the selected section's grade level; it is not the assignment type.
+            </small>
           </label>
           {selectedSection ? (
-            <div className="form-field">
-              <span className="form-field__label">Section context</span>
-              <span>{selectedSection.grade_level_name || getNameById(gradeLevels, selectedSection.grade_level)} · {selectedSection.academic_year_name || getNameById(academicYears, selectedSection.academic_year)}</span>
+            <div className="assignment-context-card" role="group" aria-label="Selected section context">
+              <div><span>School level</span><strong>{selectedSchoolLevel}</strong></div>
+              <div><span>Grade level</span><strong>{selectedSection.grade_level_name || selectedGradeLevel?.name || '—'}</strong></div>
+              <div><span>Section</span><strong>{selectedSection.name}</strong></div>
+              <div><span>Academic year</span><strong>{selectedSection.academic_year_name || '—'}</strong></div>
+              <div><span>Strand</span><strong>{selectedSection.strand_name || (selectedSchoolLevel === 'Senior High School' ? 'Shared across strands' : 'Not applicable')}</strong></div>
+              <div><span>Specialization</span><strong>{selectedSection.specialization_name || 'Not applicable'}</strong></div>
             </div>
           ) : null}
           <label>
             <span>Teacher</span>
-            <select value={form.teacher} onChange={(event) => setForm({ ...form, teacher: event.target.value })} required>
+            <select value={form.teacher} onChange={(event) => setForm({ ...form, teacher: event.target.value })} required disabled={!form.section}>
               <option value="">Select teacher</option>
               {selectableTeachers.filter((teacher) => teacher.profile?.role_name === 'TEACHER' || teacher.role_name === 'TEACHER').map((teacher) => {
                 const displayName = `${(teacher.first_name || '').trim()} ${(teacher.last_name || '').trim()}`.trim() || teacher.username || 'Unknown'
@@ -380,10 +408,21 @@ export function TeacherAssignmentsPage() {
               <option value="SUBJECT">Subject Teacher</option>
               <option value="ADVISER">Class Adviser</option>
             </select>
+            <small className="small-muted">Choose Subject Teacher or Class Adviser. Do not enter a school level here.</small>
             {form.id ? <small className="small-muted">Create a separate assignment to change assignment type.</small> : null}
           </label>
-          {form.assignment_type === 'SUBJECT' ? <div className="form-field">
+          <label>
+            <span>Status</span>
+            <select value={form.is_active ? 'true' : 'false'} onChange={(event) => setForm({ ...form, is_active: event.target.value === 'true' })}>
+              <option value="true">Active</option>
+              <option value="false">Inactive</option>
+            </select>
+          </label>
+          {form.assignment_type === 'SUBJECT' ? <div className="form-field assignment-subjects-field">
             <span className="form-field__label">Subjects</span>
+            {selectedSection && !selectedSection.strand && selectedSchoolLevel === 'Senior High School' ? (
+              <p className="small-muted">This is a shared section. Common and strand-specific subjects may be assigned; strand-specific eligibility is enforced against each student's enrollment strand.</p>
+            ) : null}
             {!form.section ? <p className="small-muted">Select a section to view applicable subjects.</p> : null}
             {form.grade_level && !visibleSubjects.length ? <p className="small-muted">No active subjects are available for this grade level.</p> : null}
             {form.section && visibleSubjects.length > 0 ? (
@@ -393,7 +432,7 @@ export function TeacherAssignmentsPage() {
                   type="search"
                   value={subjectSearch}
                   onChange={(event) => setSubjectSearch(event.target.value)}
-                  placeholder="Search by subject name or code"
+                  placeholder="Search by subject name, official code, or system ID"
                   aria-label="Search eligible subjects by name or code"
                 />
               </label>
@@ -417,34 +456,27 @@ export function TeacherAssignmentsPage() {
                           subjects: current.subjects.filter((id) => String(id) !== String(subject.id)),
                         }))}
                       />
-                      {subject.name}{subject.code ? ` (${subject.code})` : ''}
+                      {subject.name}{subject.strand_name ? ` · ${subject.strand_name}` : ' · Common subject'}{subject.official_subject_code ? ` (Official: ${subject.official_subject_code})` : ''}{subject.code ? ` (System ID: ${subject.code})` : ''}
                     </label>
                   ))}
                 </div>
               </div>
             ) : null}
             <div className="selection-summary">
-              {searchedSubjects.map((subject) => <label key={subject.id}><input type="checkbox" checked={form.subjects.map(String).includes(String(subject.id))} onChange={(event) => setForm({ ...form, subjects: event.target.checked ? [...new Set([...form.subjects, subject.id])] : form.subjects.filter((id) => String(id) !== String(subject.id)) })} /> {subject.name}{subject.code ? ` (${subject.code})` : ''}{subject.is_active === false ? ' (Archived)' : ''}</label>)}
+              {searchedSubjects.map((subject) => <label key={subject.id}><input type="checkbox" checked={form.subjects.map(String).includes(String(subject.id))} onChange={(event) => setForm({ ...form, subjects: event.target.checked ? [...new Set([...form.subjects, subject.id])] : form.subjects.filter((id) => String(id) !== String(subject.id)) })} /> {subject.name}{subject.strand_name ? ` · ${subject.strand_name}` : ' · Common subject'}{subject.official_subject_code ? ` (Official: ${subject.official_subject_code})` : ''}{subject.code ? ` (System ID: ${subject.code})` : ''}{subject.is_active === false ? ' (Archived)' : ''}</label>)}
             </div>
             {form.section && visibleSubjects.length > 0 && searchedSubjects.length === 0 ? (
               <p className="small-muted">No eligible subjects match this search. Clear the search to see all subjects for this section.</p>
             ) : null}
           </div> : null}
-          <label>
-            <span>Status</span>
-            <select value={form.is_active ? 'true' : 'false'} onChange={(event) => setForm({ ...form, is_active: event.target.value === 'true' })}>
-              <option value="true">Active</option>
-              <option value="false">Inactive</option>
-            </select>
-          </label>
           <div className="section-actions form-grid-full">
-            <button type="submit" className="action-button" disabled={submitting}>{submitting ? 'Saving...' : form.id ? 'Update assignment' : 'Create assignment'}</button>
+            <button type="submit" className="action-button" disabled={submitting || (!form.id && activeYearCount !== 1)}>{submitting ? 'Saving...' : form.id ? 'Update assignment' : 'Create assignment'}</button>
             {form.id ? <button type="button" className="action-button action-button--neutral" onClick={cancelEdit}>Cancel</button> : null}
           </div>
         </form>
-      </div>
+      </details>
 
-      <div className="panel-card record-panel">
+      <div className="panel-card record-panel academic-record-list">
         <div className="section-header">
           <div>
             <p className="eyebrow">Assigned classes</p>
@@ -455,12 +487,7 @@ export function TeacherAssignmentsPage() {
           </div>
         </div>
 
-        <div className="detail-card subtle-card" style={{ marginBottom: '1rem' }}>
-          <p className="eyebrow">Assignment focus</p>
-          <p>Use the filters to review active teaching coverage and quickly spot open or inactive teaching roles.</p>
-        </div>
-
-        <div className="form-grid" style={{ marginBottom: '1rem' }}>
+        <div className="form-grid academic-filters assignment-filters">
           <label>
             <span>Teacher</span>
             <select value={teacherFilter} onChange={(event) => setTeacherFilter(event.target.value)}>
@@ -496,7 +523,7 @@ export function TeacherAssignmentsPage() {
             <span>Subject</span>
             <select value={subjectFilter} onChange={(event) => setSubjectFilter(event.target.value)}>
               <option value="">All subjects</option>
-              {subjects.map((subject) => <option key={subject.id} value={subject.id}>{subject.name}</option>)}
+              {subjects.map((subject) => <option key={subject.id} value={subject.id}>{subject.name}{subject.official_subject_code ? ` (Official: ${subject.official_subject_code})` : ''}{subject.code ? ` (System ID: ${subject.code})` : ''}</option>)}
             </select>
           </label>
           <label>
@@ -532,7 +559,16 @@ export function TeacherAssignmentsPage() {
                     <td>{assignment.academic_year_name || assignment.academic_year || '—'}</td>
                     <td>{assignment.grade_level_name || assignment.grade_level || '—'}</td>
                     <td>{assignment.section_name || assignment.section || '—'}</td>
-                    <td>{assignment.subject_name || assignment.subject || '—'}</td>
+                    <td>
+                      {assignment.subject_name || assignment.subject || '—'}
+                      {assignment.official_subject_code || assignment.subject_code ? (
+                        <small>
+                          {assignment.official_subject_code ? `Official: ${assignment.official_subject_code}` : ''}
+                          {assignment.official_subject_code && assignment.subject_code ? ' · ' : ''}
+                          {assignment.subject_code ? `System ID: ${assignment.subject_code}` : ''}
+                        </small>
+                      ) : null}
+                    </td>
                     <td>{assignment.is_active ? 'Active' : 'Inactive'}</td>
                     <td>
                       <div className="section-actions" style={{ gap: '0.5rem' }}>

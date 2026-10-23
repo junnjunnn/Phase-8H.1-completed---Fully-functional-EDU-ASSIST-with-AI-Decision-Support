@@ -87,7 +87,11 @@ export function MyClassesPage() {
                 <div className="class-card-details">
                   <p className="eyebrow">{assignment.role || 'Subject Teacher'}</p>
                   <h3>{assignment.grade_level_name || assignment.grade_level || 'Grade'} · {assignment.section_name || assignment.section || 'Section'}</h3>
-                  <p>{assignment.subject_name || assignment.subject || 'Subject unavailable'}</p>
+                  <p>
+                    {assignment.subject_name || assignment.subject || 'Subject unavailable'}
+                    {assignment.official_subject_code ? ` · Official: ${assignment.official_subject_code}` : ''}
+                    {assignment.subject_code ? ` · System ID: ${assignment.subject_code}` : ''}
+                  </p>
                   <p>{assignment.academic_year_name || assignment.academic_year || 'Academic year unavailable'}</p>
                   <p className="class-card-students"><span>Students</span><strong>{assignment.studentCount ?? 0}</strong></p>
                 </div>

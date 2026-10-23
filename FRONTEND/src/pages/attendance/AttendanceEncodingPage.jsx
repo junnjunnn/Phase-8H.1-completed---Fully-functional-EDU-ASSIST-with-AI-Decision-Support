@@ -25,6 +25,22 @@ function normalizeListResponse(data) {
   }
 }
 
+async function getAllPages(fetchPage, params) {
+  const itemsById = new Map()
+  let page = 1
+  let normalized
+
+  do {
+    normalized = normalizeListResponse(await fetchPage({ ...params, page }))
+    normalized.items.forEach((item) => {
+      if (item?.id != null) itemsById.set(String(item.id), item)
+    })
+    page += 1
+  } while (normalized.next)
+
+  return [...itemsById.values()]
+}
+
 const ATTENDANCE_OPTIONS = [
   { value: 'present', label: 'Present' },
   { value: 'absent', label: 'Absent' },
@@ -259,9 +275,17 @@ export function AttendanceEncodingPage() {
     setSuccessMessage('')
 
     try {
-      const [enrollmentsData, attendanceData, schoolDaySummary] = await Promise.all([
-        getEnrollments({ active_only: 'true', academic_year: nextFilters.academicYear, grade_level: nextFilters.gradeLevel, section: nextFilters.section, enrollment_status: 'active' }),
-        getAttendanceRecords({ month: nextFilters.attendanceDate, enrollment__student: undefined }),
+      const enrollmentParams = {
+        active_only: 'true',
+        academic_year: nextFilters.academicYear,
+        grade_level: nextFilters.gradeLevel,
+        section: nextFilters.section,
+        enrollment_status: 'active',
+      }
+      const attendanceParams = { attendance_date: nextFilters.attendanceDate }
+      const [enrollments, existingRecords, schoolDaySummary] = await Promise.all([
+        getAllPages(getEnrollments, enrollmentParams),
+        getAllPages(getAttendanceRecords, attendanceParams),
         getSchoolDaySummary({ academic_year_id: nextFilters.academicYear, reporting_date: nextFilters.attendanceDate, today: nextFilters.attendanceDate }),
       ])
 
@@ -275,8 +299,6 @@ export function AttendanceEncodingPage() {
         setSchoolDayMessage('No school-calendar days available for the selected academic year and date.')
       }
 
-      const enrollments = normalizeListResponse(enrollmentsData).items
-      const existingRecords = normalizeListResponse(attendanceData).items
       const recordMap = existingRecords.reduce((accumulator, record) => {
         if (record && record.enrollment) {
           accumulator[record.enrollment] = record
@@ -297,15 +319,36 @@ export function AttendanceEncodingPage() {
       const classRows = enrollments.map((enrollment) => {
         const record = recordMap[enrollment.id]
         const student = studentMap[enrollment.student]
-        const attendanceStatus = record?.days_present > 0 ? 'present' : record?.absences > 0 ? 'absent' : ''
+        const classificationUnknown = Boolean(record && record.excused_absences == null)
+        const attendanceStatus = classificationUnknown
+          ? ''
+          : record?.excused_absences > 0
+            ? 'excused'
+            : record?.days_present > 0
+              ? 'present'
+              : record?.absences > 0
+                ? 'absent'
+                : record?.times_tardy > 0
+                  ? 'late'
+                  : ''
         return {
           id: enrollment.id,
           enrollmentId: enrollment.id,
           recordId: record?.id || null,
           studentId: student?.lrn || enrollment.student,
           studentName: student ? `${student.first_name || ''} ${student.last_name || ''}`.trim() : `Student ${enrollment.student}`,
+          strandName: enrollment.strand_name || '',
           status: attendanceStatus,
-          remarks: record?.month ? 'Existing record loaded' : '',
+          originalSchoolDays: record ? Number(record.school_days ?? 0) : 1,
+          originalDaysPresent: Number(record?.days_present || 0),
+          originalAbsences: Number(record?.absences || 0),
+          originalExcusedAbsences: record?.excused_absences == null ? null : Number(record.excused_absences),
+          originalTimesTardy: Number(record?.times_tardy || 0),
+          classificationUnknown,
+          classificationExplicitlySelected: false,
+          remarks: classificationUnknown
+            ? 'Legacy excused classification is unclassified. Select Present, Absent, or Excused to classify it.'
+            : record?.month ? 'Existing record loaded' : '',
           validationError: '',
         }
       })
@@ -329,18 +372,48 @@ export function AttendanceEncodingPage() {
   }
 
   function updateRow(status, rowId) {
+    const classificationStatus = status === 'present' || status === 'absent' || status === 'excused'
     setRows((currentRows) => currentRows.map((row) => (
-      row.id === rowId ? { ...row, status, validationError: '' } : row
+      row.id === rowId ? {
+        ...row,
+        status,
+        classificationExplicitlySelected: classificationStatus,
+        remarks: row.classificationUnknown
+          ? classificationStatus
+            ? `Will classify as ${status}.`
+            : 'Tardiness can be saved; excused classification remains unclassified.'
+          : row.remarks,
+        validationError: '',
+      } : row
     )))
   }
 
   function applyBulk(status) {
-    setRows((currentRows) => currentRows.map((row) => ({ ...row, status })))
+    const classificationStatus = status === 'present' || status === 'absent' || status === 'excused'
+    setRows((currentRows) => currentRows.map((row) => ({
+      ...row,
+      status,
+      classificationExplicitlySelected: classificationStatus,
+      remarks: row.classificationUnknown
+        ? classificationStatus
+          ? `Will classify as ${status}.`
+          : 'Tardiness can be saved; excused classification remains unclassified.'
+        : row.remarks,
+      validationError: '',
+    })))
   }
 
   async function handleSave() {
     if (!canManageAttendance) {
       setError('You do not have permission to encode attendance for this class.')
+      return
+    }
+    if (rows.some((row) => !row.status)) {
+      setError('Select an attendance status for every student before saving.')
+      setRows((currentRows) => currentRows.map((row) => ({
+        ...row,
+        validationError: row.status ? '' : 'Select an attendance status.',
+      })))
       return
     }
     if (savingAttendance || !rows.length) {
@@ -355,11 +428,17 @@ export function AttendanceEncodingPage() {
       const payload = rows.map((row) => ({
         ...(row.recordId ? { id: row.recordId } : {}),
         enrollment: row.enrollmentId,
+        attendance_date: filters.attendanceDate,
         month: filters.attendanceDate,
-        school_days: 1,
-        days_present: row.status === 'present' ? 1 : 0,
-        absences: row.status === 'absent' ? 1 : 0,
-        times_tardy: row.status === 'late' ? 1 : 0,
+        school_days: row.originalSchoolDays,
+        days_present: row.status === 'late' ? row.originalDaysPresent : row.status === 'present' ? 1 : 0,
+        absences: row.status === 'late' ? row.originalAbsences : row.status === 'absent' ? 1 : 0,
+        excused_absences: row.status === 'late'
+          ? (row.recordId ? row.originalExcusedAbsences : 0)
+          : row.status === 'excused' ? 1 : 0,
+        times_tardy: row.status === 'late'
+          ? Math.max(row.originalTimesTardy, 1)
+          : row.originalTimesTardy,
       }))
       const response = await bulkSaveAttendanceRecords(payload)
       const savedByEnrollment = new Map(response.results.map((record) => [
@@ -369,7 +448,20 @@ export function AttendanceEncodingPage() {
 
       setRows((currentRows) => currentRows.map((row) => {
         const saved = savedByEnrollment.get(String(row.enrollmentId))
-        return saved ? { ...row, recordId: saved.id, remarks: 'Saved' } : row
+        return saved ? {
+          ...row,
+          recordId: saved.id,
+          originalSchoolDays: Number(saved.school_days ?? 0),
+          originalDaysPresent: Number(saved.days_present || 0),
+          originalAbsences: Number(saved.absences || 0),
+          originalExcusedAbsences: saved.excused_absences == null ? null : Number(saved.excused_absences),
+          originalTimesTardy: Number(saved.times_tardy || 0),
+          classificationUnknown: saved.excused_absences == null,
+          classificationExplicitlySelected: false,
+          remarks: saved.excused_absences == null
+            ? 'Tardiness saved; excused classification remains unclassified.'
+            : 'Saved',
+        } : row
       }))
       setSuccessMessage(`Attendance saved successfully for ${response.count} student${response.count === 1 ? '' : 's'}.`)
     } catch (err) {
@@ -496,7 +588,7 @@ export function AttendanceEncodingPage() {
               <thead>
                 <tr>
                   <th scope="col">Student ID</th>
-                  <th scope="col">Student name</th>
+                  <th scope="col">Student name / strand</th>
                   <th scope="col">Attendance status</th>
                   <th scope="col">Remarks</th>
                 </tr>
@@ -505,14 +597,20 @@ export function AttendanceEncodingPage() {
                 {rows.map((row) => (
                   <tr key={row.id}>
                     <td data-label="Student ID">{row.studentId}</td>
-                    <td data-label="Student name">{row.studentName}</td>
+                    <td data-label="Student name / strand">{row.studentName}{row.strandName ? <small>Strand: {row.strandName}</small> : null}</td>
                     <td data-label="Attendance status">
                       <select value={row.status} onChange={(event) => updateRow(event.target.value, row.id)} aria-label={`Attendance status for ${row.studentName}`}>
                         <option value="">Select status</option>
                         {ATTENDANCE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
                       </select>
                     </td>
-                    <td data-label="Remarks">{row.remarks || 'Select a status to encode attendance.'}</td>
+                    <td data-label="Remarks">
+                      {row.validationError || (row.classificationUnknown && !row.classificationExplicitlySelected
+                        ? row.remarks
+                        : row.classificationUnknown && row.status === 'late'
+                          ? 'Tardiness can be saved; excused classification remains unclassified.'
+                          : row.remarks || 'Select a status to encode attendance.')}
+                    </td>
                   </tr>
                 ))}
               </tbody>

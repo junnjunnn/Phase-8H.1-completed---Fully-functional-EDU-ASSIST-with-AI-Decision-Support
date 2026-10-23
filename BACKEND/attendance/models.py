@@ -328,6 +328,7 @@ class AttendanceRecord(models.Model):
     school_days = models.PositiveIntegerField(default=0)
     days_present = models.PositiveIntegerField(default=0)
     absences = models.PositiveIntegerField(default=0)
+    excused_absences = models.PositiveIntegerField(null=True, blank=True)
     times_tardy = models.PositiveIntegerField(default=0)
     encoded_by = models.ForeignKey(get_user_model(), null=True, blank=True, on_delete=models.SET_NULL, related_name='encoded_attendance_records')
     created_at = models.DateTimeField(auto_now_add=True)
@@ -346,8 +347,51 @@ class AttendanceRecord(models.Model):
             raise ValidationError({'days_present': 'Days present cannot exceed school days.'})
         if self.absences < 0:
             raise ValidationError({'absences': 'Absences cannot be negative.'})
+        if self.excused_absences is not None and self.excused_absences < 0:
+            raise ValidationError({'excused_absences': 'Excused absences cannot be negative.'})
+        if self.excused_absences is not None and self.excused_absences > self.school_days:
+            raise ValidationError({'excused_absences': 'Excused absences cannot exceed school days.'})
         if self.times_tardy < 0:
             raise ValidationError({'times_tardy': 'Tardiness cannot be negative.'})
+
+        classification_validation_required = True
+        if self.pk and not self._state.adding:
+            persisted = type(self).objects.filter(pk=self.pk).values(
+                'attendance_date',
+                'school_days',
+                'days_present',
+                'absences',
+                'excused_absences',
+            ).first()
+            if persisted is not None:
+                classification_validation_required = any(
+                    getattr(self, field) != persisted[field]
+                    for field in (
+                        'attendance_date',
+                        'school_days',
+                        'days_present',
+                        'absences',
+                        'excused_absences',
+                    )
+                )
+
+        classified_days = self.days_present + self.absences
+        if self.excused_absences is not None:
+            classified_days += self.excused_absences
+        if self.attendance_date and classification_validation_required:
+            classification_count = sum((
+                self.days_present > 0,
+                self.absences > 0,
+                self.excused_absences is not None and self.excused_absences > 0,
+            ))
+            if classification_count > 1:
+                raise ValidationError(
+                    'A dated attendance entry can have only one present, absent, or excused classification.'
+                )
+        if classification_validation_required and classified_days > self.school_days:
+            raise ValidationError(
+                'Known present, absent, and excused classifications cannot exceed scheduled school days.'
+            )
         if self.attendance_date and self.enrollment and self.enrollment.academic_year:
             calendar_day = SchoolCalendarDay.objects.filter(
                 academic_year=self.enrollment.academic_year,

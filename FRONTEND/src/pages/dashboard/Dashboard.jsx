@@ -22,7 +22,7 @@ const placeholderCards = [
   { title: 'High risk', message: 'Loading…', icon: ShieldExclamationIcon },
   { title: 'Moderate risk', message: 'Loading…', icon: ChartBarIcon },
   { title: 'Low risk', message: 'Loading…', icon: CheckCircleIcon },
-  { title: 'Number of School Days', message: 'Loading…', icon: CalendarDaysIcon },
+  { title: 'Calendar school days', message: 'Loading…', icon: CalendarDaysIcon },
 ]
 
 const riskBadgeClass = (level) => {
@@ -85,13 +85,20 @@ export function Dashboard() {
         { title: 'High risk', message: dashboardData.high_risk_students ?? 'N/A', icon: ShieldExclamationIcon },
         { title: 'Moderate risk', message: dashboardData.moderate_risk_students ?? 'N/A', icon: ChartBarIcon },
         { title: 'Low risk', message: dashboardData.low_risk_students ?? 'N/A', icon: CheckCircleIcon },
-        { title: 'Number of School Days', message: dashboardData.school_days ?? 'N/A', icon: CalendarDaysIcon, supportingLabel: dashboardData.academic_year ? `Current Academic Year: ${dashboardData.academic_year}` : 'Current Academic Year' },
+        { title: 'Calendar school days', message: dashboardData.school_days ?? 'N/A', icon: CalendarDaysIcon, supportingLabel: dashboardData.academic_year ? `Calendar days in ${dashboardData.academic_year}; not learner-days` : 'Calendar days; not learner-days' },
       ]
     : placeholderCards
 
   const riskDistribution = dashboardData?.risk_distribution || {}
   const attentionStudents = dashboardData?.attention_students || []
   const attendanceSummary = dashboardData?.attendance_summary || {}
+  const attendanceCountValues = [
+    Number(attendanceSummary.present || 0),
+    Number(attendanceSummary.late || 0),
+    Number(attendanceSummary.absent || 0),
+    Number(attendanceSummary.excused || 0),
+  ]
+  const attendanceCountScale = Math.max(1, ...attendanceCountValues)
   const distributionEntries = Object.entries(riskDistribution)
   const distributionTotal = distributionEntries.reduce((sum, [, count]) => sum + Number(count || 0), 0)
 
@@ -241,11 +248,14 @@ export function Dashboard() {
             <article className="dashboard-panel dashboard-panel--compact">
               <div className="panel-heading">
                 <div>
-                  <p className="eyebrow">Recent attendance</p>
-                  <h2>Daily classroom health</h2>
+                  <p className="eyebrow">Attendance summary</p>
+                  <h2>Recorded attendance counts</h2>
                 </div>
                 <span className="badge badge--success">Synced</span>
               </div>
+              <p className="support-copy">
+                Counter totals exclude {attendanceSummary.excluded_mixed_granularity_enrollments ?? 0} enrollment(s) with both dated and period-level records because totals may overlap. A school-wide percentage is unavailable because scheduled learner-days cannot be safely derived.
+              </p>
               <div className="chart-card compact-chart">
                 <div className="chart-row">
                   <div className="chart-row-labels">
@@ -253,7 +263,7 @@ export function Dashboard() {
                     <span>{attendanceSummary.present ?? '0'}</span>
                   </div>
                   <div className="chart-bar-track">
-                    <div className="chart-bar-fill bar-present" style={{ width: `${attendanceSummary.school_days ? Math.min((attendanceSummary.present / attendanceSummary.school_days) * 100, 100) : 0}%` }}></div>
+                    <div className="chart-bar-fill bar-present" style={{ width: `${(Number(attendanceSummary.present || 0) / attendanceCountScale) * 100}%` }}></div>
                   </div>
                 </div>
                 <div className="chart-row">
@@ -262,7 +272,7 @@ export function Dashboard() {
                     <span>{attendanceSummary.late ?? '0'}</span>
                   </div>
                   <div className="chart-bar-track">
-                    <div className="chart-bar-fill bar-late" style={{ width: `${attendanceSummary.school_days ? Math.min((attendanceSummary.late / attendanceSummary.school_days) * 100, 100) : 0}%` }}></div>
+                    <div className="chart-bar-fill bar-late" style={{ width: `${(Number(attendanceSummary.late || 0) / attendanceCountScale) * 100}%` }}></div>
                   </div>
                 </div>
                 <div className="chart-row">
@@ -271,9 +281,19 @@ export function Dashboard() {
                     <span>{attendanceSummary.absent ?? '0'}</span>
                   </div>
                   <div className="chart-bar-track">
-                    <div className="chart-bar-fill bar-absent" style={{ width: `${attendanceSummary.school_days ? Math.min((attendanceSummary.absent / attendanceSummary.school_days) * 100, 100) : 0}%` }}></div>
+                    <div className="chart-bar-fill bar-absent" style={{ width: `${(Number(attendanceSummary.absent || 0) / attendanceCountScale) * 100}%` }}></div>
                   </div>
                 </div>
+                <div className="chart-row">
+                  <div className="chart-row-labels">
+                    <span>Excused</span>
+                    <span>{attendanceSummary.excused ?? '0'}</span>
+                  </div>
+                  <div className="chart-bar-track">
+                    <div className="chart-bar-fill bar-absent" style={{ width: `${(Number(attendanceSummary.excused || 0) / attendanceCountScale) * 100}%` }}></div>
+                  </div>
+                </div>
+                {attendanceSummary.unclassified_excused_records ? <p className="support-copy">{attendanceSummary.unclassified_excused_records} record(s) have an unclassified excused-absence value.</p> : null}
               </div>
             </article>
           </section>

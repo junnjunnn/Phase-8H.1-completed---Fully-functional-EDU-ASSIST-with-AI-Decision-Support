@@ -113,6 +113,11 @@ urlpatterns = [
     path('api/grade-levels/import/template/', GradeLevelImportTemplateView.as_view(), name='grade-level-import-template'),
     path('api/grade-levels/import/preview/', GradeLevelImportView.as_view(), name='grade-level-import-preview'),
     path('api/grade-levels/import/confirm/', GradeLevelImportConfirmView.as_view(), name='grade-level-import-confirm'),
+    path(
+        'api/grade-levels/<int:pk>/restore/',
+        GradeLevelViewSet.as_view({'post': 'restore'}),
+        name='grade-level-restore',
+    ),
     path('api/sections/import/template/', SectionImportTemplateView.as_view(), name='section-import-template'),
     path('api/sections/import/preview/', SectionImportView.as_view(), name='section-import-preview'),
     path('api/sections/import/confirm/', SectionImportConfirmView.as_view(), name='section-import-confirm'),

@@ -14,14 +14,14 @@ from students.models import Student
 
 
 class Command(BaseCommand):
-    help = 'Seed a safe demo student and related records for local development. Only runs when DEBUG=True.'
+    help = 'Seed synthetic demo student and related records for local development. Only runs when DEBUG=True.'
 
     def handle(self, *args, **options):
         if not settings.DEBUG:
             raise CommandError('seed_demo_data may only be run when DEBUG=True.')
 
         with transaction.atomic():
-            self.stdout.write('Seeding demo development data...')
+            self.stdout.write('Seeding synthetic demo development data...')
 
             User = get_user_model()
             demo_accounts = [

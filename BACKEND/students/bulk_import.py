@@ -11,8 +11,7 @@ from xml.etree import ElementTree
 from django.core import signing
 from django.db import DatabaseError, transaction
 from django.http import HttpResponse
-from openpyxl import Workbook, load_workbook
-from openpyxl.styles import Alignment, Font, PatternFill
+from openpyxl import load_workbook
 from openpyxl.utils.exceptions import InvalidFileException
 from rest_framework import status
 from rest_framework.parsers import FormParser, MultiPartParser
@@ -22,6 +21,7 @@ from rest_framework.views import APIView
 
 from accounts.permissions import IsRegistrarOrSchoolAdmin
 from audit.models import AuditLog
+from common.bulk_excel import add_row_error_context, build_import_template
 
 from .models import Student
 from .serializers import StudentSerializer
@@ -110,33 +110,59 @@ class ImportFileError(Exception):
 
 
 def build_student_template():
-    workbook = Workbook()
-    sheet = workbook.active
-    sheet.title = 'Students'
-    sheet.append([column[0] for column in TEMPLATE_COLUMNS])
-    sheet.freeze_panes = 'A2'
-    sheet.auto_filter.ref = f'A1:{chr(64 + len(TEMPLATE_COLUMNS))}1'
-    for cell in sheet[1]:
-        cell.font = Font(bold=True, color='FFFFFF')
-        cell.fill = PatternFill(fill_type='solid', fgColor='1F4E78')
-    for index, (heading, field_name, _) in enumerate(TEMPLATE_COLUMNS, start=1):
-        sheet.column_dimensions[chr(64 + index)].width = max(16, min(len(heading) + 4, 30))
-        if field_name in {'lrn', 'parent_contact'}:
-            for row_number in range(2, MAX_IMPORT_ROWS + 2):
-                sheet.cell(row=row_number, column=index).number_format = '@'
-
-    instructions = workbook.create_sheet('Instructions')
-    instructions.append(['Bulk student registration template'])
-    instructions.append(['Required fields are marked by the absence of “Optional” in the column heading.'])
-    instructions.append(['Required: LRN, first name, last name, gender, birth date, address, guardian name, and parent contact.'])
-    instructions.append(['Optional: middle name, suffix, and email. New students are registered with Active status.'])
-    instructions.append(['Enter LRN and parent contact as text to preserve leading zeroes. Numeric cells are rejected. Do not change the header row.'])
-    instructions.append(['Use an Excel date cell or YYYY-MM-DD for birth date. Gender must be Male or Female.'])
-    instructions.append(['This import registers student records only. Enrollment into a school year or section is separate.'])
-    instructions.column_dimensions['A'].width = 115
-    for cell in instructions['A']:
-        cell.alignment = Alignment(wrap_text=True)
-
+    candidate_lrns = [f'{suffix:012d}' for suffix in range(1, 100)]
+    existing_lrns = set(
+        Student.objects.filter(lrn__in=candidate_lrns).values_list('lrn', flat=True)
+    )
+    example_lrn = next(
+        (lrn for lrn in candidate_lrns if lrn not in existing_lrns),
+        '',
+    )
+    example_rows = [{
+        'lrn': example_lrn,
+        'first_name': 'Alex',
+        'middle_name': 'Jordan',
+        'last_name': 'Santos',
+        'suffix': '',
+        'gender': 'Male',
+        'birth_date': '2012-04-15',
+        'address': 'Example Street, Calinan',
+        'guardian_name': 'Casey Santos',
+        'parent_contact': '09123456789',
+        'email': '',
+    }] if example_lrn else []
+    workbook = build_import_template(
+        'Students',
+        TEMPLATE_COLUMNS,
+        [
+            'Required: LRN, first name, last name, gender, birth date, address, guardian name, and parent contact. Middle name, suffix, and email are optional.',
+            'New students are registered with Active status. This import registers student records only; enrollment into an academic year or section is separate.',
+            'Enter LRN and parent contact as text to preserve leading zeroes. Numeric cells are rejected for those fields.',
+            'Birth date accepts an Excel date cell, YYYY-MM-DD, or MM/DD/YYYY. Gender must be Male or Female.',
+            'Student ID (LRN) must be unique. Do not change the header row.',
+        ],
+        dropdown_choices={'gender': ['Male', 'Female']},
+        column_guidance={
+            'lrn': 'Required unique student LRN/ID, entered as text to preserve leading zeroes; up to 12 characters. The importer checks that it is nonblank and unique, but does not validate a national ID checksum or numeric pattern.',
+            'first_name': 'Required first name, up to 100 characters.',
+            'middle_name': 'Optional middle name, up to 100 characters.',
+            'last_name': 'Required last name, up to 100 characters.',
+            'suffix': 'Optional name suffix, up to 20 characters.',
+            'gender': 'Required. Choose Male or Female from the dropdown.',
+            'birth_date': 'Required date. Use an Excel date cell, YYYY-MM-DD, or MM/DD/YYYY.',
+            'address': 'Required address, up to 255 characters.',
+            'guardian_name': 'Required guardian name, up to 150 characters.',
+            'parent_contact': 'Required parent/guardian contact as text, up to 50 characters. Keep a leading zero by using Text cell format.',
+            'email': 'Optional valid email address, up to 255 characters.',
+        },
+        example_rows=example_rows,
+        example_note=(
+            'The student ID and personal details below are fictitious format examples. Never register this sample row; replace it with authorized student data on the first worksheet.'
+            if example_lrn else
+            'No unused sample ID could be found in the current system data. Do not invent an LRN; use an authorized student LRN and preview the workbook.'
+        ),
+        date_fields={'birth_date'},
+    )
     output = BytesIO()
     workbook.save(output)
     output.seek(0)
@@ -190,8 +216,8 @@ def _cell_text(value, field_name):
     if isinstance(value, str):
         return value if field_name == 'parent_contact' else value.strip()
     if field_name in {'lrn', 'parent_contact'}:
-        raise ValueError(f'{FIELD_LABELS[field_name]} must be entered as text. Set the Excel cell format to Text and re-enter the value to preserve leading zeroes.')
-    raise ValueError(f'{FIELD_LABELS[field_name]} must be entered as text.')
+        raise ValueError(f'{FIELD_LABELS[field_name]} value "{value}" must be entered as text. Set the Excel cell format to Text and re-enter it to preserve leading zeroes.')
+    raise ValueError(f'{FIELD_LABELS[field_name]} value "{value}" must be entered as text.')
 
 
 def _birth_date(value):
@@ -200,14 +226,14 @@ def _birth_date(value):
     if isinstance(value, datetime.date):
         return value.isoformat()
     if not isinstance(value, str) or not value.strip():
-        raise ValueError('Birth date is required and must be a valid date.')
+        raise ValueError(f'Birth date value "{value}" is required and must be a valid date.')
     raw_value = value.strip()
     for date_format in ('%Y-%m-%d', '%m/%d/%Y'):
         try:
             return datetime.datetime.strptime(raw_value, date_format).date().isoformat()
         except ValueError:
             continue
-    raise ValueError('Birth date must be a valid Excel date or use YYYY-MM-DD.')
+    raise ValueError(f'Birth date value "{raw_value}" is not accepted. Use an Excel date, YYYY-MM-DD, or MM/DD/YYYY.')
 
 
 def _flatten_serializer_errors(errors):
@@ -235,13 +261,20 @@ def _parse_workbook(upload):
     try:
         if not workbook.worksheets or len(workbook.worksheets) > MAX_WORKSHEETS:
             raise ImportFileError('The workbook must contain between 1 and 10 worksheets.')
-        sheet = next((item for item in workbook.worksheets if item.sheet_state == 'visible'), None)
+        sheet = next((
+            item for item in workbook.worksheets
+            if item.sheet_state == 'visible' and item.title == 'Students'
+        ), None)
+        if sheet is None:
+            sheet = next((
+                item for item in workbook.worksheets
+                if item.sheet_state == 'visible' and item.title not in {'Instructions', 'Example'}
+            ), None)
         if sheet is None:
             raise ImportFileError('The workbook must contain a visible student worksheet.')
+        sheet.calculate_dimension(force=True)
         if sheet.max_row is None or sheet.max_row < 1:
             raise ImportFileError('The student worksheet is empty.')
-        if sheet.max_row > MAX_IMPORT_ROWS + 1:
-            raise ImportFileError(f'The workbook may contain at most {MAX_IMPORT_ROWS} student rows.')
         if sheet.max_column is None or sheet.max_column > len(TEMPLATE_COLUMNS):
             raise ImportFileError('The student worksheet contains too many columns.')
 
@@ -252,9 +285,24 @@ def _parse_workbook(upload):
                 raise ImportFileError('Spreadsheet headers cannot contain formulas.')
             headers.append(_normalize_header(cell.value))
         if any(not header for header in headers):
-            raise ImportFileError('The header row contains a blank or unsupported column name.')
+            unsupported = [
+                str(cell.value).strip() or f'column {index}'
+                for index, (cell, header) in enumerate(zip(header_cells, headers), start=1)
+                if not header
+            ]
+            expected = ', '.join(header for header, _, _ in TEMPLATE_COLUMNS)
+            raise ImportFileError(
+                f'Unsupported or blank column name(s): {", ".join(unsupported)}. '
+                f'Use the template headers: {expected}.'
+            )
         if len(set(headers)) != len(headers):
-            raise ImportFileError('The header row contains duplicate columns.')
+            duplicates = ', '.join(
+                str(cell.value) for cell, header in zip(header_cells, headers)
+                if headers.count(header) > 1
+            )
+            raise ImportFileError(
+                f'Duplicate column(s): {duplicates}. Keep each template column only once.'
+            )
         missing_headers = REQUIRED_FIELDS - set(headers)
         if missing_headers:
             labels = ', '.join(FIELD_LABELS[field] for field in sorted(missing_headers))
@@ -267,12 +315,14 @@ def _parse_workbook(upload):
         ):
             if all(cell.value is None for cell in cells):
                 continue
+            if len(rows) >= MAX_IMPORT_ROWS:
+                raise ImportFileError(f'The workbook may contain at most {MAX_IMPORT_ROWS} student rows.')
 
             values = {}
             errors = []
             for header, cell in zip(headers, cells):
                 if cell.data_type == 'f':
-                    errors.append(f'{FIELD_LABELS[header]} cannot contain a formula.')
+                    errors.append(f'Column "{FIELD_LABELS[header]}" contains a formula; enter a value instead.')
                     continue
                 try:
                     if header == 'birth_date':
@@ -288,7 +338,7 @@ def _parse_workbook(upload):
             if values.get('gender'):
                 gender = values['gender'].casefold()
                 if gender not in {'male', 'female'}:
-                    errors.append('Gender must be Male or Female.')
+                    errors.append(f'Gender value "{values["gender"]}" is not accepted. Enter Male or Female.')
                 else:
                     values['gender'] = gender.title()
 
@@ -372,6 +422,7 @@ def _review_rows(parsed_rows):
                 'data': _validated_payload(serializer),
             })
 
+    preview_rows = add_row_error_context(preview_rows, parsed_rows, TEMPLATE_COLUMNS)
     return preview_rows, valid_records
 
 

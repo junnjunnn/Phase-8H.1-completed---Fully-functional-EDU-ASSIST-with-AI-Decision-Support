@@ -14,6 +14,7 @@ import { PageHeader } from '../../components/common/PageHeader'
 import { getApiErrorMessage } from '../../services/api'
 import { activateUser, createUser, deactivateUser, getUsers, resetUserPassword, updateUser } from '../../services/userService'
 import { PasswordInput } from '../../components/common/PasswordInput'
+import { ExcelImportPanel } from '../../components/common/ExcelImportPanel'
 
 const roleOptions = [
   { value: 'SUPER_ADMIN', label: 'Super Administrator' },
@@ -288,6 +289,18 @@ export function UsersPage() {
           </button>
         }
       />
+
+      {['SUPER_ADMIN', 'SCHOOL_ADMIN'].includes(currentUser?.role_name || currentUser?.profile?.role_name) ? (
+        <ExcelImportPanel
+          title="Teacher registration"
+          templateUrl="/auth/teachers/import/template/"
+          previewUrl="/auth/teachers/import/preview/"
+          confirmUrl="/auth/teachers/import/confirm/"
+          filename="edu-assist-teacher-import-template.xlsx"
+          instructions="New teacher accounts use the TEACHER role, start inactive, and have no usable password. An administrator must set a password and activate each account using the existing workflows."
+          onCompleted={loadUsers}
+        />
+      ) : null}
 
       {notice ? <div className="success-banner" role="status">{notice}</div> : null}
       {error ? <ErrorBanner message={error} /> : null}

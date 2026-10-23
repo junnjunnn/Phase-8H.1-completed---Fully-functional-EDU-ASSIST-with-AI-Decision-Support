@@ -966,7 +966,7 @@ class SectionStrandValidationTests(TestCase):
         self.assertIn('strand', context.exception.error_dict)
 
     def test_shs_section_with_strand_is_valid(self):
-        """Senior High School sections must have strands."""
+        """Senior High School sections may be assigned to one strand."""
         section = Section(
             grade_level=self.grade_11,
             academic_year=self.academic_year,
@@ -980,18 +980,20 @@ class SectionStrandValidationTests(TestCase):
         except Exception as e:
             self.fail(f"SHS section with strand should be valid: {e}")
 
-    def test_shs_section_without_strand_is_invalid(self):
-        """Senior High School sections must have strands."""
+    def test_shs_shared_section_without_strand_is_valid(self):
+        """Senior High School sections may be shared across strands."""
         section = Section(
             grade_level=self.grade_11,
             academic_year=self.academic_year,
-            name='Grade 11-NoStrand',
+            name='Grade 11-Shared',
             strand=None
         )
-        from django.core.exceptions import ValidationError
-        with self.assertRaises(ValidationError) as context:
+        try:
             section.full_clean()
-        self.assertIn('strand', context.exception.error_dict)
+            section.save()
+            self.assertIsNone(section.strand)
+        except Exception as e:
+            self.fail(f"SHS shared section without strand should be valid: {e}")
 
     def test_shs_section_with_inactive_strand_is_invalid(self):
         """SHS sections cannot have inactive strands."""
@@ -1083,6 +1085,30 @@ class SectionStrandValidationTests(TestCase):
         with self.assertRaises(ValidationError):
             enrollment.full_clean()
 
+    def test_shared_section_accepts_enrollments_from_different_strands(self):
+        section = Section.objects.create(
+            grade_level=self.grade_11,
+            academic_year=self.academic_year,
+            name='Grade 11-Shared',
+            strand=None,
+        )
+        for last_name, strand in (('STEMStudent', self.stem), ('ABMStudent', self.abm)):
+            student = Student.objects.create(
+                first_name='Shared',
+                last_name=last_name,
+                gender='Male',
+                student_status='active',
+            )
+            enrollment = Enrollment(
+                student=student,
+                academic_year=self.academic_year,
+                grade_level=self.grade_11,
+                section=section,
+                strand=strand,
+            )
+            enrollment.full_clean()
+            enrollment.save()
+
     def test_enrollment_elementary_no_strand_required(self):
         """Elementary enrollments should not require strands."""
         section = Section.objects.create(
@@ -1113,20 +1139,18 @@ class SectionStrandValidationTests(TestCase):
         except Exception as e:
             self.fail(f"Elementary enrollment without strand should be valid: {e}")
 
-    def test_section_serializer_validates_strand_for_shs(self):
-        """Section serializer should validate strand requirements."""
+    def test_section_serializer_allows_shared_shs_section(self):
+        """Section serializer should allow an SHS section without a strand."""
         from academics.serializers import SectionSerializer
 
-        # SHS without strand should fail
         data = {
             'grade_level': self.grade_11.id,
             'academic_year': self.academic_year.id,
-            'name': 'Grade 11-Invalid',
+            'name': 'Grade 11-Shared',
             'strand': None
         }
         serializer = SectionSerializer(data=data)
-        self.assertFalse(serializer.is_valid())
-        self.assertIn('strand', serializer.errors)
+        self.assertTrue(serializer.is_valid(), serializer.errors)
 
     def test_section_serializer_rejects_strand_for_elementary(self):
         """Section serializer should reject strand for Elementary."""
@@ -2299,7 +2323,7 @@ class Sprint3Phase1ArchivedDataProtectionTests(TestCase):
         """Section-strand validation from Sprint 2 should still work."""
         self.client.force_authenticate(user=self.admin)
 
-        # SHS section requires strand
+        # SHS shared sections may leave the section-level strand blank.
         response = self.client.post('/api/sections/', {
             'academic_year': self.active_year.id,
             'grade_level': self.grade_11.id,
@@ -2307,8 +2331,8 @@ class Sprint3Phase1ArchivedDataProtectionTests(TestCase):
             'capacity': 40,
             'is_active': True,
         })
-        self.assertEqual(response.status_code, 400)
-        self.assertIn('strand', response.data)
+        self.assertEqual(response.status_code, 201)
+        self.assertIsNone(response.data['strand'])
 
     def test_sprint1_registrar_enrollment_permission_still_works(self):
         """Registrar permission from Sprint 1 should still work."""

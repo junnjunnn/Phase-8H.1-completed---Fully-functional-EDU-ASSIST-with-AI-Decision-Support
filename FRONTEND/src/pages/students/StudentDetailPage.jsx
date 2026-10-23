@@ -33,6 +33,26 @@ function normalizeListResponse(data) {
   }
 }
 
+async function getAllStudentAttendanceRecords(studentId, params) {
+  const recordsById = new Map()
+  let page = 1
+  let normalized
+  let count = 0
+
+  do {
+    normalized = normalizeListResponse(
+      await getStudentRelatedAttendanceRecords(studentId, { ...params, page }),
+    )
+    count = normalized.count
+    normalized.items.forEach((record) => {
+      if (record?.id != null) recordsById.set(String(record.id), record)
+    })
+    page += 1
+  } while (normalized.next)
+
+  return { records: [...recordsById.values()], count }
+}
+
 function formatProbability(probability) {
   if (probability == null) {
     return 'Not available'
@@ -175,9 +195,9 @@ export function StudentDetailPage() {
             ...(periodType === 'Quarter' ? { quarter: periodNumber } : { semester: periodNumber }),
           } : {}),
         }
-        const [academicData, attendanceData, behaviorData, interventionData, predictionData, predictionFactorData] = await Promise.all([
+        const [academicData, attendanceResult, behaviorData, interventionData, predictionData, predictionFactorData] = await Promise.all([
           getStudentRelatedAcademicRecords(id, academicParams),
-          getStudentRelatedAttendanceRecords(id, { ordering: '-created_at' }),
+          getAllStudentAttendanceRecords(id, { ordering: '-created_at' }),
           getStudentRelatedBehavioralAssessments(id, { ordering: '-assessment_date' }),
           getStudentRelatedInterventions(id, { ordering: '-created_at' }),
           getStudentRelatedRiskPredictions(id, { ordering: '-prediction_date' }),
@@ -189,14 +209,13 @@ export function StudentDetailPage() {
         }
 
         const normalizedAcademic = normalizeListResponse(academicData)
-        const normalizedAttendance = normalizeListResponse(attendanceData)
         const normalizedBehavior = normalizeListResponse(behaviorData)
         const normalizedInterventions = normalizeListResponse(interventionData)
         const normalizedPredictions = normalizeListResponse(predictionData)
         const normalizedPredictionFactors = normalizeListResponse(predictionFactorData)
 
         setAcademicRecords(normalizedAcademic.items)
-        setAttendanceRecords(normalizedAttendance.items)
+        setAttendanceRecords(attendanceResult.records)
         setBehaviorRecords(normalizedBehavior.items)
         setInterventions(normalizedInterventions.items)
         setPredictions(normalizedPredictions.items)
@@ -204,7 +223,7 @@ export function StudentDetailPage() {
 
         setStudentSummary({
           academicCount: normalizedAcademic.count,
-          attendanceCount: normalizedAttendance.count,
+          attendanceCount: attendanceResult.count,
           behaviorCount: normalizedBehavior.count,
           interventionCount: normalizedInterventions.count,
           predictionCount: normalizedPredictions.count,
@@ -364,19 +383,46 @@ export function StudentDetailPage() {
 
   const attendanceSummary = useMemo(() => {
     if (!attendanceRecords.length) {
-      return { schoolDays: null, daysPresent: null, absences: null, timesTardy: null, percentage: null }
+      return { schoolDays: null, daysPresent: null, absences: null, excusedAbsences: null, unclassifiedExcusedRecords: 0, timesTardy: null, percentage: null, mixedGranularityEnrollmentCount: 0 }
     }
 
-    const totals = attendanceRecords.reduce((summary, record) => ({
+    const granularityByEnrollment = attendanceRecords.reduce((result, record) => {
+      const enrollmentId = String(record.enrollment)
+      const granularity = result[enrollmentId] || { dated: false, period: false }
+      if (record.attendance_date) granularity.dated = true
+      else granularity.period = true
+      result[enrollmentId] = granularity
+      return result
+    }, {})
+    const mixedEnrollmentIds = new Set(
+      Object.entries(granularityByEnrollment)
+        .filter(([, granularity]) => granularity.dated && granularity.period)
+        .map(([enrollmentId]) => enrollmentId),
+    )
+    const hasMixedGranularity = mixedEnrollmentIds.size > 0
+    const eligibleRecords = attendanceRecords.filter(
+      (record) => !mixedEnrollmentIds.has(String(record.enrollment)),
+    )
+    const totals = eligibleRecords.reduce((summary, record) => ({
       schoolDays: summary.schoolDays + Number(record.school_days || 0),
       daysPresent: summary.daysPresent + Number(record.days_present || 0),
       absences: summary.absences + Number(record.absences || 0),
+      excusedAbsences: summary.excusedAbsences + (Number(record.excused_absences) || 0),
+      unclassifiedExcusedRecords: summary.unclassifiedExcusedRecords + (record.excused_absences == null ? 1 : 0),
       timesTardy: summary.timesTardy + Number(record.times_tardy || 0),
-    }), { schoolDays: 0, daysPresent: 0, absences: 0, timesTardy: 0 })
+    }), { schoolDays: 0, daysPresent: 0, absences: 0, excusedAbsences: 0, unclassifiedExcusedRecords: 0, timesTardy: 0 })
 
     return {
-      ...totals,
-      percentage: totals.schoolDays ? ((totals.daysPresent / totals.schoolDays) * 100).toFixed(2) : null,
+      schoolDays: hasMixedGranularity ? null : totals.schoolDays,
+      daysPresent: hasMixedGranularity ? null : totals.daysPresent,
+      absences: hasMixedGranularity ? null : totals.absences,
+      excusedAbsences: hasMixedGranularity ? null : totals.excusedAbsences,
+      unclassifiedExcusedRecords: attendanceRecords.filter((record) => record.excused_absences == null).length,
+      timesTardy: hasMixedGranularity ? null : totals.timesTardy,
+      percentage: !hasMixedGranularity && totals.schoolDays
+        ? ((totals.daysPresent / totals.schoolDays) * 100).toFixed(2)
+        : null,
+      mixedGranularityEnrollmentCount: mixedEnrollmentIds.size,
     }
   }, [attendanceRecords])
 
@@ -857,8 +903,12 @@ export function StudentDetailPage() {
                 </div>
                 <div className="indicator-card">
                   <p className="stat-label">Attendance</p>
-                  <p className="stat-value">{attendanceSummary.percentage == null ? 'No record' : `${attendanceSummary.percentage}%`}</p>
-                  {attendanceSummary.schoolDays != null ? <small>{attendanceSummary.daysPresent}/{attendanceSummary.schoolDays} days · {attendanceSummary.absences} absent · {attendanceSummary.timesTardy} tardy</small> : null}
+                  <p className="stat-value">{!attendanceRecords.length ? 'No record' : attendanceSummary.percentage == null ? 'Unavailable' : `${attendanceSummary.percentage}%`}</p>
+                  {attendanceSummary.mixedGranularityEnrollmentCount
+                    ? <small>Combined attendance totals are unavailable: {attendanceSummary.mixedGranularityEnrollmentCount} enrollment(s) have dated and period-level records that may overlap. {attendanceSummary.unclassifiedExcusedRecords} attendance record(s) have an unclassified excused-absence value.</small>
+                    : attendanceSummary.schoolDays != null
+                      ? <small>{attendanceSummary.daysPresent}/{attendanceSummary.schoolDays} days · {attendanceSummary.absences} recorded absent · {attendanceSummary.excusedAbsences} known excused · {attendanceSummary.timesTardy} tardy{attendanceSummary.unclassifiedExcusedRecords ? ` · ${attendanceSummary.unclassifiedExcusedRecords} record(s) unclassified` : ''}</small>
+                      : <small>Attendance totals are unavailable because no scheduled-day denominator exists.</small>}
                 </div>
                 <div className="indicator-card">
                   <p className="stat-label">Academic items</p>
@@ -915,7 +965,16 @@ export function StudentDetailPage() {
                 <tbody>
                   {academicRecords.map((record) => (
                     <tr key={record.id}>
-                      <td><span className="badge badge--subject">{safeText(record.subject_name || record.subject)}</span></td>
+                      <td>
+                        <span className="badge badge--subject">{safeText(record.subject_name || record.subject)}</span>
+                        {record.official_subject_code || record.subject_code ? (
+                          <small>
+                            {record.official_subject_code ? `Official: ${safeText(record.official_subject_code)}` : ''}
+                            {record.official_subject_code && record.subject_code ? ' · ' : ''}
+                            {record.subject_code ? `System ID: ${safeText(record.subject_code)}` : ''}
+                          </small>
+                        ) : null}
+                      </td>
                       <td>{safeText(record.encoded_by_name)}</td>
                       <td><span className="badge badge--period">{safeText(record.quarter ? `Quarter ${record.quarter}` : record.semester ? `Semester ${record.semester}` : record.grading_period_type)}</span></td>
                       <td>{record.grade ?? 'Not available'}</td>
@@ -955,6 +1014,7 @@ export function StudentDetailPage() {
                     <th>Attendance %</th>
                     <th>Present</th>
                     <th>Absent</th>
+                    <th>Excused</th>
                     <th>Late</th>
                     <th>Status</th>
                   </tr>
@@ -964,17 +1024,19 @@ export function StudentDetailPage() {
                     const schoolDays = Number(record.school_days ?? 0)
                     const present = Number(record.days_present ?? 0)
                     const absent = Number(record.absences ?? 0)
+                    const excused = record.excused_absences == null ? 'Unclassified' : Number(record.excused_absences)
                     const late = Number(record.times_tardy ?? 0)
-                    const attendancePercentage = schoolDays > 0 ? Math.round((present / schoolDays) * 100) : 0
-                    const status = attendancePercentage < 80 ? 'Attention needed' : 'Stable'
+                    const attendancePercentage = schoolDays > 0 ? Math.round((present / schoolDays) * 100) : null
+                    const status = attendancePercentage == null ? 'Unavailable' : attendancePercentage < 80 ? 'Attention needed' : 'Stable'
                     return (
                       <tr key={record.id}>
                         <td>{safeText(record.month)}</td>
-                        <td>{attendancePercentage}%</td>
+                        <td>{attendancePercentage == null ? 'Unavailable' : `${attendancePercentage}%`}</td>
                         <td>{present}</td>
                         <td>{absent}</td>
+                        <td>{excused}</td>
                         <td>{late}</td>
-                        <td><span className={`badge badge--status ${status === 'Attention needed' ? 'status-warning' : 'status-success'}`}>{status}</span></td>
+                        <td><span className={`badge badge--status ${status === 'Attention needed' ? 'status-warning' : status === 'Stable' ? 'status-success' : 'status-neutral'}`}>{status}</span></td>
                       </tr>
                     )
                   })}

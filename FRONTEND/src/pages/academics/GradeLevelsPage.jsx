@@ -4,7 +4,7 @@ import { ErrorBanner } from '../../components/feedback/ErrorBanner'
 import { PageHeader } from '../../components/common/PageHeader'
 import { ExcelImportPanel } from '../../components/common/ExcelImportPanel'
 import { getApiErrorMessage } from '../../services/api'
-import { createGradeLevel, getGradeLevels, updateGradeLevel } from '../../services/academicsService'
+import { createGradeLevel, getGradeLevels, restoreGradeLevel, updateGradeLevel } from '../../services/academicsService'
 import { useAuth } from '../../context/AuthContext'
 
 function normalizeListResponse(data) {
@@ -100,8 +100,12 @@ export function GradeLevelsPage() {
   async function toggleStatus(grade) {
     setError('')
     try {
-      await updateGradeLevel(grade.id, { is_active: !grade.is_active })
-      const refreshed = await getGradeLevels()
+      if (grade.is_active) {
+        await updateGradeLevel(grade.id, { is_active: false })
+      } else {
+        await restoreGradeLevel(grade.id)
+      }
+      const refreshed = await getGradeLevels({ status: 'all' })
       setGradeLevels(normalizeListResponse(refreshed).items)
     } catch (err) {
       setError(getApiErrorMessage(err))
@@ -110,9 +114,9 @@ export function GradeLevelsPage() {
 
   return (
     <div className="page-stack grade-levels-page">
-      <PageHeader eyebrow="Grade Levels" title="Manage grade levels" description="Define grade level records for your academic structure." />
+      <PageHeader eyebrow="Grade Levels" title="Manage grade levels" description="Define grade levels for the school academic structure." />
 
-      {['SUPER_ADMIN', 'SCHOOL_ADMIN'].includes(user?.role_name || user?.profile?.role_name) ? (
+      {['SUPER_ADMIN', 'SCHOOL_ADMIN'].includes(user?.role || user?.role_name || user?.profile?.role_name) ? (
         <ExcelImportPanel
           title="Grade-level configuration"
           templateUrl="/grade-levels/import/template/"
@@ -136,13 +140,14 @@ export function GradeLevelsPage() {
         </article>
       </div>
 
-      <div className="panel-card record-panel">
-        <div className="section-header">
-          <div>
-            <p className="eyebrow">Grade level details</p>
-            <h2>{form.id ? 'Edit grade level' : 'Add new grade level'}</h2>
-          </div>
-        </div>
+      <details className="academic-editor-panel" open={Boolean(form.id)}>
+        <summary className="academic-editor-summary">
+          <span>
+            <span className="eyebrow">Grade level details</span>
+            <strong>{form.id ? 'Edit grade level' : 'Add new grade level'}</strong>
+          </span>
+          <span className="academic-editor-prompt">{form.id ? 'Close form' : 'Open form'}</span>
+        </summary>
 
         <form className="form-grid" onSubmit={handleSave}>
           <label>
@@ -151,7 +156,14 @@ export function GradeLevelsPage() {
           </label>
           <label>
             <span>Code</span>
-            <input value={form.code} onChange={(event) => setForm({ ...form, code: event.target.value })} required />
+            <input
+              value={form.code}
+              onChange={(event) => setForm({ ...form, code: event.target.value.toUpperCase() })}
+              autoCapitalize="characters"
+              spellCheck={false}
+              required
+            />
+            <small className="small-muted">Enter the established school code; codes are saved in uppercase.</small>
           </label>
           <label>
             <span>School level</span>
@@ -177,15 +189,15 @@ export function GradeLevelsPage() {
             {form.id ? <button type="button" className="action-button action-button--secondary" onClick={() => setForm({ id: '', name: '', code: '', school_level: 'Elementary', order: 1, is_active: true })}>Cancel</button> : null}
           </div>
         </form>
-      </div>
+      </details>
 
-      <div className="panel-card record-panel">
+      <div className="panel-card record-panel academic-record-list">
         <div className="section-header">
           <div>
             <p className="eyebrow">Grade level records</p>
             <h2>Grade level list</h2>
           </div>
-          <div className="search-input-group">
+          <div className="search-input-group academic-filters grade-level-filters">
             <input aria-label="Search grade levels" placeholder="Search grade levels" value={search} onChange={(event) => { setSearch(event.target.value); setPage(1) }} />
             <select value={statusFilter} onChange={(event) => { setStatusFilter(event.target.value); setPage(1) }}>
               <option value="all">All statuses</option>

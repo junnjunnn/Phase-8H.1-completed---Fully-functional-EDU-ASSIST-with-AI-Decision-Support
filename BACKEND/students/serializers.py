@@ -27,7 +27,7 @@ class StudentSerializer(serializers.ModelSerializer):
         }
 
     def get_current_enrollment(self, obj):
-        latest_enrollment = obj.enrollments.select_related('academic_year', 'grade_level', 'section').order_by('-academic_year__start_date', '-created_at').first()
+        latest_enrollment = obj.enrollments.select_related('academic_year', 'grade_level', 'section', 'strand').order_by('-academic_year__start_date', '-created_at').first()
         if not latest_enrollment:
             return None
 
@@ -36,6 +36,7 @@ class StudentSerializer(serializers.ModelSerializer):
             'academic_year': latest_enrollment.academic_year.name if latest_enrollment.academic_year else None,
             'grade_level': latest_enrollment.grade_level.name if latest_enrollment.grade_level else None,
             'section': latest_enrollment.section.name if latest_enrollment.section else None,
+            'strand': latest_enrollment.strand.name if latest_enrollment.strand else None,
             'enrollment_status': latest_enrollment.enrollment_status,
         }
 

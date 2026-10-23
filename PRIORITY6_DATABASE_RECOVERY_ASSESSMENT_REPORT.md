@@ -198,6 +198,141 @@ Stop database recovery actions at this point. The investigation is complete, no 
 
 ---
 
+## Final reset-readiness follow-up — 2026-10-20
+
+This is a read-only follow-up to the October 20 addendum. It is not authorization to reset. No credentials, data, schema, or Git history were changed, and no tests or automated verification suites were run.
+
+### 1. Administrator password status
+
+**NOT VERIFIED.** The required plaintext password is not available in the current context through an approved secure mechanism. The stored hash was not printed or compared; there was no login attempt and no credential or permission change. The existing `EDU_admin` account remains observed with the supported application role `SUPER_ADMIN`.
+
+If a secure comparison later becomes possible, use a local, non-login comparison against Django's stored password hash without displaying either value or logging the input. If that comparison returns `NO MATCH`, stop and obtain separate approval before changing credentials. The approved correction procedure should prompt for the new password without echo or command-line arguments, hold it only in process memory, update via Django's password-setting API, save only the password field, and verify without outputting the secret. If role correction is separately approved, update only the existing profile's `role_name` to `SUPER_ADMIN`. Do not make either correction as part of a reset approval by implication.
+
+### 2. Backup integrity, protection, and recoverability
+
+- The reported backup exists at `BACKEND/db_backups/edu_assist_pre_reset_20261020.sql`.
+- Current size: **253,081 bytes**. Current SHA-256 matches the report: `e56a4aaab04783cba2e7a43ae2e94f8e03afaaecd02b65c26bac21305debe86d`.
+- Git inspection: the backup is **not tracked**, **not ignored**, and **not staged**. Git reports it as untracked (`??`). No repository ignore rule protects it from accidental staging.
+- No independent protected copy of this exact backup is known or verified. The other visible older backups are different files and do not count as independent copies of this snapshot. Before any reset, create a second access-controlled copy outside the working tree and verify its checksum against the value above. Do not publish or stage either copy.
+- Structure-only inspection found `CREATE TABLE` statements for all 37 active database tables and 1,133 single-row `INSERT` statements across 29 nonempty tables. The other eight tables were empty in the snapshot. The dump has a completed-dump marker and explicit database creation/selection statements. No row contents were printed.
+- The active schema currently has zero stored routines, zero scheduled events, and zero triggers; the dump also has no routine/event/trigger definitions. Thus no such objects are currently omitted.
+- This confirms dump structure and coverage, **not successful restoration**. The backup has not been imported or restored, and server grants, binary logs, uploaded/media files, and external model/data files are not covered.
+- For any later recovery rehearsal, preserve the original dump unchanged. Because it contains `CREATE DATABASE`/`USE edu_assist`, prepare a separate temporary working copy with those database statements changed to a unique isolated database name before importing. Compare schema, constraints, and table counts only in that isolated database. Do not import this file directly into the active database.
+
+No integrity discrepancy was found in the reported file size or checksum. The Git-protection and independent-copy risks remain unresolved readiness items.
+
+### 3. Foreign-key findings and deletion semantics
+
+The active database has **71 foreign-key constraints** across the 37 tables. Every inspected MariaDB constraint reports physical `DELETE_RULE=RESTRICT` and `UPDATE_RULE=RESTRICT`. Django model `on_delete` behavior is implemented by Django's deletion collector; it does not change these physical MariaDB rules. The loaded model definitions use `CASCADE` and `SET_NULL`; no `PROTECT` relation was found among the loaded models. Consequently, direct SQL deletes must explicitly follow child-before-parent order; an expected ORM cascade or set-null must not be assumed to happen in the database itself.
+
+The only schema relations not mapped to a loaded Django model are the two token-blacklist relations (the blacklist tables are present in the database but the app is not loaded by active settings). Their physical foreign keys are still `RESTRICT`; both tables currently have zero rows and are proposed for clearing. The `accounts_userprofile.user_id` one-to-one relation is Django `CASCADE`.
+
+The following registry lists every inspected FK by child column and referenced parent. The action in brackets is the Django model's `on_delete`; all listed physical MariaDB constraints are `RESTRICT`. Reading a link as `child.column -> parent.id` also identifies the incoming FK on the parent table.
+
+| Child table | Outgoing foreign keys |
+|---|---|
+| `academics_academicrecord` | `encoded_by_id -> auth_user.id` (SET_NULL); `academic_year_id -> academics_academicyear.id` (CASCADE); `enrollment_id -> academics_enrollment.id` (CASCADE); `subject_id -> academics_subject.id` (CASCADE) |
+| `academics_enrollment` | `student_id -> students_student.id` (CASCADE); `strand_id -> academics_strand.id` (SET_NULL); `section_id -> academics_section.id` (CASCADE); `grade_level_id -> academics_gradelevel.id` (CASCADE); `academic_year_id -> academics_academicyear.id` (CASCADE) |
+| `academics_section` | `specialization_id -> academics_specialization.id` (SET_NULL); `grade_level_id -> academics_gradelevel.id` (CASCADE); `adviser_id -> auth_user.id` (SET_NULL); `academic_year_id -> academics_academicyear.id` (CASCADE); `strand_id -> academics_strand.id` (SET_NULL) |
+| `academics_specialization` | `strand_id -> academics_strand.id` (CASCADE) |
+| `academics_subject` | `strand_id -> academics_strand.id` (SET_NULL); `grade_level_id -> academics_gradelevel.id` (CASCADE) |
+| `academics_subject_grade_levels` | `gradelevel_id -> academics_gradelevel.id` (CASCADE); `subject_id -> academics_subject.id` (CASCADE) |
+| `academics_teacherassignment` | `section_id -> academics_section.id` (CASCADE); `grade_level_id -> academics_gradelevel.id` (CASCADE); `academic_year_id -> academics_academicyear.id` (CASCADE); `teacher_id -> auth_user.id` (CASCADE); `subject_id -> academics_subject.id` (CASCADE) |
+| `accounts_userprofile` | `user_id -> auth_user.id` (CASCADE) |
+| `accounts_userprofile_assigned_sections` | `userprofile_id -> accounts_userprofile.id` (CASCADE); `section_id -> academics_section.id` (CASCADE) |
+| `attendance_attendancerecord` | `encoded_by_id -> auth_user.id` (SET_NULL); `enrollment_id -> academics_enrollment.id` (CASCADE) |
+| `attendance_recurringschoolcalendarevent` | `created_by_id -> auth_user.id` (SET_NULL); `affected_grade_level_id -> academics_gradelevel.id` (SET_NULL); `academic_year_id -> academics_academicyear.id` (CASCADE); `section_id -> academics_section.id` (CASCADE) |
+| `attendance_schoolcalendarday` | `affected_grade_level_id -> academics_gradelevel.id` (SET_NULL); `recurrence_id -> attendance_recurringschoolcalendarevent.id` (SET_NULL); `academic_year_id -> academics_academicyear.id` (CASCADE); `instructor_id -> auth_user.id` (SET_NULL); `submitted_by_id -> auth_user.id` (SET_NULL); `created_by_id -> auth_user.id` (SET_NULL); `subject_id -> academics_subject.id` (SET_NULL); `authorized_by_id -> auth_user.id` (SET_NULL); `section_id -> academics_section.id` (CASCADE); `approved_by_id -> auth_user.id` (SET_NULL); `rejected_by_id -> auth_user.id` (SET_NULL) |
+| `audit_auditlog` | `user_id -> auth_user.id` (SET_NULL) |
+| `auth_group_permissions` | `group_id -> auth_group.id` (CASCADE); `permission_id -> auth_permission.id` (CASCADE) |
+| `auth_permission` | `content_type_id -> django_content_type.id` (CASCADE) |
+| `auth_user_groups` | `user_id -> auth_user.id` (CASCADE); `group_id -> auth_group.id` (CASCADE) |
+| `auth_user_user_permissions` | `user_id -> auth_user.id` (CASCADE); `permission_id -> auth_permission.id` (CASCADE) |
+| `behavior_behavioralassessment` | `rating_id -> behavior_behavioralrating.id` (SET_NULL); `enrollment_id -> academics_enrollment.id` (CASCADE); `core_value_id -> behavior_corevalue.id` (CASCADE); `behavior_indicator_id -> behavior_behaviorindicator.id` (CASCADE); `assessed_by_id -> auth_user.id` (SET_NULL); `academic_year_id -> academics_academicyear.id` (CASCADE) |
+| `behavior_behaviorindicator` | `core_value_id -> behavior_corevalue.id` (CASCADE) |
+| `django_admin_log` | `content_type_id -> django_content_type.id` (SET_NULL); `user_id -> auth_user.id` (CASCADE) |
+| `interventions_intervention` | `enrollment_id -> academics_enrollment.id` (CASCADE); `assigned_personnel_id -> auth_user.id` (SET_NULL) |
+| `notifications_notification` | `recipient_id -> auth_user.id` (CASCADE); `recurring_event_id -> attendance_recurringschoolcalendarevent.id` (CASCADE); `calendar_entry_id -> attendance_schoolcalendarday.id` (CASCADE) |
+| `predictions_predictionfactor` | `prediction_id -> predictions_riskprediction.id` (CASCADE) |
+| `predictions_riskprediction` | `reviewed_by_id -> auth_user.id` (SET_NULL); `enrollment_id -> academics_enrollment.id` (CASCADE) |
+| `token_blacklist_blacklistedtoken` | `token_id -> token_blacklist_outstandingtoken.id` (model not loaded; physical RESTRICT) |
+| `token_blacklist_outstandingtoken` | `user_id -> auth_user.id` (model not loaded; physical RESTRICT) |
+| `All other tables` | No outgoing FK constraints. Their incoming FKs, if any, are listed above under the child table. |
+
+This registry contains 71 outgoing constraints. There is no FK cycle: a topological sort covered all 37 tables. The sequence below is a child-before-parent order for the proposed 29 `CLEAR`/`TARGETED DELETE` tables. The eight `PRESERVE` tables are deliberately excluded; each remains available as a referenced parent.
+
+### 4. Complete table actions and dependency-aware deletion order
+
+The row counts below are the current live counts observed during this follow-up and match the counts captured with the backup. `CLEAR` and `TARGETED DELETE` describe only a future proposal; no deletion has occurred.
+
+| Order | Table | Rows | Proposed action |
+|---:|---|---:|---|
+| 1 | `academics_academicrecord` | 62 | CLEAR |
+| 2 | `academics_subject_grade_levels` | 38 | CLEAR |
+| 3 | `academics_teacherassignment` | 15 | CLEAR |
+| 4 | `accounts_userprofile_assigned_sections` | 6 | TARGETED DELETE |
+| 5 | `attendance_attendancerecord` | 30 | CLEAR |
+| 6 | `audit_auditlog` | 404 | CLEAR |
+| 7 | `auth_user_groups` | 0 | TARGETED DELETE |
+| 8 | `auth_user_user_permissions` | 0 | TARGETED DELETE |
+| 9 | `behavior_behavioralassessment` | 24 | CLEAR |
+| 10 | `django_admin_log` | 0 | CLEAR |
+| 11 | `django_session` | 96 | CLEAR |
+| 12 | `interventions_intervention` | 3 | CLEAR |
+| 13 | `notifications_notification` | 10 | CLEAR |
+| 14 | `predictions_predictionfactor` | 52 | CLEAR |
+| 15 | `token_blacklist_blacklistedtoken` | 0 | CLEAR |
+| 16 | `accounts_userprofile` | 18 | TARGETED DELETE |
+| 17 | `attendance_schoolcalendarday` | 52 | CLEAR |
+| 18 | `predictions_riskprediction` | 14 | CLEAR |
+| 19 | `token_blacklist_outstandingtoken` | 0 | CLEAR |
+| 20 | `academics_subject` | 11 | CLEAR |
+| 21 | `attendance_recurringschoolcalendarevent` | 0 | CLEAR |
+| 22 | `academics_enrollment` | 11 | CLEAR |
+| 23 | `academics_section` | 7 | CLEAR, subject to preserving any administrator-linked section discovered on the final recheck |
+| 24 | `students_student` | 12 | CLEAR |
+| 25 | `academics_academicyear` | 12 | CLEAR |
+| 26 | `academics_gradelevel` | 14 | CLEAR |
+| 27 | `academics_specialization` | 1 | CLEAR |
+| 28 | `academics_strand` | 1 | CLEAR |
+| 29 | `auth_user` | 18 | TARGETED DELETE |
+
+| Table | Rows | Proposed action |
+|---|---:|---|
+| `auth_group` | 0 | PRESERVE |
+| `auth_group_permissions` | 0 | PRESERVE |
+| `auth_permission` | 116 | PRESERVE |
+| `behavior_behavioralrating` | 4 | PRESERVE |
+| `behavior_behaviorindicator` | 8 | PRESERVE |
+| `behavior_corevalue` | 8 | PRESERVE |
+| `django_content_type` | 29 | PRESERVE |
+| `django_migrations` | 57 | PRESERVE |
+
+The sequence resolves dependencies including grade/subject join rows, academic records before enrollment/year/subject, assessment factors before predictions, notifications before calendar entries, calendar entries before recurring events and their academic references, and non-admin profile joins/profiles before their referenced sections/users. No `PROTECT` relation or FK cycle was found. Because MariaDB physically enforces `RESTRICT`, the sequence must be followed explicitly for any approved SQL-level plan. ORM deletes must also be reviewed carefully: Django's collector may apply `CASCADE`/`SET_NULL` behavior not enforced by the database, and must not be allowed to remove the protected account/profile.
+
+#### Exact preservation procedure if other accounts are in scope
+
+Only after separate approval, re-read the target username and primary key and confirm its linked profile still has `role_name='SUPER_ADMIN'`. Define the protected user by that exact primary key, not by a broad username pattern. Perform only the targeted child/link cleanup in the order above. In `accounts_userprofile_assigned_sections`, preserve rows whose profile belongs to the protected user; in `accounts_userprofile`, preserve the exact profile row linked to that user; in `auth_user`, delete only rows whose primary key differs from the protected ID. Preserve any group/direct permission links for that same ID. Recheck any `assigned_sections` links immediately before deleting sections; the current account has none, but if any appear, retain their sections and the parent records they depend on. Verify the protected account/profile identifiers and canonical role after the approved operation. Never use `flush`, table-wide `TRUNCATE`, `DROP`, or table recreation.
+
+### 5. Final readiness checklist
+
+| Readiness item | Status | Finding / prerequisite |
+|---|---|---|
+| Backup file integrity | READY, limited to file integrity | Size and SHA-256 match the reported values; dump structure covers all 37 tables and all 1,133 rows. |
+| Independent protected backup copy | READY, LOCAL COPY | A verified copy now exists at `C:\Users\user\Documents\EDU_ASSIST_Backups\edu_assist_pre_reset_20261020.sql`; see the final backup-protection follow-up below. It is on a separate partition but the same physical disk, so it does not protect against disk failure. |
+| Git protection | PARTIALLY READY | The repository source remains untracked and not ignored, but is not staged or committed. The verified copy is outside the Git repository. Do not stage either file; an approved ignore/storage policy is still advisable. |
+| Restore/recovery confidence | NOT VERIFIED | Dump has not been restored. Rehearse only in an isolated database using a temporary copy with its embedded database name redirected. |
+| Admin account and profile preservation | READY AS OBSERVED; RECHECK REQUIRED | `EDU_admin` id 25 and profile id 25 exist; role is `SUPER_ADMIN`. Reconfirm exact IDs and role immediately before any approved reset. |
+| Required admin password | NOT VERIFIED | Password was unavailable for safe non-login comparison; do not treat account credentials as confirmed. Follow the separate-approval correction procedure if needed. |
+| Required framework and lookup data | PLAN READY | Preserve auth group/permission tables, content types, migration history, and behavior lookup tables. |
+| Complete table scope and FK order | PLAN READY, RECHECK REQUIRED | All 37 tables and 71 FKs are represented; all physical FKs are RESTRICT; no cycle found. Recheck counts and admin section links before approval. |
+| Data-loss scope | REVIEW REQUIRED | Proposed clears include 70 admin-linked audit entries, 33 calendar entries created by the account, and five admin notifications; these are not needed for authorization but would be lost. |
+| Explicit approval | NOT GRANTED | This report is planning only. Do not perform any delete, reset, restore, migration, seed, or credential correction until the user reviews and explicitly approves the exact operation. |
+
+**Readiness conclusion: NOT READY for a destructive reset.** The backup's file integrity and schema/data coverage are confirmed, and the FK plan is complete. The password remains unverified, restore compatibility has not been demonstrated, both backup copies share one physical disk, and explicit reset approval has not been granted. No reset or restore is authorized by this review.
+
+---
+
 ## Addendum — pre-reset backup and administrator-preservation plan
 
 Inspection date: 2026-10-20. This addendum records a newer read-only inspection and supersedes the earlier database counts and backup-availability observations above for the current reset proposal. The earlier report remains an accurate record of its 2026-08-27 inspection.
@@ -290,3 +425,20 @@ The account and role are present, but the required password cannot currently be 
 ### Recovery and approval gate
 
 No reset, delete, truncate, account change, migration, seed, or restore has been performed. Before a future reset, review this table and the backup path/hash; retain a protected second copy and verify its checksum. If recovery is needed, restore the dump only into a separate isolated MariaDB database first, compare its schema and per-table counts, and keep the original backup unchanged. Do not overwrite `edu_assist` or proceed with any destructive operation until the user explicitly approves the reviewed plan and backup details.
+
+---
+
+## Final backup-protection follow-up — 2026-10-20
+
+This follow-up records the non-destructive copy step. No database connection or write was made during this step; no tests, builds, restore rehearsal, staging, commit, or publication occurred.
+
+| Copy | Location | Size | SHA-256 | Verification |
+|---|---|---:|---|---|
+| Original | `BACKEND/db_backups/edu_assist_pre_reset_20261020.sql` | 253,081 bytes | `e56a4aaab04783cba2e7a43ae2e94f8e03afaaecd02b65c26bac21305debe86d` | Source checksum and size confirmed before copy; checksum remained unchanged after copy. |
+| Independent local copy | `C:\Users\user\Documents\EDU_ASSIST_Backups\edu_assist_pre_reset_20261020.sql` | 253,081 bytes | `e56a4aaab04783cba2e7a43ae2e94f8e03afaaecd02b65c26bac21305debe86d` | Copied file size and SHA-256 exactly match the original. |
+
+The destination is outside the Git repository on the `C:` partition; the source is on `F:`. Both partitions are on the same physical disk, so this is an independent copy against repository/worktree loss but not against physical disk failure. The destination folder ACL grants Full Control to the current user, SYSTEM, and Administrators. No third-party or network storage was used.
+
+Git checks confirm the repository copy is untracked, not staged, not committed, and not ignored. The external copy is outside the repository and therefore is not staged or committed. Do not add either copy to Git. The report intentionally contains only paths, size, checksum, and verification status; no dump contents or credentials.
+
+Backup-protection step: **COMPLETE**. This does not establish restore success or authorize a reset. The overall reset readiness remains **NOT READY** because the administrator password is **NOT VERIFIED**, restore compatibility is unverified, the two copies share a physical disk, and explicit reset approval has not been granted. Obtain separate protected storage on a different physical device before any reset if protection against disk failure is required. Stop here pending user review and explicit approval.

@@ -26,7 +26,14 @@ export async function getSpecializations(params = {}) {
 }
 
 export async function getSubjects(params = {}) {
-  const response = await apiClient.get('/subjects/', { params })
+  const status = params.status === 'true'
+    ? 'active'
+    : params.status === 'false'
+      ? 'archived'
+      : params.status
+  const response = await apiClient.get('/subjects/', {
+    params: status === params.status ? params : { ...params, status },
+  })
   return response.data
 }
 
@@ -82,6 +89,11 @@ export async function createGradeLevel(payload) {
 
 export async function updateGradeLevel(id, payload) {
   const response = await apiClient.patch(`/grade-levels/${id}/`, payload)
+  return response.data
+}
+
+export async function restoreGradeLevel(id) {
+  const response = await apiClient.post(`/grade-levels/${id}/restore/`)
   return response.data
 }
 

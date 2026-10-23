@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { EmptyState } from '../../components/common/EmptyState'
 import { ErrorBanner } from '../../components/feedback/ErrorBanner'
 import { PageHeader } from '../../components/common/PageHeader'
@@ -33,14 +34,13 @@ export function SectionsPage() {
   const [strandFilter, setStrandFilter] = useState('')
   const [specializationFilter, setSpecializationFilter] = useState('')
   const [page, setPage] = useState(1)
-  const [form, setForm] = useState({ id: '', academic_year: '', grade_level: '', strand: '', specialization: '', name: '', capacity: 40, description: '', adviser: '', adviser_name: '', is_active: true })
+  const [form, setForm] = useState({ id: '', grade_level: '', strand: '', specialization: '', name: '', capacity: 40, description: '', adviser: '', adviser_name: '' })
   const [saving, setSaving] = useState(false)
 
   const pageSize = 8
 
   function resetForm() {
-    const activeYear = academicYears.find((year) => year.is_active)
-    setForm({ id: '', academic_year: activeYear ? String(activeYear.id) : '', grade_level: '', strand: '', specialization: '', name: '', capacity: 40, description: '', adviser: '', adviser_name: '', is_active: true })
+    setForm({ id: '', grade_level: '', strand: '', specialization: '', name: '', capacity: 40, description: '', adviser: '', adviser_name: '' })
   }
 
   useEffect(() => {
@@ -63,12 +63,6 @@ export function SectionsPage() {
         setStrands(normalizeListResponse(strandsData).items)
         setSpecializations(normalizeListResponse(specializationsData).items)
         setSections(normalizeListResponse(sectionsData).items)
-        const activeYear = normalizeListResponse(yearsData).items.find((year) => year.is_active)
-        if (activeYear) {
-          setForm((current) => current.id || current.academic_year
-            ? current
-            : { ...current, academic_year: String(activeYear.id) })
-        }
       } catch (err) {
         if (!active) return
         setError(getApiErrorMessage(err))
@@ -87,7 +81,9 @@ export function SectionsPage() {
       const matchesSearch = !term || section.name.toLowerCase().includes(term) || getNameById(academicYears, section.academic_year).toLowerCase().includes(term) || getNameById(gradeLevels, section.grade_level).toLowerCase().includes(term) || getNameById(strands, section.strand).toLowerCase().includes(term) || getNameById(specializations, section.specialization).toLowerCase().includes(term) || (section.adviser || '').toLowerCase().includes(term)
       const matchesStatus = statusFilter === 'all' || String(section.is_active) === statusFilter
       const matchesGrade = !gradeFilter || String(section.grade_level) === gradeFilter
-      const matchesStrand = !strandFilter || String(section.strand) === strandFilter
+      const isSharedShsSection = !section.strand &&
+        gradeLevels.find((grade) => String(grade.id) === String(section.grade_level))?.school_level === 'Senior High School'
+      const matchesStrand = !strandFilter || isSharedShsSection || String(section.strand) === strandFilter
       const matchesSpecialization = !specializationFilter || String(section.specialization) === specializationFilter
       return matchesSearch && matchesStatus && matchesGrade && matchesStrand && matchesSpecialization
     })
@@ -100,9 +96,7 @@ export function SectionsPage() {
 
   const totalPages = Math.max(1, Math.ceil(filteredSections.length / pageSize))
   const selectedGrade = gradeLevels.find((grade) => String(grade.id) === String(form.grade_level))
-  const selectableAcademicYears = academicYears.filter((year) =>
-    year.is_active || (form.id && String(year.id) === String(form.academic_year)),
-  )
+  const activeYearCount = academicYears.filter((year) => year.is_active).length
   const selectableGradeLevels = gradeLevels.filter((grade) =>
     grade.is_active !== false || (form.id && String(grade.id) === String(form.grade_level)),
   )
@@ -121,8 +115,10 @@ export function SectionsPage() {
     setError('')
     try {
       const payload = {
-        ...form,
+        grade_level: form.grade_level,
+        name: form.name,
         capacity: Number(form.capacity || 0),
+        description: form.description,
         adviser: form.adviser || null,
         strand: form.strand || null,
         specialization: form.specialization || null,
@@ -151,7 +147,6 @@ export function SectionsPage() {
     }
     setForm({
       id: section.id,
-      academic_year: section.academic_year || '',
       grade_level: section.grade_level || '',
       strand: section.strand || '',
       specialization: section.specialization || '',
@@ -160,7 +155,6 @@ export function SectionsPage() {
       description: section.description || '',
       adviser: section.adviser || '',
       adviser_name: section.adviser_name || '',
-      is_active: section.is_active !== false,
     })
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
@@ -179,9 +173,9 @@ export function SectionsPage() {
 
   return (
     <div className="page-stack sections-page">
-      <PageHeader eyebrow="Sections" title="Manage sections" description="Organize sections with associated year, grade level, adviser, and capacity. Configure advisers for the relevant academic year; the previous year's document does not confirm current assignments." />
+      <PageHeader eyebrow="Sections" title="Manage sections" description="Organize sections by grade level, adviser, and capacity. The active academic year is assigned automatically." />
 
-      {['SUPER_ADMIN', 'SCHOOL_ADMIN'].includes(user?.role_name || user?.profile?.role_name) ? (
+      {['SUPER_ADMIN', 'SCHOOL_ADMIN'].includes(user?.role || user?.role_name || user?.profile?.role_name) ? (
         <ExcelImportPanel
           title="Section configuration"
           templateUrl="/sections/import/template/"
@@ -197,6 +191,14 @@ export function SectionsPage() {
       ) : null}
 
       {error ? <ErrorBanner message={error} /> : null}
+      {!form.id && activeYearCount !== 1 ? (
+        <div className="status-banner status-banner--warning">
+          {activeYearCount === 0
+            ? 'No active academic year is configured. '
+            : 'More than one active academic year is configured. '}
+          <Link to="/academic-years">Ask an administrator to configure Academic Year Management.</Link>
+        </div>
+      ) : null}
 
       <div className="record-summary-grid">
         <article className="detail-card stat-card-accent">
@@ -205,25 +207,16 @@ export function SectionsPage() {
         </article>
       </div>
 
-      <div className="panel-card record-panel">
-        <div className="section-header">
-          <div>
-            <p className="eyebrow">Section details</p>
-            <h2>{form.id ? 'Edit section' : 'Add new section'}</h2>
-          </div>
-        </div>
+      <details className="academic-editor-panel" open={Boolean(form.id)}>
+        <summary className="academic-editor-summary">
+          <span>
+            <span className="eyebrow">Section details</span>
+            <strong>{form.id ? 'Edit section' : 'Add new section'}</strong>
+          </span>
+          <span className="academic-editor-prompt">{form.id ? 'Close form' : 'Open form'}</span>
+        </summary>
 
         <form className="form-grid" onSubmit={handleSave}>
-          <label>
-            <span>Academic year</span>
-            <select value={form.academic_year} onChange={(event) => setForm({ ...form, academic_year: event.target.value })} required>
-              <option value="">Select year</option>
-              {selectableAcademicYears.map((year) => (
-                <option key={year.id} value={year.id}>{year.name}{year.is_active ? '' : ' (Archived)'}</option>
-              ))}
-            </select>
-            {!form.id && !academicYears.some((year) => year.is_active) ? <small className="small-muted">No active academic year is configured. Create or activate a year before adding an operational section.</small> : null}
-          </label>
           <label>
             <span>Grade level</span>
             <select value={form.grade_level} onChange={(event) => {
@@ -244,18 +237,19 @@ export function SectionsPage() {
           {selectedGrade?.school_level === 'Senior High School' ? (
             <>
               <label>
-                <span>Strand *</span>
-                <select value={form.strand} onChange={(event) => setForm({ ...form, strand: event.target.value, specialization: '' })} required>
-                  <option value="">Select strand</option>
+                <span>Section strand (optional)</span>
+                <select value={form.strand} onChange={(event) => setForm({ ...form, strand: event.target.value, specialization: '' })}>
+                  <option value="">Shared section - no single strand</option>
                   {selectableStrands.map((strand) => (
                     <option key={strand.id} value={strand.id}>{strand.name}{strand.is_active === false ? ' (Archived)' : ''}</option>
                   ))}
                 </select>
+                <small className="small-muted">Leave blank when students from multiple strands share this section.</small>
               </label>
               <label>
                 <span>Specialization{requiresSpecialization ? ' *' : ''}</span>
                 <select value={form.specialization} onChange={(event) => setForm({ ...form, specialization: event.target.value })} disabled={!form.strand} required={requiresSpecialization}>
-                  <option value="">{form.strand ? 'Select specialization' : 'Select strand first'}</option>
+                  <option value="">{form.strand ? 'Select specialization' : 'Not applicable to a shared section'}</option>
                   {selectableSpecializations.map((specialization) => (
                     <option key={specialization.id} value={specialization.id}>{specialization.name}{specialization.is_active === false ? ' (Archived)' : ''}</option>
                   ))}
@@ -268,8 +262,9 @@ export function SectionsPage() {
             <input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} required />
           </label>
           <label>
-            <span>Capacity</span>
+            <span>Capacity guideline</span>
             <input type="number" min="1" value={form.capacity} onChange={(event) => setForm({ ...form, capacity: Number(event.target.value) })} required />
+            <small className="small-muted">This is a planning guideline, not an enrollment limit. Enrollment may continue above it according to school policy.</small>
           </label>
           <label>
             <span>Adviser</span>
@@ -279,27 +274,20 @@ export function SectionsPage() {
             <span>Description</span>
             <input value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} />
           </label>
-          <label>
-            <span>Status</span>
-            <select value={form.is_active ? 'true' : 'false'} onChange={(event) => setForm({ ...form, is_active: event.target.value === 'true' })}>
-              <option value="true">Active</option>
-              <option value="false">Archived</option>
-            </select>
-          </label>
           <div className="section-actions form-grid-full">
-            <button type="submit" className="action-button action-button--primary" disabled={saving}>{saving ? 'Saving...' : form.id ? 'Update section' : 'Create section'}</button>
+            <button type="submit" className="action-button action-button--primary" disabled={saving || (!form.id && activeYearCount !== 1)}>{saving ? 'Saving...' : form.id ? 'Update section' : 'Create section'}</button>
             {form.id ? <button type="button" className="action-button action-button--secondary" onClick={resetForm}>Cancel</button> : null}
           </div>
         </form>
-      </div>
+      </details>
 
-      <div className="panel-card record-panel">
+      <div className="panel-card record-panel academic-record-list">
         <div className="section-header">
           <div>
             <p className="eyebrow">Section records</p>
             <h2>Section list</h2>
           </div>
-          <div className="search-input-group">
+          <div className="search-input-group academic-filters section-filters">
             <input aria-label="Search sections" placeholder="Search sections" value={search} onChange={(event) => { setSearch(event.target.value); setPage(1) }} />
             <select aria-label="Filter by grade level" value={gradeFilter} onChange={(event) => { setGradeFilter(event.target.value); setPage(1) }}>
               <option value="">All grade levels</option>
@@ -341,7 +329,7 @@ export function SectionsPage() {
                     <th scope="col">Grade level</th>
                     <th scope="col">Strand</th>
                     <th scope="col">Specialization</th>
-                    <th scope="col">Capacity</th>
+                    <th scope="col">Enrollment / capacity guideline</th>
                     <th scope="col">Adviser</th>
                     <th scope="col">Status</th>
                     <th scope="col">Actions</th>
@@ -353,9 +341,9 @@ export function SectionsPage() {
                       <td>{section.name || '—'}</td>
                       <td>{getNameById(academicYears, section.academic_year)}</td>
                       <td>{getNameById(gradeLevels, section.grade_level)}</td>
-                      <td>{section.strand ? getNameById(strands, section.strand) : 'Not applicable'}</td>
+                      <td>{section.strand ? getNameById(strands, section.strand) : gradeLevels.find((grade) => String(grade.id) === String(section.grade_level))?.school_level === 'Senior High School' ? 'Shared section' : 'Not applicable'}</td>
                       <td>{section.specialization ? getNameById(specializations, section.specialization) : 'Not applicable'}</td>
-                      <td>{section.capacity ?? '—'}</td>
+                      <td>Enrolled: {section.student_count ?? 0} / {section.capacity ?? '—'} (Guideline)</td>
                       <td>{section.adviser_name || section.adviser || '—'}</td>
                       <td><span className={section.is_active ? 'status-pill status-pill--success' : 'status-pill status-pill--neutral'}>{section.is_active ? 'Active' : 'Archived'}</span></td>
                       <td>

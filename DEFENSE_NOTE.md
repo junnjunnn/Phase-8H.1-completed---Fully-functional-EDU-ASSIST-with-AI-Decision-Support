@@ -30,7 +30,7 @@ Purpose: This document reports exactly what the current codebase implements. All
   - The active password hasher configuration varies by settings file: `BACKEND/config/settings_sqlite.py` explicitly sets `PASSWORD_HASHERS = ['django.contrib.auth.hashers.MD5PasswordHasher']` (insecure for production). `BACKEND/config/settings.py` does not override `PASSWORD_HASHERS` (so default Django hashers apply unless `settings_sqlite` is used). The code uses Django's password validation (`validate_password`) in the create serializer.
 
 - User roles:
-  - Role model: `BACKEND/accounts/models.py` `UserProfile` stores `role_name` with choices `SUPER_ADMIN`, `SCHOOL_ADMIN`, `TEACHER`, `GUIDANCE`.
+  - Role model: `BACKEND/accounts/models.py` `UserProfile` stores `role_name` with choices `SUPER_ADMIN`, `SCHOOL_ADMIN`, `TEACHER`, `GUIDANCE`.  
   - Permissions helpers in `accounts/permissions.py` and scope functions in `accounts/utils.py` read `user.profile.role_name` to implement role checks (e.g., `IsSchoolAdmin`, `IsAuthorizedStaff`).
 
 - How accounts are created:

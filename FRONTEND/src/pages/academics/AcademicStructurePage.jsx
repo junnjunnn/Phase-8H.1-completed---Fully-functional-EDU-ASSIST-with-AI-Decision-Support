@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { EmptyState } from '../../components/common/EmptyState'
 import { ErrorBanner } from '../../components/feedback/ErrorBanner'
 import { PageHeader } from '../../components/common/PageHeader'
@@ -15,6 +16,7 @@ import {
   getSpecializations,
   getStrands,
   getSubjects,
+  restoreGradeLevel,
   updateAcademicYear,
   updateGradeLevel,
   updateSection,
@@ -22,6 +24,8 @@ import {
 } from '../../services/academicsService'
 import { notifySubjectsUpdated, subscribeSubjectsUpdated, unsubscribeSubjectsUpdated } from '../../services/referenceService'
 import AdviserSelect from '../../components/AdviserSelect'
+import { SubjectFormFields } from '../../components/academics/SubjectFormFields'
+import { buildSubjectPayload, createEmptySubjectForm, getSubjectFieldErrors, validateSubjectForm } from '../../services/subjectForm'
 
 function normalizeListResponse(data) {
   const items = data?.results || data || []
@@ -38,15 +42,19 @@ export function AcademicStructurePage() {
   const [gradeLevels, setGradeLevels] = useState([])
   const [sections, setSections] = useState([])
   const [strands, setStrands] = useState([])
+  const [strandLoadStatus, setStrandLoadStatus] = useState('loading')
   const [specializations, setSpecializations] = useState([])
   const [subjects, setSubjects] = useState([])
   const [academicDivisions, setAcademicDivisions] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [subjectStatusMessage, setSubjectStatusMessage] = useState('')
   const [yearForm, setYearForm] = useState({ id: '', name: '', start_date: '', end_date: '', is_active: false })
   const [gradeForm, setGradeForm] = useState({ id: '', name: '', code: '', school_level: 'Elementary', order: 1, is_active: true })
-  const [sectionForm, setSectionForm] = useState({ id: '', academic_year: '', grade_level: '', strand: '', specialization: '', name: '', capacity: 40, description: '', adviser: '', adviser_name: '', is_active: true })
-  const [subjectForm, setSubjectForm] = useState({ id: '', code: '', name: '', category: 'Learning Area', academic_division: '', grade_level: '', grade_levels: [], strand: '', is_active: true })
+  const [sectionForm, setSectionForm] = useState({ id: '', grade_level: '', strand: '', specialization: '', name: '', capacity: 40, description: '', adviser: '', adviser_name: '' })
+  const [subjectForm, setSubjectForm] = useState(createEmptySubjectForm())
+  const [subjectErrors, setSubjectErrors] = useState({})
+  const [subjectFormError, setSubjectFormError] = useState('')
   const [saving, setSaving] = useState(false)
   const [yearSearch, setYearSearch] = useState('')
   const [yearStatusFilter, setYearStatusFilter] = useState('all')
@@ -96,7 +104,7 @@ export function AcademicStructurePage() {
   const filteredSubjectRows = useMemo(() => {
     const term = subjectSearch.trim().toLowerCase()
     return subjects.filter((subject) => {
-      const matchesSearch = !term || subject.name.toLowerCase().includes(term) || subject.code.toLowerCase().includes(term)
+      const matchesSearch = !term || subject.name.toLowerCase().includes(term) || subject.code.toLowerCase().includes(term) || (subject.official_subject_code || '').toLowerCase().includes(term)
       const matchesStatus = subjectStatusFilter === 'all' || String(subject.is_active) === subjectStatusFilter
       return matchesSearch && matchesStatus
     })
@@ -127,9 +135,7 @@ export function AcademicStructurePage() {
   const sectionPages = Math.max(1, Math.ceil(filteredSectionRows.length / pageSize))
   const subjectPages = Math.max(1, Math.ceil(filteredSubjectRows.length / pageSize))
   const selectedSectionGrade = gradeLevels.find((grade) => String(grade.id) === String(sectionForm.grade_level))
-  const selectableSectionYears = academicYears.filter((year) =>
-    year.is_active || (sectionForm.id && String(year.id) === String(sectionForm.academic_year)),
-  )
+  const activeYearCount = academicYears.filter((year) => year.is_active).length
   const selectableSectionGrades = gradeLevels.filter((grade) =>
     grade.is_active !== false || (sectionForm.id && String(grade.id) === String(sectionForm.grade_level)),
   )
@@ -148,30 +154,79 @@ export function AcademicStructurePage() {
     async function loadReferenceData() {
       setLoading(true)
       setError('')
+      setStrandLoadStatus('loading')
       try {
-        const [yearsData, gradeData, sectionData, strandData, specializationData, divisionData, subjectData] = await Promise.all([
+        const results = await Promise.allSettled([
           getAcademicYears({ status: 'all' }),
           getGradeLevels({ status: 'all' }),
           getSections({ status: 'all' }),
-          getStrands(),
+          getStrands({ active_only: 'true' }),
           getSpecializations(),
           getAcademicDivisions(),
-          getSubjects(),
+          getSubjects({ status: 'all' }),
         ])
-        setAcademicYears(normalizeListResponse(yearsData).items)
-        setGradeLevels(normalizeListResponse(gradeData).items)
-        setSections(normalizeListResponse(sectionData).items)
-        setStrands(normalizeListResponse(strandData).items)
-        setSpecializations(normalizeListResponse(specializationData).items)
-        setAcademicDivisions(Array.isArray(divisionData) ? divisionData : [])
-        setSubjects(normalizeListResponse(subjectData).items)
-        const activeYear = normalizeListResponse(yearsData).items.find((year) => year.is_active)
-        if (activeYear) {
-          setSectionForm((current) => current.id || current.academic_year
-            ? current
-            : { ...current, academic_year: String(activeYear.id) })
+        const failures = []
+        const [yearsResult, gradeResult, sectionResult, strandResult, specializationResult, divisionResult, subjectResult] = results
+
+        if (yearsResult.status === 'fulfilled') {
+          setAcademicYears(normalizeListResponse(yearsResult.value).items)
+        } else {
+          failures.push(getApiErrorMessage(yearsResult.reason))
         }
+
+        if (gradeResult.status === 'fulfilled') {
+          setGradeLevels(normalizeListResponse(gradeResult.value).items)
+        } else {
+          failures.push(getApiErrorMessage(gradeResult.reason))
+        }
+
+        if (sectionResult.status === 'fulfilled') {
+          setSections(normalizeListResponse(sectionResult.value).items)
+        } else {
+          failures.push(getApiErrorMessage(sectionResult.reason))
+        }
+
+        if (strandResult.status === 'rejected') {
+          setStrands([])
+          setStrandLoadStatus('error')
+          failures.push(getApiErrorMessage(strandResult.reason))
+        } else {
+          const strandData = strandResult.value
+          const strandItems = Array.isArray(strandData)
+            ? strandData
+            : Array.isArray(strandData?.results)
+              ? strandData.results
+              : null
+          if (strandItems) {
+            setStrands(strandItems)
+            setStrandLoadStatus('loaded')
+          } else {
+            setStrands([])
+            setStrandLoadStatus('error')
+            failures.push('The strand service returned an unexpected response.')
+          }
+        }
+
+        if (specializationResult.status === 'fulfilled') {
+          setSpecializations(normalizeListResponse(specializationResult.value).items)
+        } else {
+          failures.push(getApiErrorMessage(specializationResult.reason))
+        }
+
+        if (divisionResult.status === 'fulfilled') {
+          setAcademicDivisions(Array.isArray(divisionResult.value) ? divisionResult.value : [])
+        } else {
+          failures.push(getApiErrorMessage(divisionResult.reason))
+        }
+
+        if (subjectResult.status === 'fulfilled') {
+          setSubjects(normalizeListResponse(subjectResult.value).items)
+        } else {
+          failures.push(getApiErrorMessage(subjectResult.reason))
+        }
+        setError(failures.join(' '))
       } catch (err) {
+        setStrandLoadStatus('error')
         setError(getApiErrorMessage(err))
       } finally {
         setLoading(false)
@@ -186,13 +241,13 @@ export function AcademicStructurePage() {
 
     async function reloadSubjects() {
       try {
-        const refreshed = await getSubjects()
+        const refreshed = await getSubjects({ status: subjectStatusFilter })
         if (!active) {
           return
         }
         setSubjects(normalizeListResponse(refreshed).items)
       } catch {
-        // Keep the existing subjects list if the refresh fails.
+        setError('Could not refresh the subject list. Please try again.')
       }
     }
 
@@ -205,7 +260,7 @@ export function AcademicStructurePage() {
       active = false
       unsubscribeSubjectsUpdated(handleSubjectsUpdated)
     }
-  }, [])
+  }, [subjectStatusFilter])
 
   async function handleYearSubmit(event) {
     event.preventDefault()
@@ -220,10 +275,6 @@ export function AcademicStructurePage() {
       const refreshed = await getAcademicYears({ status: 'all' })
       const refreshedYears = normalizeListResponse(refreshed).items
       setAcademicYears(refreshedYears)
-      const activeYear = refreshedYears.find((year) => year.is_active)
-      setSectionForm((current) => current.id
-        ? current
-        : { ...current, academic_year: activeYear ? String(activeYear.id) : '' })
       setYearForm({ id: '', name: '', start_date: '', end_date: '', is_active: false })
     } catch (err) {
       setError(getApiErrorMessage(err))
@@ -258,8 +309,10 @@ export function AcademicStructurePage() {
     setError('')
     try {
       const payload = {
-        ...sectionForm,
+        grade_level: sectionForm.grade_level,
+        name: sectionForm.name,
         capacity: Number(sectionForm.capacity || 0),
+        description: sectionForm.description,
         adviser: sectionForm.adviser || null,
         strand: sectionForm.strand || null,
         specialization: sectionForm.specialization || null,
@@ -280,36 +333,60 @@ export function AcademicStructurePage() {
   }
 
   function resetSectionForm() {
-    const activeYear = academicYears.find((year) => year.is_active)
-    setSectionForm({ id: '', academic_year: activeYear ? String(activeYear.id) : '', grade_level: '', strand: '', specialization: '', name: '', capacity: 40, description: '', adviser: '', adviser_name: '', is_active: true })
+    setSectionForm({ id: '', grade_level: '', strand: '', specialization: '', name: '', capacity: 40, description: '', adviser: '', adviser_name: '' })
   }
 
   async function handleSubjectSubmit(event) {
     event.preventDefault()
+    const validationErrors = validateSubjectForm(subjectForm, academicDivisions)
+    setSubjectErrors(validationErrors)
+    setSubjectFormError('')
+    if (Object.keys(validationErrors).length) return
+
     setSaving(true)
-    setError('')
     try {
-      const payload = {
-        ...subjectForm,
-        grade_level: subjectForm.grade_level || null,
-        grade_levels: subjectForm.grade_levels,
-        academic_division: subjectForm.academic_division || undefined,
-        strand: subjectForm.strand || null,
-      }
+      const payload = buildSubjectPayload(subjectForm)
       if (subjectForm.id) {
         await updateSubject(subjectForm.id, payload)
       } else {
         await createSubject(payload)
       }
-      const refreshed = await getSubjects()
+      const refreshed = await getSubjects({ status: subjectStatusFilter })
       setSubjects(normalizeListResponse(refreshed).items)
       notifySubjectsUpdated()
-      setSubjectForm({ id: '', code: '', name: '', category: 'Learning Area', academic_division: '', grade_level: '', grade_levels: [], strand: '', is_active: true })
+      resetSubjectForm()
     } catch (err) {
-      setError(getApiErrorMessage(err))
+      const { fieldErrors, formError } = getSubjectFieldErrors(err)
+      setSubjectErrors(fieldErrors)
+      setSubjectFormError(formError)
     } finally {
       setSaving(false)
     }
+  }
+
+  function resetSubjectForm() {
+    setSubjectForm(createEmptySubjectForm())
+    setSubjectErrors({})
+    setSubjectFormError('')
+  }
+
+  async function changeSubjectStatusFilter(value) {
+    setSubjectStatusFilter(value)
+    setSubjectPage(1)
+    setError('')
+    try {
+      const refreshed = await getSubjects({ status: value })
+      setSubjects(normalizeListResponse(refreshed).items)
+    } catch (err) {
+      setError(getApiErrorMessage(err))
+    }
+  }
+
+  function clearSubjectErrors(fields) {
+    setSubjectErrors((current) => Object.fromEntries(
+      Object.entries(current).filter(([field]) => !fields.includes(field)),
+    ))
+    setSubjectFormError('')
   }
 
   function startYearEdit(year) {
@@ -329,7 +406,6 @@ export function AcademicStructurePage() {
     }
     setSectionForm({
       id: section.id,
-      academic_year: section.academic_year || '',
       grade_level: section.grade_level || '',
       strand: section.strand || '',
       specialization: section.specialization || '',
@@ -338,7 +414,6 @@ export function AcademicStructurePage() {
       description: section.description || '',
       adviser: section.adviser || '',
       adviser_name: section.adviser_name || '',
-      is_active: section.is_active !== false,
     })
   }
 
@@ -346,6 +421,7 @@ export function AcademicStructurePage() {
     setSubjectForm({
       id: subject.id,
       code: subject.code || '',
+      official_subject_code: subject.official_subject_code || '',
       name: subject.name || '',
       category: subject.category || 'Learning Area',
       academic_division: subject.academic_division || '',
@@ -353,7 +429,13 @@ export function AcademicStructurePage() {
       grade_levels: subject.grade_levels || (subject.grade_level ? [subject.grade_level] : []),
       strand: subject.strand || '',
       is_active: subject.is_active !== false,
+      subject_type: subject.subject_type || 'STANDARD',
+      initial_academic_division: subject.academic_division || '',
+      initial_grade_levels: [...(subject.grade_levels || (subject.grade_level ? [subject.grade_level] : []))],
+      initial_strand: subject.strand || '',
     })
+    setSubjectErrors({})
+    setSubjectFormError('')
   }
 
   async function toggleAcademicYearStatus(year) {
@@ -362,10 +444,6 @@ export function AcademicStructurePage() {
       const refreshed = await getAcademicYears({ status: 'all' })
       const refreshedYears = normalizeListResponse(refreshed).items
       setAcademicYears(refreshedYears)
-      const activeYear = refreshedYears.find((item) => item.is_active)
-      setSectionForm((current) => current.id
-        ? current
-        : { ...current, academic_year: activeYear ? String(activeYear.id) : '' })
     } catch (err) {
       setError(getApiErrorMessage(err))
     }
@@ -373,7 +451,11 @@ export function AcademicStructurePage() {
 
   async function toggleGradeStatus(grade) {
     try {
-      await updateGradeLevel(grade.id, { is_active: !grade.is_active })
+      if (grade.is_active) {
+        await updateGradeLevel(grade.id, { is_active: false })
+      } else {
+        await restoreGradeLevel(grade.id)
+      }
       const refreshed = await getGradeLevels({ status: 'all' })
       setGradeLevels(normalizeListResponse(refreshed).items)
     } catch (err) {
@@ -393,11 +475,15 @@ export function AcademicStructurePage() {
   }
 
   async function toggleSubjectStatus(subject) {
+    setError('')
+    setSubjectStatusMessage('')
     try {
-      await updateSubject(subject.id, { is_active: !subject.is_active })
-      const refreshed = await getSubjects()
-      setSubjects(normalizeListResponse(refreshed).items)
+      const updatedSubject = await updateSubject(subject.id, { is_active: !subject.is_active })
+      setSubjects((current) => current.map((item) => item.id === updatedSubject.id ? updatedSubject : item))
+      setSubjectStatusMessage(`Subject "${subject.name}" ${subject.is_active ? 'archived' : 'restored'}.`)
       notifySubjectsUpdated()
+      const refreshed = await getSubjects({ status: subjectStatusFilter })
+      setSubjects(normalizeListResponse(refreshed).items)
     } catch (err) {
       setError(getApiErrorMessage(err))
     }
@@ -408,6 +494,7 @@ export function AcademicStructurePage() {
       <PageHeader eyebrow="Academic Management" title="Academic structure management" description="Configure academic years, grade levels, and sections for the school." />
 
       {error ? <ErrorBanner message={error} /> : null}
+      {subjectStatusMessage ? <p className="status-banner status-banner--success" role="status">{subjectStatusMessage}</p> : null}
 
       <div className="record-summary-grid">
         <article className="detail-card stat-card-accent">
@@ -578,7 +665,8 @@ export function AcademicStructurePage() {
               <thead>
                 <tr>
                   <th scope="col">Name</th>
-                  <th scope="col">Code</th>
+                  <th scope="col">System-generated subject ID</th>
+                  <th scope="col">Official Subject Code</th>
                   <th scope="col">Order</th>
                   <th scope="col">School level</th>
                   <th scope="col">Status</th>
@@ -621,14 +709,14 @@ export function AcademicStructurePage() {
         </div>
 
         <form className="form-grid" onSubmit={handleSectionSubmit}>
-          <label>
-            <span>Academic year</span>
-            <select value={sectionForm.academic_year} onChange={(event) => setSectionForm({ ...sectionForm, academic_year: event.target.value })} required>
-              <option value="">Select</option>
-              {selectableSectionYears.map((year) => <option key={year.id} value={year.id}>{year.name}{year.is_active ? '' : ' (Archived)'}</option>)}
-            </select>
-            {!sectionForm.id && !academicYears.some((year) => year.is_active) ? <small className="small-muted">No active academic year is configured. Create or activate a year before adding an operational section.</small> : null}
-          </label>
+          {!sectionForm.id && activeYearCount !== 1 ? (
+            <div className="status-banner status-banner--warning form-grid-full">
+              {activeYearCount === 0
+                ? 'No active academic year is configured. '
+                : 'More than one active academic year is configured. '}
+              <Link to="/academic-years">Configure Academic Year Management before creating sections.</Link>
+            </div>
+          ) : null}
           <label>
             <span>Grade level</span>
             <select value={sectionForm.grade_level} onChange={(event) => {
@@ -647,16 +735,17 @@ export function AcademicStructurePage() {
           {selectedSectionGrade?.school_level === 'Senior High School' ? (
             <>
               <label>
-                <span>Strand *</span>
-                <select value={sectionForm.strand} onChange={(event) => setSectionForm({ ...sectionForm, strand: event.target.value, specialization: '' })} required>
-                  <option value="">Select strand</option>
+                <span>Section strand (optional)</span>
+                <select value={sectionForm.strand} onChange={(event) => setSectionForm({ ...sectionForm, strand: event.target.value, specialization: '' })}>
+                  <option value="">Shared section - no single strand</option>
                   {selectableSectionStrands.map((strand) => <option key={strand.id} value={strand.id}>{strand.name}{strand.is_active === false ? ' (Archived)' : ''}</option>)}
                 </select>
+                <small className="small-muted">Leave blank when students from multiple strands share this section.</small>
               </label>
               <label>
                 <span>Specialization{sectionRequiresSpecialization ? ' *' : ''}</span>
                 <select value={sectionForm.specialization} onChange={(event) => setSectionForm({ ...sectionForm, specialization: event.target.value })} disabled={!sectionForm.strand} required={sectionRequiresSpecialization}>
-                  <option value="">{sectionForm.strand ? 'Select specialization' : 'Select strand first'}</option>
+                  <option value="">{sectionForm.strand ? 'Select specialization' : 'Not applicable to a shared section'}</option>
                   {selectableSectionSpecializations.map((specialization) => <option key={specialization.id} value={specialization.id}>{specialization.name}{specialization.is_active === false ? ' (Archived)' : ''}</option>)}
                 </select>
               </label>
@@ -668,7 +757,7 @@ export function AcademicStructurePage() {
           </label>
           <label>
             <span>Capacity</span>
-            <input type="number" value={sectionForm.capacity} onChange={(event) => setSectionForm({ ...sectionForm, capacity: Number(event.target.value) })} />
+            <input type="number" min="1" value={sectionForm.capacity} onChange={(event) => setSectionForm({ ...sectionForm, capacity: Number(event.target.value) })} required />
           </label>
           <label>
             <span>Adviser</span>
@@ -679,19 +768,12 @@ export function AcademicStructurePage() {
             />
             <div style={{ marginTop: '0.25rem' }} className="small-muted">Leave empty to keep unassigned</div>
           </label>
-          <label>
-            <span>Status</span>
-            <select value={sectionForm.is_active ? 'true' : 'false'} onChange={(event) => setSectionForm({ ...sectionForm, is_active: event.target.value === 'true' })}>
-              <option value="true">Active</option>
-              <option value="false">Inactive</option>
-            </select>
-          </label>
           <label className="form-grid-full">
             <span>Description</span>
             <textarea value={sectionForm.description} onChange={(event) => setSectionForm({ ...sectionForm, description: event.target.value })} />
           </label>
           <div className="section-actions form-grid-full">
-            <button type="submit" className="action-button" disabled={saving}>{saving ? 'Saving...' : sectionForm.id ? 'Update section' : 'Create section'}</button>
+            <button type="submit" className="action-button" disabled={saving || (!sectionForm.id && activeYearCount !== 1)}>{saving ? 'Saving...' : sectionForm.id ? 'Update section' : 'Create section'}</button>
             {sectionForm.id ? <button type="button" className="action-button action-button--neutral" onClick={resetSectionForm}>Cancel</button> : null}
           </div>
         </form>
@@ -720,6 +802,7 @@ export function AcademicStructurePage() {
                   <th scope="col">Section</th>
                   <th scope="col">Year</th>
                   <th scope="col">Grade</th>
+                  <th scope="col">Section strand</th>
                   <th scope="col">Capacity</th>
                   <th scope="col">Adviser</th>
                   <th scope="col">Status</th>
@@ -732,6 +815,7 @@ export function AcademicStructurePage() {
                     <td>{section.name}</td>
                     <td>{section.academic_year_name || section.academic_year || '—'}</td>
                     <td>{section.grade_level_name || section.grade_level || '—'}</td>
+                    <td>{section.strand_name || (section.grade_level_school_level === 'Senior High School' ? 'Shared section' : 'Not applicable')}</td>
                     <td>{section.capacity || 0}</td>
                     <td>{section.adviser_name || section.adviser || 'Unassigned'}</td>
                     <td>{section.is_active ? 'Active' : 'Archived'}</td>
@@ -762,54 +846,20 @@ export function AcademicStructurePage() {
           </div>
         </div>
 
-        <form className="form-grid" onSubmit={handleSubjectSubmit}>
-          <div className="form-field subject-identifier-field">
-            <span className="form-field__label">Subject identifier</span>
-            <strong>{subjectForm.id ? subjectForm.code : 'Automatically generated after saving'}</strong>
-            <small>Internal system identifier; it is assigned by EDU ASSIST.</small>
-          </div>
-          <label>
-            <span>Subject name</span>
-            <input value={subjectForm.name} onChange={(event) => setSubjectForm({ ...subjectForm, name: event.target.value })} required />
-          </label>
-          <label>
-            <span>Academic division</span>
-            <select value={subjectForm.academic_division} onChange={(event) => {
-              const division = academicDivisions.find((item) => item.value === event.target.value)
-              setSubjectForm({ ...subjectForm, academic_division: event.target.value, grade_level: division?.grade_levels?.[0]?.id || '', category: event.target.value === 'SENIOR_HIGH_SCHOOL' ? 'Core' : 'Learning Area', strand: '' })
-            }}>
-              <option value="">Select academic division</option>
-              {academicDivisions.map((division) => <option key={division.value} value={division.value}>{division.label}</option>)}
-            </select>
-          </label>
-          <div className="form-field">
-            <span className="form-field__label">Applicable grade levels</span>
-            <div className="section-actions">
-              <button type="button" className="action-button action-button--neutral" onClick={() => { const options = academicDivisions.find((division) => division.value === subjectForm.academic_division)?.grade_levels || []; setSubjectForm({ ...subjectForm, grade_levels: options.map((grade) => grade.id), grade_level: options[0]?.id || '' }) }}>Select all grade levels</button>
-              <button type="button" className="action-button action-button--neutral" onClick={() => setSubjectForm({ ...subjectForm, grade_levels: [], grade_level: '' })}>Clear all</button>
-              <span>{subjectForm.grade_levels.length} selected</span>
-            </div>
-            <div className="selection-summary">
-              {(academicDivisions.find((division) => division.value === subjectForm.academic_division)?.grade_levels || []).map((grade) => <label key={grade.id}><input type="checkbox" checked={subjectForm.grade_levels.map(String).includes(String(grade.id))} onChange={(event) => setSubjectForm({ ...subjectForm, grade_level: event.target.checked ? (subjectForm.grade_level || grade.id) : subjectForm.grade_level, grade_levels: event.target.checked ? [...new Set([...subjectForm.grade_levels, grade.id])] : subjectForm.grade_levels.filter((id) => String(id) !== String(grade.id)) })} /> {grade.name}</label>)}
-            </div>
-          </div>
-          {subjectForm.academic_division === 'SENIOR_HIGH_SCHOOL' ? <label>
-            <span>Strand</span>
-            <select value={subjectForm.strand} onChange={(event) => setSubjectForm({ ...subjectForm, strand: event.target.value })}>
-              <option value="">No strand</option>
-              {strands.filter((strand) => strand.is_active !== false).map((strand) => <option key={strand.id} value={strand.id}>{strand.name}</option>)}
-            </select>
-          </label> : null}
-          <label>
-            <span>Status</span>
-            <select value={subjectForm.is_active ? 'true' : 'false'} onChange={(event) => setSubjectForm({ ...subjectForm, is_active: event.target.value === 'true' })}>
-              <option value="true">Active</option>
-              <option value="false">Inactive</option>
-            </select>
-          </label>
+        <form className="form-grid subject-editor-grid" onSubmit={handleSubjectSubmit} noValidate>
+          {subjectFormError ? <p className="subject-form-error form-grid-full" role="alert">{subjectFormError}</p> : null}
+          <SubjectFormFields
+            form={subjectForm}
+            setForm={setSubjectForm}
+            academicDivisions={academicDivisions}
+            strands={strands}
+            strandLoadStatus={strandLoadStatus}
+            errors={subjectErrors}
+            clearErrors={clearSubjectErrors}
+          />
           <div className="section-actions form-grid-full">
-            <button type="submit" className="action-button" disabled={saving}>{saving ? 'Saving...' : subjectForm.id ? 'Update subject' : 'Create subject'}</button>
-            {subjectForm.id ? <button type="button" className="action-button action-button--neutral" onClick={() => setSubjectForm({ id: '', code: '', name: '', category: 'Learning Area', academic_division: '', grade_level: '', grade_levels: [], strand: '', is_active: true })}>Cancel</button> : null}
+            <button type="submit" className="action-button action-button--primary" disabled={saving}>{saving ? 'Saving...' : subjectForm.id ? 'Update subject' : 'Create subject'}</button>
+            {subjectForm.id ? <button type="button" className="action-button action-button--neutral" onClick={resetSubjectForm}>Cancel</button> : null}
           </div>
         </form>
 
@@ -820,7 +870,7 @@ export function AcademicStructurePage() {
           </label>
           <label>
             <span>Status</span>
-            <select value={subjectStatusFilter} onChange={(event) => { setSubjectStatusFilter(event.target.value); setSubjectPage(1) }}>
+            <select value={subjectStatusFilter} onChange={(event) => changeSubjectStatusFilter(event.target.value)}>
               <option value="all">All</option>
               <option value="true">Active</option>
               <option value="false">Archived</option>
@@ -834,7 +884,8 @@ export function AcademicStructurePage() {
             <table className="records-table">
               <thead>
                 <tr>
-                  <th scope="col">Code</th>
+                  <th scope="col">System-generated subject ID</th>
+                  <th scope="col">Official Subject Code</th>
                   <th scope="col">Name</th>
                   <th scope="col">Category</th>
                   <th scope="col">Applicable Grade Levels</th>
@@ -847,6 +898,7 @@ export function AcademicStructurePage() {
                 {pagedSubjects.map((subject) => (
                   <tr key={subject.id}>
                     <td>{subject.code}</td>
+                    <td>{subject.official_subject_code || '—'}</td>
                     <td>{subject.name}</td>
                     <td>{subject.category}</td>
                     <td>{[...new Set(subject.grade_level_names?.length ? subject.grade_level_names : (subject.grade_level_name ? [subject.grade_level_name] : []))].filter(Boolean).join(', ') || 'No grade levels configured'}</td>

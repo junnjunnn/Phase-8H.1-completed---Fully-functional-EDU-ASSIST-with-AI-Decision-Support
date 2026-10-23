@@ -184,6 +184,7 @@ export function BehaviorEncodingPage() {
           enrollmentId: enrollment.id,
           studentId: student?.lrn || enrollment.student,
           studentName: student ? `${student.first_name || ''} ${student.last_name || ''}`.trim() : `Student ${enrollment.student}`,
+          strandName: enrollment.strand_name || '',
           assessments: assessmentsByIndicator,
         }
       }))
@@ -329,8 +330,8 @@ export function BehaviorEncodingPage() {
         {rows.length > 0 ? (
           <div className="table-card grade-encoding-table-wrapper">
             <table className="encoding-table" aria-label="Behavior encoding table">
-              <thead><tr><th scope="col">Student ID</th><th scope="col">Student name</th><th scope="col">{selectedCoreValue?.name || 'Core Value'} / {selectedIndicator?.name || 'Behavior Statement'}</th><th scope="col">Status</th></tr></thead>
-              <tbody>{rows.map((row) => { const selection = row.assessments[selectedIndicatorId] || {}; return <tr key={row.id}><td data-label="Student ID">{row.studentId}</td><td data-label="Student name">{row.studentName}</td><td data-label="Rating"><label className="sr-only" htmlFor={`behavior-rating-${row.id}`}>Rating for {row.studentName}</label><select id={`behavior-rating-${row.id}`} value={selection.ratingId || ''} onChange={(event) => updateRowRating(row.id, event.target.value)} disabled={!canEdit}><option value="">Select rating</option>{ratings.map((rating) => <option key={rating.id} value={rating.id}>{rating.code} - {rating.label}</option>)}</select></td><td data-label="Status">{selection.ratingId ? 'Rated' : 'Pending'}</td></tr> })}</tbody>
+              <thead><tr><th scope="col">Student ID</th><th scope="col">Student name / strand</th><th scope="col">{selectedCoreValue?.name || 'Core Value'} / {selectedIndicator?.name || 'Behavior Statement'}</th><th scope="col">Status</th></tr></thead>
+              <tbody>{rows.map((row) => { const selection = row.assessments[selectedIndicatorId] || {}; return <tr key={row.id}><td data-label="Student ID">{row.studentId}</td><td data-label="Student name / strand">{row.studentName}{row.strandName ? <small>Strand: {row.strandName}</small> : null}</td><td data-label="Rating"><label className="sr-only" htmlFor={`behavior-rating-${row.id}`}>Rating for {row.studentName}</label><select id={`behavior-rating-${row.id}`} value={selection.ratingId || ''} onChange={(event) => updateRowRating(row.id, event.target.value)} disabled={!canEdit}><option value="">Select rating</option>{ratings.map((rating) => <option key={rating.id} value={rating.id}>{rating.code} - {rating.label}</option>)}</select></td><td data-label="Status">{selection.ratingId ? 'Rated' : 'Pending'}</td></tr> })}</tbody>
             </table>
           </div>
         ) : null}

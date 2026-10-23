@@ -31,7 +31,16 @@ class AttendanceRecordViewSet(RoleScopedViewsetMixin, AuditMixin, mixins.ListMod
     serializer_class = AttendanceRecordSerializer
     permission_classes = [permissions.IsAuthenticated, IsAuthorizedStaff]
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
-    filterset_fields = ['month', 'enrollment', 'enrollment__student', 'encoded_by', 'attendance_date']
+    filterset_fields = [
+        'month',
+        'enrollment',
+        'enrollment__student',
+        'enrollment__grade_level',
+        'enrollment__section',
+        'enrollment__strand',
+        'encoded_by',
+        'attendance_date',
+    ]
     search_fields = ['enrollment__student__first_name', 'enrollment__student__last_name', 'month', 'attendance_date']
     ordering_fields = ['created_at', 'school_days', 'days_present', 'absences', 'attendance_date']
     ordering = ['-created_at']

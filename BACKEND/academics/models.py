@@ -103,10 +103,6 @@ class Section(models.Model):
         if school_level == 'Junior High School' and self.specialization:
             raise ValidationError({'specialization': 'Junior High School sections cannot have a specialization.'})
 
-        # Rule: Senior High School sections require a strand
-        if school_level == 'Senior High School' and not self.strand:
-            raise ValidationError({'strand': 'Senior High School sections must have a strand.'})
-
         if self.strand and self.strand.code == 'TVL' and not self.specialization:
             raise ValidationError({'specialization': 'TVL sections must have a specialization.'})
 
@@ -152,6 +148,10 @@ class Specialization(models.Model):
 
 
 class Subject(models.Model):
+    SUBJECT_TYPE_CHOICES = [
+        ('STANDARD', 'Standard curriculum'),
+        ('SCHOOL_SPECIFIC', 'School-specific'),
+    ]
     CATEGORY_CHOICES = [
         ('Learning Area', 'Learning Area'),
         ('Core', 'Core'),
@@ -159,8 +159,10 @@ class Subject(models.Model):
         ('Specialized', 'Specialized'),
     ]
     code = models.CharField(max_length=30, unique=True)
+    official_subject_code = models.CharField(max_length=50, blank=True, default='')
     name = models.CharField(max_length=150)
     description = models.TextField(blank=True, default='')
+    subject_type = models.CharField(max_length=20, choices=SUBJECT_TYPE_CHOICES, default='STANDARD')
     category = models.CharField(max_length=30, choices=CATEGORY_CHOICES)
     grade_level = models.ForeignKey(GradeLevel, on_delete=models.CASCADE, related_name='subjects', null=True, blank=True)
     grade_levels = models.ManyToManyField(GradeLevel, related_name='applicable_subjects', blank=True)
@@ -319,6 +321,12 @@ class Enrollment(models.Model):
         # Validate strand consistency with section
         if self.section and self.section.strand and self.strand and self.section.strand.id != self.strand.id:
             raise ValidationError({'strand': 'The selected strand does not match the section\'s strand.'})
+
+        if self.grade_level:
+            if self.grade_level.school_level == 'Senior High School' and not self.strand:
+                raise ValidationError({'strand': 'A strand is required for Senior High School enrollment.'})
+            if self.grade_level.school_level != 'Senior High School' and self.strand:
+                raise ValidationError({'strand': 'A strand cannot be selected for Elementary or Junior High School enrollment.'})
 
     def __str__(self):
         return f"{self.student} - {self.academic_year}"

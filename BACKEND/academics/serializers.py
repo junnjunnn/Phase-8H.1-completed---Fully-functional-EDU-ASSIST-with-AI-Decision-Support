@@ -1,10 +1,12 @@
 from rest_framework import serializers
-from rest_framework.validators import UniqueTogetherValidator
 from django.db import transaction
+from django.db.models import Q
+from django.db.models.functions import Lower, Trim
 from .academic_divisions import division_for_grade_levels, grade_levels_for_division, normalize_academic_division
 from django.contrib.auth import get_user_model
 
 from common.authorization import authorized_enrollment_queryset, get_user_scope
+from .active_academic_year import get_active_academic_year
 from .adviser_assignments import assign_section_adviser, remove_section_adviser
 from .models import AcademicRecord, AcademicYear, Enrollment, GradeLevel, Section, Specialization, Strand, Subject, TeacherAssignment
 
@@ -75,13 +77,8 @@ class SectionSerializer(serializers.ModelSerializer):
     class Meta:
         model = Section
         fields = ['id', 'grade_level', 'academic_year', 'name', 'capacity', 'description', 'adviser', 'strand', 'specialization', 'is_active', 'student_count', 'academic_year_name', 'grade_level_name', 'grade_level_school_level', 'adviser_name', 'strand_name', 'specialization_name']
-        validators = [
-            UniqueTogetherValidator(
-                queryset=Section.objects.all(),
-                fields=('grade_level', 'academic_year', 'name'),
-                message='A section with this name already exists in the selected grade level and academic year.',
-            )
-        ]
+        validators = []
+        extra_kwargs = {'academic_year': {'required': False}}
 
     def get_student_count(self, obj):
         return obj.enrollments.filter(enrollment_status='active').count()
@@ -141,11 +138,31 @@ class SectionSerializer(serializers.ModelSerializer):
 
     def validate(self, attrs):
         grade_level = attrs.get('grade_level') or getattr(self.instance, 'grade_level', None)
-        academic_year = attrs.get('academic_year') or getattr(self.instance, 'academic_year', None)
+        requested_academic_year = attrs.get('academic_year')
+        if self.instance:
+            academic_year = self.instance.academic_year
+            if requested_academic_year and requested_academic_year.pk != academic_year.pk:
+                raise serializers.ValidationError({
+                    'academic_year': 'An existing section cannot be moved to another academic year.',
+                })
+        else:
+            academic_year = get_active_academic_year()
+            attrs['academic_year'] = academic_year
         name = attrs.get('name') or getattr(self.instance, 'name', None)
         capacity = attrs.get('capacity', getattr(self.instance, 'capacity', 0))
         strand = attrs.get('strand', getattr(self.instance, 'strand', None))
         specialization = attrs.get('specialization', getattr(self.instance, 'specialization', None))
+        adviser = attrs.get('adviser', getattr(self.instance, 'adviser', None))
+
+        if (
+            self.instance
+            and adviser
+            and adviser.pk != self.instance.adviser_id
+            and self.instance.academic_year_id != get_active_academic_year().pk
+        ):
+            raise serializers.ValidationError({
+                'adviser': 'New adviser assignments can only be made for sections in the active academic year.',
+            })
 
         # Validate that grade level and academic year are active (not archived)
         if grade_level and not grade_level.is_active:
@@ -181,10 +198,6 @@ class SectionSerializer(serializers.ModelSerializer):
             if school_level == 'Junior High School' and strand:
                 raise serializers.ValidationError({'strand': 'Junior High School sections cannot have a strand.'})
 
-            # Rule: Senior High School sections require a strand
-            if school_level == 'Senior High School' and not strand:
-                raise serializers.ValidationError({'strand': 'Senior High School sections must have a strand.'})
-
             if strand and strand.code == 'TVL' and not specialization:
                 raise serializers.ValidationError({'specialization': 'TVL sections must have a specialization.'})
 
@@ -205,9 +218,10 @@ class SectionSerializer(serializers.ModelSerializer):
     def update(self, instance, validated_data):
         adviser_was_supplied = 'adviser' in validated_data
         adviser = validated_data.pop('adviser', None)
+        adviser_changed = adviser_was_supplied and getattr(adviser, 'pk', None) != instance.adviser_id
         with transaction.atomic():
             instance = super().update(instance, validated_data)
-            if adviser_was_supplied:
+            if adviser_changed:
                 if adviser:
                     assign_section_adviser(instance, adviser)
                 else:
@@ -236,6 +250,11 @@ class SubjectSerializer(serializers.ModelSerializer):
     grade_level_school_level = serializers.SerializerMethodField()
     strand_name = serializers.SerializerMethodField()
     code = serializers.CharField(read_only=True)
+    official_subject_code = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        trim_whitespace=False,
+    )
     grade_levels = serializers.PrimaryKeyRelatedField(
         many=True,
         queryset=GradeLevel.objects.filter(is_active=True),
@@ -246,7 +265,12 @@ class SubjectSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Subject
-        fields = ['id', 'code', 'name', 'description', 'category', 'grade_level', 'grade_levels', 'grade_level_names', 'academic_division', 'strand', 'is_active', 'educational_level', 'grade_level_name', 'grade_level_school_level', 'strand_name']
+        fields = ['id', 'code', 'official_subject_code', 'name', 'description', 'subject_type', 'category', 'grade_level', 'grade_levels', 'grade_level_names', 'academic_division', 'strand', 'is_active', 'educational_level', 'grade_level_name', 'grade_level_school_level', 'strand_name']
+
+    def validate_official_subject_code(self, value):
+        if len(value) > Subject._meta.get_field('official_subject_code').max_length:
+            raise serializers.ValidationError('Official subject code is too long.')
+        return value
 
     def to_representation(self, instance):
         data = super().to_representation(instance)
@@ -290,8 +314,90 @@ class SubjectSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError('The selected strand is not active.')
         return value
 
+    def validate_active_duplicate(self, name, grade_levels):
+        candidate_grades = list(grade_levels)
+        if not candidate_grades:
+            return
+
+        candidate_ids = {grade.pk for grade in candidate_grades}
+        candidate_divisions = {grade.school_level for grade in candidate_grades}
+        normalized_name = name.strip().lower()
+        duplicates = Subject.objects.filter(is_active=True).annotate(
+            normalized_name=Lower(Trim('name')),
+        ).filter(
+            normalized_name=normalized_name,
+        ).filter(
+            Q(grade_levels__in=candidate_ids) | Q(grade_level__in=candidate_ids),
+        ).distinct().prefetch_related('grade_levels', 'grade_level')
+        if self.instance:
+            duplicates = duplicates.exclude(pk=self.instance.pk)
+
+        conflicts = []
+        for subject in duplicates:
+            existing_grades = list(subject.grade_levels.all())
+            if subject.grade_level and subject.grade_level.pk not in {grade.pk for grade in existing_grades}:
+                existing_grades.append(subject.grade_level)
+            overlapping_grades = [
+                grade for grade in existing_grades
+                if grade.pk in candidate_ids and grade.school_level in candidate_divisions
+            ]
+            if overlapping_grades:
+                grade_names = ', '.join(sorted({grade.name for grade in overlapping_grades}))
+                conflicts.append(f'{subject.name} ({subject.code}): {grade_names}')
+
+        if conflicts:
+            raise serializers.ValidationError({
+                'grade_levels': (
+                    'An active subject with the same name already overlaps '
+                    f'the selected grade levels: {"; ".join(conflicts)}.'
+                ),
+            })
+
+    def validate_active_official_subject_code(self, official_code, grade_levels):
+        if not official_code:
+            return
+
+        shs_grades = [
+            grade for grade in grade_levels
+            if grade.school_level == 'Senior High School'
+        ]
+        if not shs_grades:
+            return
+
+        candidate_grade_ids = {grade.pk for grade in shs_grades}
+        duplicates = Subject.objects.filter(
+            is_active=True,
+            official_subject_code=official_code,
+        ).filter(
+            Q(grade_levels__in=candidate_grade_ids) | Q(grade_level__in=candidate_grade_ids),
+        ).distinct().prefetch_related('grade_levels', 'grade_level')
+        if self.instance:
+            duplicates = duplicates.exclude(pk=self.instance.pk)
+
+        conflicts = []
+        for subject in duplicates:
+            existing_grades = list(subject.grade_levels.all())
+            if subject.grade_level and subject.grade_level.pk not in {grade.pk for grade in existing_grades}:
+                existing_grades.append(subject.grade_level)
+            overlapping_grades = [
+                grade for grade in existing_grades
+                if grade.pk in candidate_grade_ids and grade.school_level == 'Senior High School'
+            ]
+            if overlapping_grades:
+                grade_names = ', '.join(sorted({grade.name for grade in overlapping_grades}))
+                conflicts.append(f'{subject.name}: {grade_names}')
+
+        if conflicts:
+            raise serializers.ValidationError({
+                'official_subject_code': (
+                    'An active Senior High School subject with this official code already '
+                    f'overlaps the selected grade levels: {"; ".join(conflicts)}.'
+                ),
+            })
+
     def validate(self, attrs):
         requested_division = attrs.pop('academic_division', None)
+        grade_levels_were_supplied = 'grade_levels' in attrs
         requested_grade_levels = attrs.get('grade_levels')
         resolved_grade_levels = None
         if requested_division:
@@ -310,51 +416,58 @@ class SubjectSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError({'grade_levels': 'Every selected grade level must belong to the selected academic division.'})
             resolved_grade_levels = list(requested_grade_levels)
             attrs['_resolved_grade_levels'] = resolved_grade_levels
-        elif requested_grade_levels:
-            resolved_grade_levels = list(requested_grade_levels)
-            if len({grade.school_level for grade in resolved_grade_levels}) != 1:
+        elif grade_levels_were_supplied:
+            resolved_grade_levels = list(requested_grade_levels or [])
+            if len({grade.school_level for grade in resolved_grade_levels}) > 1:
                 raise serializers.ValidationError({'grade_levels': 'Selected grade levels must belong to one academic division.'})
             attrs['_resolved_grade_levels'] = resolved_grade_levels
 
         grade_level = attrs.get('grade_level') or getattr(self.instance, 'grade_level', None)
-        if resolved_grade_levels:
-            grade_level = resolved_grade_levels[0]
+        if resolved_grade_levels is not None:
+            grade_level = resolved_grade_levels[0] if resolved_grade_levels else None
             attrs['grade_level'] = grade_level
-        strand = attrs.get('strand') or getattr(self.instance, 'strand', None)
-        category = attrs.get('category') or getattr(self.instance, 'category', None)
+        elif 'grade_level' in attrs:
+            grade_level = attrs['grade_level']
+            attrs['_resolved_grade_levels'] = [grade_level] if grade_level else []
+            resolved_grade_levels = attrs['_resolved_grade_levels']
+        elif self.instance:
+            resolved_grade_levels = list(self.instance.grade_levels.all())
+            if not resolved_grade_levels and self.instance.grade_level:
+                resolved_grade_levels = [self.instance.grade_level]
 
-        # Validate that grade level is active (not archived)
+        strand = attrs.get('strand', getattr(self.instance, 'strand', None))
+        category = attrs.get('category') or getattr(self.instance, 'category', None)
+        name = attrs.get('name', getattr(self.instance, 'name', ''))
+
         if grade_level and not grade_level.is_active:
             raise serializers.ValidationError({'grade_level': 'Cannot create subject with an archived grade level.'})
 
-        if not grade_level:
-            return attrs
+        duplicate_grades = resolved_grade_levels or ([grade_level] if grade_level else [])
+        official_code = attrs.get(
+            'official_subject_code',
+            getattr(self.instance, 'official_subject_code', ''),
+        )
+        if official_code and not any(
+            grade.school_level == 'Senior High School' for grade in duplicate_grades
+        ):
+            raise serializers.ValidationError({
+                'official_subject_code': 'An official subject code requires at least one Senior High School grade association.',
+            })
 
-        school_level = grade_level.school_level
+        if attrs.get('is_active', getattr(self.instance, 'is_active', True)):
+            self.validate_active_duplicate(name, duplicate_grades)
+            self.validate_active_official_subject_code(official_code, duplicate_grades)
 
-        # Rule: Elementary subjects cannot have a strand
-        if school_level == 'Elementary' and strand:
-            raise serializers.ValidationError({'strand': 'Elementary subjects cannot have a strand.'})
-
-        # Rule: Junior High School subjects cannot have a strand
-        if school_level == 'Junior High School' and strand:
-            raise serializers.ValidationError({'strand': 'Junior High School subjects cannot have a strand.'})
-
-        # Rule: SHS subjects with inactive strand should be rejected
-        if school_level == 'Senior High School' and strand and not strand.is_active:
-            raise serializers.ValidationError({'strand': 'The selected strand is not active.'})
-
-        # Rule: Category validation - SHS categories should only be used for SHS
         shs_categories = {'Core', 'Applied', 'Specialized'}
-        if school_level != 'Senior High School' and category in shs_categories:
-            raise serializers.ValidationError({'category': f'Category "{category}" is only available for Senior High School subjects.'})
-
-        # Rule: Elementary and JHS should use "Learning Area" category
-        if school_level in ['Elementary', 'Junior High School'] and category != 'Learning Area':
-            raise serializers.ValidationError({'category': f'Elementary and Junior High School subjects must use "Learning Area" category.'})
-
-        if resolved_grade_levels and any(grade.school_level != school_level for grade in resolved_grade_levels):
-            raise serializers.ValidationError({'academic_division': 'Resolved grade levels must belong to one academic division.'})
+        for grade in resolved_grade_levels or ([grade_level] if grade_level else []):
+            if not grade.is_active:
+                raise serializers.ValidationError({'grade_levels': 'Cannot associate a subject with an archived grade level.'})
+            if grade.school_level != 'Senior High School' and strand:
+                raise serializers.ValidationError({'strand': 'Only Senior High School subjects can be associated with a strand.'})
+            if grade.school_level != 'Senior High School' and category in shs_categories:
+                raise serializers.ValidationError({'category': f'Category "{category}" is only available for Senior High School subjects.'})
+            if grade.school_level in ['Elementary', 'Junior High School'] and category != 'Learning Area':
+                raise serializers.ValidationError({'category': 'Elementary and Junior High School subjects must use "Learning Area" category.'})
 
         return attrs
 
@@ -362,7 +475,7 @@ class SubjectSerializer(serializers.ModelSerializer):
         resolved_grade_levels = validated_data.pop('_resolved_grade_levels', None)
         validated_data.pop('grade_levels', None)
         instance = super().create(validated_data)
-        if resolved_grade_levels:
+        if resolved_grade_levels is not None:
             instance.grade_levels.set(resolved_grade_levels)
         elif instance.grade_level:
             instance.grade_levels.set([instance.grade_level])
@@ -370,13 +483,14 @@ class SubjectSerializer(serializers.ModelSerializer):
 
     def update(self, instance, validated_data):
         resolved_grade_levels = validated_data.pop('_resolved_grade_levels', None)
+        grade_associations_supplied = 'grade_levels' in validated_data or 'grade_level' in validated_data
         validated_data.pop('grade_levels', None)
         instance = super().update(instance, validated_data)
-        if resolved_grade_levels:
+        if resolved_grade_levels is not None:
             instance.grade_levels.set(resolved_grade_levels)
-            instance.grade_level = resolved_grade_levels[0]
+            instance.grade_level = resolved_grade_levels[0] if resolved_grade_levels else None
             instance.save(update_fields=['grade_level'])
-        elif instance.grade_level and not instance.grade_levels.exists():
+        elif grade_associations_supplied and instance.grade_level and not instance.grade_levels.exists():
             instance.grade_levels.set([instance.grade_level])
         return instance
 
@@ -387,6 +501,14 @@ class TeacherAssignmentSerializer(serializers.ModelSerializer):
     grade_level_name = serializers.CharField(source='grade_level.name', read_only=True)
     section_name = serializers.CharField(source='section.name', read_only=True)
     subject_name = serializers.CharField(source='subject.name', read_only=True)
+    subject_code = serializers.CharField(source='subject.code', read_only=True, allow_null=True)
+    subject_strand = serializers.IntegerField(source='subject.strand_id', read_only=True, allow_null=True)
+    subject_strand_name = serializers.CharField(source='subject.strand.name', read_only=True, allow_null=True)
+    official_subject_code = serializers.CharField(
+        source='subject.official_subject_code',
+        read_only=True,
+        allow_null=True,
+    )
     assignment_type = serializers.ChoiceField(choices=TeacherAssignment.ASSIGNMENT_TYPE_CHOICES, required=False)
     role = serializers.SerializerMethodField()
     is_adviser = serializers.SerializerMethodField()
@@ -405,6 +527,10 @@ class TeacherAssignmentSerializer(serializers.ModelSerializer):
             'section_name',
             'subject',
             'subject_name',
+            'subject_code',
+            'subject_strand',
+            'subject_strand_name',
+            'official_subject_code',
             'assignment_type',
             'role',
             'is_adviser',
@@ -412,6 +538,7 @@ class TeacherAssignmentSerializer(serializers.ModelSerializer):
         ]
         validators = [
         ]
+        extra_kwargs = {'academic_year': {'required': False}}
 
     def get_teacher_name(self, obj):
         if obj.teacher:
@@ -429,11 +556,25 @@ class TeacherAssignmentSerializer(serializers.ModelSerializer):
 
     def validate(self, attrs):
         teacher = attrs.get('teacher') or getattr(self.instance, 'teacher', None)
-        academic_year = attrs.get('academic_year') or getattr(self.instance, 'academic_year', None)
+        requested_academic_year = attrs.get('academic_year')
+        if self.instance:
+            academic_year = self.instance.academic_year
+            if requested_academic_year and requested_academic_year.pk != academic_year.pk:
+                raise serializers.ValidationError({
+                    'academic_year': 'An existing teacher assignment cannot be moved to another academic year.',
+                })
+        else:
+            academic_year = get_active_academic_year()
+            attrs['academic_year'] = academic_year
         grade_level = attrs.get('grade_level') or getattr(self.instance, 'grade_level', None)
         section = attrs.get('section') or getattr(self.instance, 'section', None)
-        subject = attrs.get('subject') or getattr(self.instance, 'subject', None)
+        subject = attrs['subject'] if 'subject' in attrs else getattr(self.instance, 'subject', None)
         assignment_type = attrs.get('assignment_type') or getattr(self.instance, 'assignment_type', 'SUBJECT')
+        is_reactivating = bool(
+            self.instance
+            and not self.instance.is_active
+            and attrs.get('is_active', self.instance.is_active)
+        )
 
         def is_unchanged(field_name, value):
             return bool(self.instance and value and getattr(self.instance, f'{field_name}_id', None) == value.id)
@@ -460,24 +601,37 @@ class TeacherAssignmentSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({'grade_level': 'Grade level is required.'})
         if not section:
             raise serializers.ValidationError({'section': 'Section is required.'})
+        if assignment_type == 'SUBJECT' and 'subject' in attrs and attrs['subject'] is None:
+            raise serializers.ValidationError({'subject': 'Subject is required for a subject-teacher assignment.'})
         if assignment_type == 'SUBJECT' and not subject:
             raise serializers.ValidationError({'subject': 'Subject is required.'})
         if assignment_type == 'ADVISER' and subject:
             raise serializers.ValidationError({'subject': 'Class Adviser assignments cannot include a subject.'})
 
-        if assignment_type == 'SUBJECT' and subject and not subject.is_active and not is_unchanged('subject', subject):
+        if assignment_type == 'SUBJECT' and subject and not subject.is_active and (
+            is_reactivating or not is_unchanged('subject', subject)
+        ):
             raise serializers.ValidationError({'subject': 'The selected subject is inactive.'})
 
         if assignment_type == 'SUBJECT':
             subject_grades = list(subject.grade_levels.values_list('pk', flat=True))
             if subject.grade_level_id and not subject_grades:
                 subject_grades = [subject.grade_level_id]
-            if grade_level and grade_level.id not in subject_grades:
-                raise serializers.ValidationError({'subject': 'The selected subject is not associated with this grade level.'})
-            if subject.strand_id and section.strand_id != subject.strand_id:
-                raise serializers.ValidationError({
-                    'subject': 'The selected subject belongs to a different strand than the selected section.',
-                })
+            assignment_context_is_unchanged = bool(
+                self.instance
+                and self.instance.subject_id == subject.id
+                and self.instance.section_id == section.id
+                and self.instance.grade_level_id == grade_level.id
+            )
+            if not assignment_context_is_unchanged or is_reactivating:
+                if grade_level and grade_level.id not in subject_grades:
+                    raise serializers.ValidationError({
+                        'subject': 'This subject is not mapped to the selected section grade level. Add that grade level to the subject in Subject Management before assigning it.',
+                    })
+                if subject.strand_id and section.strand_id and section.strand_id != subject.strand_id:
+                    raise serializers.ValidationError({
+                        'subject': 'This subject is restricted to a different strand. Assign it to a section for that strand or a shared section.',
+                    })
 
         if assignment_type == 'SUBJECT' and teacher and academic_year and grade_level and section and subject:
             queryset = TeacherAssignment.objects.filter(
@@ -515,8 +669,9 @@ class EnrollmentSerializer(serializers.ModelSerializer):
     class Meta:
         model = Enrollment
         fields = ['id', 'student', 'student_name', 'academic_year', 'academic_year_name', 'grade_level', 'grade_level_name', 'school_level', 'section', 'section_name', 'strand', 'strand_name', 'enrollment_status', 'enrollment_date']
+        validators = []
         extra_kwargs = {
-            'academic_year': {'required': True},
+            'academic_year': {'required': False},
             'grade_level': {'required': True},
             'section': {'required': True},
             'enrollment_status': {'required': True},
@@ -542,7 +697,16 @@ class EnrollmentSerializer(serializers.ModelSerializer):
 
     def validate(self, attrs):
         student = attrs.get('student') or getattr(self.instance, 'student', None)
-        academic_year = attrs.get('academic_year') or getattr(self.instance, 'academic_year', None)
+        requested_academic_year = attrs.get('academic_year')
+        if self.instance:
+            academic_year = self.instance.academic_year
+            if requested_academic_year and requested_academic_year.pk != academic_year.pk:
+                raise serializers.ValidationError({
+                    'academic_year': 'An existing enrollment cannot be moved to another academic year.',
+                })
+        else:
+            academic_year = get_active_academic_year()
+            attrs['academic_year'] = academic_year
         grade_level = attrs.get('grade_level') or getattr(self.instance, 'grade_level', None)
         section = attrs.get('section') or getattr(self.instance, 'section', None)
         strand = attrs.get('strand') or getattr(self.instance, 'strand', None)
@@ -570,6 +734,8 @@ class EnrollmentSerializer(serializers.ModelSerializer):
 
         if section and grade_level and section.grade_level_id != grade_level.id:
             raise serializers.ValidationError({'section': 'The selected section does not belong to the selected grade level.'})
+        if section and academic_year and section.academic_year_id != academic_year.id:
+            raise serializers.ValidationError({'section': 'The selected section does not belong to the active academic year.'})
 
         if not section:
             raise serializers.ValidationError({'section': 'Section is required.'})
@@ -598,12 +764,18 @@ class EnrollmentSerializer(serializers.ModelSerializer):
 
 class AcademicRecordSerializer(serializers.ModelSerializer):
     subject_name = serializers.SerializerMethodField()
+    subject_code = serializers.CharField(source='subject.code', read_only=True, allow_null=True)
+    official_subject_code = serializers.CharField(
+        source='subject.official_subject_code',
+        read_only=True,
+        allow_null=True,
+    )
     academic_year_name = serializers.SerializerMethodField()
     encoded_by_name = serializers.SerializerMethodField()
 
     class Meta:
         model = AcademicRecord
-        fields = ['id', 'enrollment', 'subject', 'subject_name', 'academic_year', 'academic_year_name', 'grading_period_type', 'quarter', 'semester', 'grade', 'final_grade', 'remarks', 'encoded_by', 'encoded_by_name']
+        fields = ['id', 'enrollment', 'subject', 'subject_name', 'subject_code', 'official_subject_code', 'academic_year', 'academic_year_name', 'grading_period_type', 'quarter', 'semester', 'grade', 'final_grade', 'remarks', 'encoded_by', 'encoded_by_name']
 
     def get_subject_name(self, obj):
         return obj.subject.name if obj.subject else None
@@ -662,6 +834,44 @@ class AcademicRecordSerializer(serializers.ModelSerializer):
         grading_period_type = attrs.get('grading_period_type') or getattr(self.instance, 'grading_period_type', None)
         quarter = attrs.get('quarter') if 'quarter' in attrs else getattr(self.instance, 'quarter', None)
         semester = attrs.get('semester') if 'semester' in attrs else getattr(self.instance, 'semester', None)
+
+        if enrollment and academic_year and enrollment.academic_year_id != academic_year.pk:
+            raise serializers.ValidationError({
+                'academic_year': 'The academic year must match the student enrollment.',
+            })
+
+        if enrollment and enrollment.section:
+            if (
+                enrollment.section.academic_year_id != enrollment.academic_year_id
+                or enrollment.section.grade_level_id != enrollment.grade_level_id
+            ):
+                raise serializers.ValidationError({
+                    'enrollment': 'The student enrollment is not associated with a matching section and academic year.',
+                })
+
+        if enrollment and subject and subject.strand_id and enrollment.strand_id != subject.strand_id:
+            raise serializers.ValidationError({
+                'subject': 'This subject is restricted to students enrolled in its strand.',
+            })
+
+        if grading_period_type == 'Quarter':
+            if not quarter:
+                raise serializers.ValidationError({
+                    'quarter': 'Quarter is required when using quarter-based grading.',
+                })
+            if semester:
+                raise serializers.ValidationError({
+                    'semester': 'Semester must be blank when quarter grading is used.',
+                })
+        elif grading_period_type == 'Semester':
+            if not semester:
+                raise serializers.ValidationError({
+                    'semester': 'Semester is required when using semester-based grading.',
+                })
+            if quarter:
+                raise serializers.ValidationError({
+                    'quarter': 'Quarter must be blank when semester grading is used.',
+                })
 
         request = self.context.get('request')
         if request and getattr(request.user, 'is_authenticated', False):

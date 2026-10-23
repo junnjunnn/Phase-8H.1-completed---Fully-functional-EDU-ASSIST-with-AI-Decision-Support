@@ -1,4 +1,5 @@
 from django.utils import timezone
+from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework import serializers
 
 from common.authorization import active_enrollment_queryset, authorized_enrollment_queryset
@@ -135,7 +136,7 @@ class AttendanceRecordSerializer(serializers.ModelSerializer):
     section_name = serializers.CharField(source='enrollment.section.name', read_only=True)
     class Meta:
         model = AttendanceRecord
-        fields = ['id', 'enrollment', 'student_name', 'academic_year_name', 'section_name', 'attendance_date', 'month', 'school_days', 'days_present', 'absences', 'times_tardy', 'encoded_by', 'created_at', 'updated_at']
+        fields = ['id', 'enrollment', 'student_name', 'academic_year_name', 'section_name', 'attendance_date', 'month', 'school_days', 'days_present', 'absences', 'excused_absences', 'times_tardy', 'encoded_by', 'created_at', 'updated_at']
         read_only_fields = ['created_at', 'updated_at']
 
     def get_student_name(self, obj):
@@ -165,6 +166,12 @@ class AttendanceRecordSerializer(serializers.ModelSerializer):
         return value
 
     def validate(self, attrs):
-        record = AttendanceRecord(**attrs)
-        record.clean()
+        record = self.instance or AttendanceRecord()
+        for field, value in attrs.items():
+            setattr(record, field, value)
+        try:
+            record.clean()
+        except DjangoValidationError as error:
+            detail = error.message_dict if hasattr(error, 'message_dict') else error.messages
+            raise serializers.ValidationError(detail) from error
         return attrs

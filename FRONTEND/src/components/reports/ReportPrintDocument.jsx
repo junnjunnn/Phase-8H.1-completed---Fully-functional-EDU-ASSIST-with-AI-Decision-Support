@@ -12,7 +12,7 @@ const reportTitles = {
 const reportMetrics = {
   student: [['Student count', 'student_count'], ['Enrollment count', 'enrollment_count'], ['Academic years', 'academic_year_count'], ['Grade levels', 'grade_level_count'], ['Sections', 'section_count']],
   academic: [['Average grade', 'average_grade'], ['Highest grade', 'highest_grade'], ['Lowest grade', 'lowest_grade'], ['Passing rate', 'passing_rate'], ['Failing rate', 'failing_rate']],
-  attendance: [['Attendance percentage', 'attendance_percentage'], ['Present count', 'present_count'], ['Absent count', 'absent_count'], ['Late count', 'late_count']],
+  attendance: [['Attendance percentage', 'attendance_percentage'], ['Present count', 'present_count'], ['Recorded absent count', 'absent_count'], ['Excused absences (classified)', 'excused_absences_count'], ['Records with unclassified excused status', 'unclassified_excused_record_count'], ['Late count', 'late_count']],
   behavior: [['Behavior average', 'behavior_average'], ['Assessments', 'assessment_count']],
   ai: [['High risk', 'high_risk_count'], ['Moderate risk', 'moderate_risk_count'], ['Low risk', 'low_risk_count'], ['Predictions', 'prediction_count']],
   intervention: [['Total', 'total'], ['Completed', 'completed'], ['In progress', 'in_progress'], ['Planned', 'planned'], ['Cancelled', 'cancelled'], ['Overdue', 'overdue']],
@@ -46,7 +46,10 @@ export function ReportPrintDocument({ reportData, reportCategory, filters }) {
   const title = reportTitles[reportCategory] || 'Reports'
   const section = reportSections[reportCategory] || {}
   const metrics = reportMetrics[reportCategory] || []
-  const rows = metrics.map(([label, key]) => [label, section[key] ?? 0])
+  const rows = metrics.map(([label, key]) => [
+    label,
+    key === 'attendance_percentage' && section[key] == null ? 'Unavailable' : section[key] ?? 0,
+  ])
   const hasRecords = {
     student: (section.student_count || 0) > 0 || (section.enrollment_count || 0) > 0,
     academic: (section.total_records || 0) > 0,
@@ -76,9 +79,11 @@ export function ReportPrintDocument({ reportData, reportCategory, filters }) {
       <section className="report-print-section">
         <h2>Report Content</h2>
         {!hasRecords ? <p className="report-print-empty">No records found for the selected criteria.</p> : null}
+        {reportCategory === 'attendance' && section.attendance_counts_note ? <p className="report-print-note">{section.attendance_counts_note}</p> : null}
+        {reportCategory === 'attendance' && section.attendance_percentage_note ? <p className="report-print-note">{section.attendance_percentage_note}</p> : null}
         <table className="report-print-table">
           <thead><tr><th scope="col">Metric</th><th scope="col">Value</th></tr></thead>
-          <tbody>{rows.map(([label, value]) => <tr key={label}><td>{label}</td><td>{value}{label.includes('rate') || label.includes('percentage') ? '%' : ''}</td></tr>)}</tbody>
+          <tbody>{rows.map(([label, value]) => <tr key={label}><td>{label}</td><td>{value}{typeof value === 'number' && (label.includes('rate') || label.includes('percentage')) ? '%' : ''}</td></tr>)}</tbody>
         </table>
       </section>
       <footer className="report-print-footer">Prepared by: ______________________________</footer>

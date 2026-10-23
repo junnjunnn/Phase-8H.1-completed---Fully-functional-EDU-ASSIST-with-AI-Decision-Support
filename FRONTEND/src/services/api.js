@@ -95,7 +95,8 @@ apiClient.interceptors.response.use(
         .then((response) => {
           const nextAccessToken = response.data?.access
           if (nextAccessToken) {
-            setStoredTokens(nextAccessToken, refreshToken)
+            const nextRefreshToken = response.data?.refresh || refreshToken
+            setStoredTokens(nextAccessToken, nextRefreshToken)
             return nextAccessToken
           }
           clearStoredTokens()
@@ -127,23 +128,54 @@ export function getApiErrorMessage(error) {
     return data
   }
 
+  function formatValidationError(value, fieldPath = []) {
+    if (typeof value === 'string') {
+      const message = value.trim()
+      const label = fieldPath
+        .map((field) => field.replaceAll('_', ' ').replace(/\b\w/g, (letter) => letter.toUpperCase()))
+        .join(' > ')
+      return message && label
+        ? `${label}: ${message}`
+        : message
+    }
+
+    if (Array.isArray(value)) {
+      return value
+        .map((item) => formatValidationError(item, fieldPath))
+        .filter(Boolean)
+        .join(' ')
+    }
+
+    if (!value || typeof value !== 'object') {
+      return ''
+    }
+
+    return Object.entries(value)
+      .map(([key, nestedValue]) => {
+        if (key === 'detail' || key === 'error' || key === 'message') {
+          return formatValidationError(nestedValue, fieldPath)
+        }
+        if (key === 'non_field_errors' || key === 'non_field_error') {
+          return formatValidationError(nestedValue, fieldPath)
+        }
+        return formatValidationError(nestedValue, [...fieldPath, key])
+      })
+      .filter(Boolean)
+      .join(' ')
+  }
+
   if (data && typeof data === 'object') {
     if (data.detail) {
-      return data.detail
+      return formatValidationError(data.detail)
     }
 
     if (data.error) {
-      return data.error
+      return formatValidationError(data.error)
     }
 
-    const firstMessage = Object.values(data).find((value) => Array.isArray(value) && value.length > 0)
-    if (firstMessage) {
-      return firstMessage[0]
-    }
-
-    const fieldMessage = Object.values(data).find((value) => typeof value === 'string' && value.length > 0)
-    if (fieldMessage) {
-      return fieldMessage
+    const validationMessage = formatValidationError(data)
+    if (validationMessage) {
+      return validationMessage
     }
   }
 
